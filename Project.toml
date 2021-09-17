@@ -1,0 +1,7 @@
+name = "solver"
+uuid = "5b87f58b-a6cb-43fc-b459-8e7b9fbb6b24"
+authors = ["Andrey Zakharevich <andreyzakharevich@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"

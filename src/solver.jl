@@ -1,13 +1,18 @@
 module solver
 
-function main()
-    while true
-        message = readline(stdin)
+using Redis
 
-        if message == "stop"
+function main()
+    conn = RedisConnection()
+    while true
+        @info "waiting message"
+        queue, message = blpop(conn, ["tasks", "commands"], 0)
+        @info "got message" message
+
+        if queue == "commands" && message == "stop"
             break
         end
-        write(stdout, message * "\n")
+        rpush(conn, "results", message)
     end
 end
 

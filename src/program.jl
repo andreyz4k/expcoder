@@ -171,10 +171,37 @@ function parse_program(s)
     if isempty(res)
         error("Could not parse: $s")
     else
-        res
+        res[1]
     end
 end
 
+function infer_program_type(context, environment, p::Index)::Tuple{Context,Tp}
+    t = environment[p.n]
+    if isnothing(t)
+        throw(UnboundVariable())
+    else
+        apply_context(context, t)
+    end
+end
 
+infer_program_type(context, environment, p::Primitive)::Tuple{Context,Tp} = instantiate(p.t, context)
+
+infer_program_type(context, environment, p::Invented)::Tuple{Context,Tp} = instantiate(p.t, context)
+
+function infer_program_type(context, environment, p::Abstraction)::Tuple{Context,Tp}
+    (xt, context) = makeTID(context)
+    (context, rt) = infer_program_type(context, vcat(xt, environment), p.b)
+    applyContext(context, arrow(xt, rt))
+end
+
+function infer_program_type(context, environment, p::Apply)::Tuple{Context,Tp}
+    (rt, context) = makeTID(context)
+    (context, xt) = infer_program_type(context, environment, p.x)
+    (context, ft) = infer_program_type(context, environment, p.f)
+    context = unify(context, ft, arrow(xt, rt))
+    applyContext(context, rt)
+end
+
+closed_inference(p) = infer_program_type(empty_context, [], p)[2]
 
 include("primitives.jl")

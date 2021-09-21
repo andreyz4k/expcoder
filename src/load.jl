@@ -28,10 +28,10 @@ function load_problems(message)
     if haskey(task_payload, "specialTask")
         handler = find_task_handler(task_payload["specialTask"], task_payload["extras"])
     else
-        handler = supervised_task
+        handler = supervised_task_checker
     end
 
-    task = build_task(handler, program_timeout, name, task_type, examples, test_examples)
+    task = build_task(handler, name, task_type, examples, test_examples)
 
     verbose = get(message, "verbose", false)
     timeout = message["timeout"]

@@ -4,6 +4,7 @@ include("parser.jl")
 include("type.jl")
 include("program.jl")
 include("grammar.jl")
+include("task.jl")
 include("load.jl")
 
 

@@ -18,12 +18,35 @@ struct Primitive <: Program
     t::Tp
     name::String
     code::Any
+
+    function Primitive(name::String, t::Tp, x)
+        p = new(t, name, x)
+        @assert !haskey(every_primitive, name)
+        every_primitive[name] = p
+        p
+    end
 end
 
+every_primitive = Dict{String,Primitive}()
 struct Invented <: Program
     t::Tp
     b::Program
 end
+
+
+struct UnknownPrimitive <: Exception
+    name::String
+end
+
+
+function lookup_primitive(name)
+    if haskey(every_primitive, name)
+        every_primitive[name]
+    else
+        throw(UnknownPrimitive(name))
+    end
+end
+
 
 parse_token = token_parser(
     c -> isletter(c) || isdigit(c) || in(c, ['_', '-', '?', '/', '.', '*', '\'', '+', ',', '>', '<', '@', '|']),
@@ -33,7 +56,7 @@ parse_number = token_parser(isdigit)
 
 parse_primitive = bind_parsers(parse_token, (name -> try
     return_parse(lookup_primitive(name))
-catch
+catch e
     @error "Error finding type of primitive $name"
     parse_failure
 end))
@@ -151,3 +174,7 @@ function parse_program(s)
         res
     end
 end
+
+
+
+include("primitives.jl")

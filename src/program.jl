@@ -34,6 +34,14 @@ struct Invented <: Program
 end
 
 
+
+struct ProgramBlock
+    p::Program
+    inputs::Vector{String}
+    outputs::Vector{String}
+end
+
+
 struct UnknownPrimitive <: Exception
     name::String
 end

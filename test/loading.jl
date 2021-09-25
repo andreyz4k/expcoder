@@ -1,11 +1,10 @@
 
 using Test
 
-using solver:load_problems
+using solver:load_problems,enumerate_for_task
 
 @testset "Loading task" begin
-    @testset "full loading" begin
-        payload = Dict(
+    payload = Dict(
             "DSL" => Dict{String,Any}(
                 "logVariable" => 0.0,
                 "productions" => Any[
@@ -77,6 +76,12 @@ using solver:load_problems
             "verbose" => false,
             "shatter" => 10,
         )
-        load_problems(payload)
+    @testset "full loading" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, _verbose = load_problems(payload)
+    end
+
+    @testset "try_enumerate" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload)
+        solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
     end
 end

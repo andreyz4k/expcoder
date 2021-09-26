@@ -8,7 +8,7 @@ end
 struct ContextualGrammar
     no_context::Grammar
     variable_context::Grammar
-    contextual_library::Vector{Tuple{Program,Vector{Grammar}}}
+    contextual_library::Dict{Program,Vector{Grammar}}
 end
 
 
@@ -43,9 +43,7 @@ end
 
 
 function make_dummy_contextual(g::Grammar)
-    contextual_library = map(g.library) do (e, t, _)
-        (e, [g for _ in arguments_of_type(t)])
-    end
+    contextual_library = Dict(e => [g for _ in arguments_of_type(t)] for (e, t, _) in g.library)
     cg = ContextualGrammar(g, g, contextual_library)
     prune_contextual_grammar(cg)
 end
@@ -78,18 +76,103 @@ end
 
 
 function prune_contextual_grammar(g::ContextualGrammar)
-    ContextualGrammar(g.no_context, g.variable_context, map(((e, gs),) -> (e, _prune(e, gs)), g.contextual_library))
+    ContextualGrammar(g.no_context, g.variable_context, Dict(e => _prune(e, gs) for (e, gs) in g.contextual_library))
 end
 
 function deserialize_contextual_grammar(payload)
     no_context = deserialize_grammar(payload["noParent"])
     variable_context = deserialize_grammar(payload["variableParent"])
-    contextual_library = map(payload["productions"]) do production
+    contextual_library = Dict(map(payload["productions"]) do production
         source = production["program"]
         expression = parse_program(source)
         children = map(deserialize_grammar, production["arguments"])
         (expression, children)
-    end
+    end)
     grammar = ContextualGrammar(no_context, variable_context, contextual_library)
     prune_contextual_grammar(grammar)
+end
+
+
+function lse(l::Vector{Float64})::Float64
+    if length(l) == 0
+        error("LSE: Empty sequence")
+    elseif length(l) == 1
+        return l[1]
+    end
+    largest = maximum(l)
+    return largest + log(sum(exp(z - largest) for z in l))
+end
+
+
+function unifying_expressions(
+    g::Grammar,
+    environment,
+    request,
+    context,
+)::Vector{Tuple{Program,Vector{Tp},Context,Float64}}
+    #  given a grammar environment requested type and typing context,
+    #    what are all of the possible leaves that we might use?
+    #    These could be productions in the grammar or they could be variables.
+    #    Yields a sequence of:
+    #    (leaf, argument types, context with leaf return type unified with requested type, normalized log likelihood)
+
+    variable_candidates = collect(skipmissing(map(enumerate(environment)) do (j, t)
+        p = Index(j)
+        ll = g.log_variable
+        (new_context, t) = apply_context(context, t)
+        return_type = return_of_type(t)
+        if might_unify(return_type, request)
+            try
+                new_context = unify(new_context, return_type, request)
+                (new_context, t) = apply_context(new_context, t)
+                return (p, arguments_of_type(t), new_context, ll)
+            catch e
+                if isa(e, UnificationFailure)
+                    return missing
+                else
+                    rethrow()
+                end
+            end
+        else
+            return missing
+        end
+    end))
+
+    if !isnothing(g.continuation_type) && !isempty(variable_candidates)
+        terminal_indices = [get_index_value(p) for (p, t, _, _) in variable_candidates if isempty(t)]
+        if !isempty(terminal_indices)
+            smallest_terminal_index = minimum(terminal_indices)
+            filter!(
+                ((p, t, _, _) -> !is_index(p) || !isempty(t) || get_index_value(p) == smallest_terminal_index),
+                variable_candidates,
+            )
+        end
+    end
+
+    nv = log(length(variable_candidates))
+    variable_candidates = [(p, t, k, ll - nv) for (p, t, k, ll) in variable_candidates]
+
+    grammar_candidates = collect(skipmissing(map(g.library) do (p, t, ll)
+        try
+            return_type = return_of_type(t)
+            if !might_unify(return_type, request)
+                return missing
+            else
+                new_context, t = instantiate(t, context)
+                new_context = unify(new_context, return_type, request)
+                (new_context, t) = apply_context(new_context, t)
+                return (p, arguments_of_type(t), new_context, ll)
+            end
+        catch e
+            if isa(e, UnificationFailure)
+                return missing
+            else
+                rethrow()
+            end
+        end
+    end))
+
+    candidates = vcat(variable_candidates, grammar_candidates)
+    z = lse([ll for (_, _, _, ll) in candidates])
+    return [(p, t, k, ll - z) for (p, t, k, ll) in candidates]
 end

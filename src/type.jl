@@ -38,6 +38,9 @@ arrow(arguments...) =
         return TypeConstructor(ARROW, [arguments[1], arrow(arguments[2:end]...)])
     end
 
+isarrow(t::TypeConstructor) = t.name == ARROW
+isarrow(::TypeVariable) = false
+
 t0 = TypeVariable(0)
 t1 = TypeVariable(1)
 t2 = TypeVariable(2)
@@ -153,6 +156,14 @@ function unify(context, t1, t2)
         _unify(context, t1, t2)
     end
 end
+
+might_unify(t1::TypeVariable, t2) = true
+might_unify(t1, t2::TypeVariable) = true
+might_unify(t1::TypeVariable, t2::TypeVariable) = true
+might_unify(t1::TypeConstructor, t2::TypeConstructor) =
+    t1.name == t2.name &&
+    length(t1.arguments) == length(t2.arguments) &&
+    all(might_unify(as1, as2) for (as1, as2) in zip(t1.arguments, t2.arguments))
 
 function lookupTID(context::Context, j)
     @assert (j < context.next_variable)

@@ -19,10 +19,12 @@ struct Primitive <: Program
     name::String
     code::Any
 
-    function Primitive(name::String, t::Tp, x)
+    function Primitive(name::String, t::Tp, x; skip_saving = false)
         p = new(t, name, x)
-        @assert !haskey(every_primitive, name)
-        every_primitive[name] = p
+        if !skip_saving
+            @assert !haskey(every_primitive, name)
+            every_primitive[name] = p
+        end
         p
     end
 end
@@ -211,5 +213,27 @@ function infer_program_type(context, environment, p::Apply)::Tuple{Context,Tp}
 end
 
 closed_inference(p) = infer_program_type(empty_context, [], p)[2]
+
+number_of_free_parameters(p::Invented) = number_of_free_parameters(p.b)
+number_of_free_parameters(p::Abstraction) = number_of_free_parameters(p.b)
+number_of_free_parameters(p::Apply) = number_of_free_parameters(p.f) + number_of_free_parameters(p.x)
+number_of_free_parameters(p::Primitive) =
+    if in(p.name, Set(["REAL", "STRING", "r_const", "FREE_VAR"]))
+        1
+    else
+        0
+    end
+number_of_free_parameters(::Index) = 0
+
+application_function(p::Apply) = application_function(p.f)
+application_function(p::Program) = p
+
+function application_parse(p::Apply)
+    (f, arguments) = application_parse(p.f)
+    (f, vcat(arguments, [p.x]))
+end
+application_parse(p::Program) = (p, [])
+
+
 
 include("primitives.jl")

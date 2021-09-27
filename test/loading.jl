@@ -72,7 +72,7 @@ using solver:load_problems,enumerate_for_task
             ),
             "name" => "add-k with k=1",
             "programTimeout" => 2,
-            "timeout" => 2,
+            "timeout" => 10,
             "verbose" => false,
             "shatter" => 10,
         )

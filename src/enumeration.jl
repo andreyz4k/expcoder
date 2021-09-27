@@ -5,12 +5,18 @@ using DataStructures
 get_enumeration_timeout(timeout) = time() + timeout
 enumeration_timed_out(timeout) = time() > timeout
 
-struct Entry
+abstract type Entry end
+
+struct ValueEntry <: Entry
     type::Tp
     values::Vector
 end
 
-get_matching_seq(entry::Entry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
+get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
+
+struct NoDataEntry <: Entry
+    type::Tp
+end
 
 
 abstract type Turn end
@@ -37,7 +43,7 @@ struct BlockPrototype
 end
 
 mutable struct SolutionBranch
-    known_vars::Dict{String,Entry}
+    known_vars::Dict{String,ValueEntry}
     unknown_vars::Dict{String,Entry}
     fill_percentages::Dict{String,Float64}
     operations::Vector{ProgramBlock}
@@ -51,15 +57,15 @@ end
 
 
 function create_start_solution(task::Task)::SolutionBranch
-    known_vars = Dict{String,Entry}()
+    known_vars = Dict{String,ValueEntry}()
     fill_percentages = Dict{String,Float64}()
     argument_types = arguments_of_type(task.task_type)
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$$i"
-        known_vars[key] = Entry(t, collect(values))
+        known_vars[key] = ValueEntry(t, collect(values))
         fill_percentages[key] = 1.0
     end
-    unknown_vars = Dict{String,Entry}("out" => Entry(return_of_type(task.task_type), task.train_outputs))
+    unknown_vars = Dict{String,Entry}("out" => ValueEntry(return_of_type(task.task_type), task.train_outputs))
     example_count = length(task.train_outputs)
     SolutionBranch(
         known_vars,
@@ -73,6 +79,11 @@ function create_start_solution(task::Task)::SolutionBranch
         MultiDict{String,ProgramBlock}(),
         MultiDict{String,ProgramBlock}(),
     )
+end
+
+function create_next_var(solution_ctx)
+    solution_ctx.created_vars += 1
+    solution_ctx.created_vars - 1
 end
 
 iter_unknown_vars(solution_ctx) = solution_ctx.unknown_vars
@@ -90,7 +101,7 @@ initial_block_prototype(request, g::Grammar, inputs, outputs) =
 get_candidates_for_unknown_var(sol_ctx, key, value, g) = [initial_block_prototype(value.type, g.no_context, [], [key])]
 
 
-get_argument_requests(::Index, argument_types, cg) = map(argument_types, (at -> (at, cg.variable_context)))
+get_argument_requests(::Index, argument_types, cg) = [(at, cg.variable_context) for at in argument_types]
 get_argument_requests(candidate::Primitive, argument_types, cg) =
     if candidate.name == "FREE_VAR"
         []
@@ -161,7 +172,7 @@ function unwind_path(path)
         k -= 1
     end
     if k > 0
-        vcat(path[1:k], [RightTurn()])
+        vcat(path[1:k-1], [RightTurn()])
     else
         []
     end
@@ -248,9 +259,9 @@ function block_state_successors(
     if isarrow(request)
         return [
             EnumerationState(
-                modify_skeleton(state.skeleton, (Abstraction(primitive_unknown(return_type, g))), state.path),
+                modify_skeleton(state.skeleton, (Abstraction(primitive_unknown(request.arguments[2], g))), state.path),
                 context,
-                vcat(state.path, [ArgTurn(argument_type)]),
+                vcat(state.path, [ArgTurn(request.arguments[1])]),
                 state.cost,
                 state.free_parameters,
             ),
@@ -473,12 +484,13 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
         for child in block_state_successors(maxFreeParameters, g, bp.state)
 
             if state_finished(child)
+                @info(child.skeleton)
                 p, ts = capture_free_vars(child.skeleton)
 
-                new_vars = map(ts) do
-                    ntv = no_data_task_val(t)
-                    key = "v"^String(create_next_var(s_ctx))
-                    add_unknown_var(s_ctx, key, ntv)
+                new_vars = map(ts) do t
+                    ntv = NoDataEntry(t)
+                    key = "v$(create_next_var(s_ctx))"
+                    s_ctx.unknown_vars[key] = ntv
                     key
                 end
 
@@ -488,7 +500,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
             else
 
-                pq[(s_ctx, BlockPrototype(child, bp.input_vals, bp.output_vals))] = 0
+                pq[(s_ctx, BlockPrototype(child, bp.input_vals, bp.output_vals))] = child.cost
             end
         end
     end

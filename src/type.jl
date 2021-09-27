@@ -17,9 +17,21 @@ is_polymorphic(tc::TypeConstructor) = tc.is_poly
 
 TypeConstructor(name, arguments) = TypeConstructor(name, arguments, any(is_polymorphic(a) for a in arguments))
 
+ARROW = "->"
+
 Base.:(==)(a::TypeVariable, b::TypeVariable) = a.id == b.id
 Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.arguments == b.arguments
 
+Base.show(io::IO, t::TypeVariable) = print(io, "t$(t.id)")
+function Base.show(io::IO, t::TypeConstructor)
+    if isempty(t.arguments)
+        print(io, t.name)
+    elseif t.name == ARROW
+        print(io, t.arguments[1], " -> ", t.arguments[2])
+    else
+        print(io, t.name, "(", join(t.arguments, ", "), ")")
+    end
+end
 
 struct Context
     next_variable::Int64
@@ -29,7 +41,6 @@ end
 empty_context = Context(0, Dict())
 
 
-ARROW = "->"
 
 arrow(arguments...) =
     if length(arguments) == 1

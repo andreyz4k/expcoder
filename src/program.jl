@@ -35,6 +35,11 @@ struct Invented <: Program
     b::Program
 end
 
+Base.show(io::IO, p::Index) = print(io, "\$", p.n)
+Base.show(io::IO, p::Abstraction) = print(io, "(lambda ", p.b, ")")
+Base.show(io::IO, p::Apply) = print(io, "(", p.f, " ", p.x, ")")
+Base.show(io::IO, p::Primitive) = p.name == "FREE_VAR" ? print(io, "FREE_VAR(", p.t, ")") : print(io, p.name)
+Base.show(io::IO, p::Invented) = print(io, "#(", p.b, ")")
 
 
 struct ProgramBlock

@@ -268,3 +268,5 @@ function run_analyzed_with_arguments(p, arguments)
 end
 
 include("primitives.jl")
+
+copy_field = Primitive("copy",arrow(t0, t0),  (x -> x); skip_saving=true)

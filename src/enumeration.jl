@@ -14,10 +14,20 @@ end
 
 get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
 
+match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
+    if entry.type == other.type && entry.values == other.values
+        (key, Strict, copy_field)
+    else
+        missing
+    end
+
 struct NoDataEntry <: Entry
     type::Tp
 end
 
+get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
+match_with_task_val(entry::NoDataEntry, other::ValueEntry, key) =
+    entry.type == other.type ? (key, TypeOnly, copy_field) : missing
 
 abstract type Turn end
 
@@ -66,6 +76,7 @@ function create_start_solution(task::Task)::SolutionBranch
         fill_percentages[key] = 1.0
     end
     unknown_vars = Dict{String,Entry}("out" => ValueEntry(return_of_type(task.task_type), task.train_outputs))
+    fill_percentages["out"] = 0.0
     example_count = length(task.train_outputs)
     SolutionBranch(
         known_vars,
@@ -381,7 +392,7 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
             if m == NoMatch
                 return NoMatch, []
             else
-                bm = minimal_match(bm, m)
+                bm = min(bm, m)
             end
         end
         push!(outs, v)
@@ -396,6 +407,9 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
     outs = Dict()
     while !isempty(blocks)
         bl = dequeue!(blocks)
+        if any(!haskey(outs, key) && !haskey(sc.known_vars, key) for key in bl.inputs)
+            continue
+        end
         inputs = [haskey(outs, key) ? outs[key] : sc.known_vars[key].values for key in bl.inputs]
         mv, outputs = try_run_block(sc, bl, inputs)
         if mv == NoMatch
@@ -407,7 +421,7 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
                     enqueue!(blocks, b)
                 end
             end
-            bm = minimal_match(mv, bm)
+            bm = min(mv, bm)
         end
     end
     (bm, outs)
@@ -453,6 +467,19 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
     end
 end
 
+function get_matches(sc::SolutionBranch, keys)
+    for key in keys
+        kv = sc.unknown_vars[key]
+        matched_inputs = skipmissing(match_with_task_val(kv, inp_value, k) for (k, inp_value) in sc.known_vars)
+
+        new_branches = map(matched_inputs) do (k, m, pr)
+            new_block = ProgramBlock(pr, [k], [key])
+            add_new_block(sc, new_block)
+        end
+    end
+
+end
+
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(timeout)
@@ -496,7 +523,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)
                 new_sctx = add_new_block(s_ctx, new_block)
-                # matches = get_matches(new_sctx, new_block.inputs)
+                matches = get_matches(new_sctx, new_block.inputs)
 
             else
 

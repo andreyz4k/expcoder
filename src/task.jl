@@ -10,7 +10,7 @@ struct Task
     test_outputs::Any
 end
 
-@enum MatchResult Strict Pattern TypeOnly NoMatch
+@enum MatchResult NoMatch = 0 TypeOnly = 1 Pattern = 2 Strict = 3
 
 
 supervised_task_checker(task::Task, p::Program) =

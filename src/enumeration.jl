@@ -10,6 +10,9 @@ struct Entry
     values::Vector
 end
 
+get_matching_seq(entry::Entry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
+
+
 abstract type Turn end
 
 struct LeftTurn <: Turn end
@@ -42,8 +45,8 @@ mutable struct SolutionBranch
     children::Vector{SolutionBranch}
     example_count::Int64
     created_vars::Int64
-    ops_by_input::Dict{String,Vector{ProgramBlock}}
-    ops_by_output::Dict{String,Vector{ProgramBlock}}
+    ops_by_input::MultiDict{String,ProgramBlock}
+    ops_by_output::MultiDict{String,ProgramBlock}
 end
 
 
@@ -58,7 +61,18 @@ function create_start_solution(task::Task)::SolutionBranch
     end
     unknown_vars = Dict{String,Entry}("out" => Entry(return_of_type(task.task_type), task.train_outputs))
     example_count = length(task.train_outputs)
-    SolutionBranch(known_vars, unknown_vars, fill_percentages, [], nothing, [], example_count, 0, Dict(), Dict())
+    SolutionBranch(
+        known_vars,
+        unknown_vars,
+        fill_percentages,
+        [],
+        nothing,
+        [],
+        example_count,
+        0,
+        MultiDict{String,ProgramBlock}(),
+        MultiDict{String,ProgramBlock}(),
+    )
 end
 
 iter_unknown_vars(solution_ctx) = solution_ctx.unknown_vars
@@ -318,6 +332,116 @@ function capture_free_vars(p)
     (p, ts)
 end
 
+function try_evaluate_program(p, xs)
+    try
+        [run_analyzed_with_arguments(p, xs)]
+        #    TODO: allow several return values from the block s
+    catch e
+        #  We have to be a bit careful with exceptions if the
+        #     synthesized program generated an exception, then we just
+        #     terminate w/ false but if the enumeration timeout was
+        #     triggered during program evaluation, we need to pass the
+        #     exception on
+        if isa(e, UnknownPrimitive)
+            error("Unknown primitive: $(e.name)")
+        else
+            return nothing
+        end
+    end
+end
+
+function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
+    input_vals = zip(inputs...)
+    expected_outputs = [sc.unknown_vars[k] for k in block.outputs]
+
+    out_matchers = zip([get_matching_seq(exp) for exp in expected_outputs]...)
+
+    p = analyze_evaluation(block.p)
+
+    bm = Strict
+    outs = []
+    for (xs, matchers) in zip(input_vals, out_matchers)
+        v = try_evaluate_program(p, xs)
+        if isnothing(v)
+            return NoMatch, []
+        end
+        for (out_value, matcher) in zip(v, matchers)
+            m = matcher(out_value)
+            if m == NoMatch
+                return NoMatch, []
+            else
+                bm = minimal_match(bm, m)
+            end
+        end
+        push!(outs, v)
+    end
+    return bm, zip(outs...)
+end
+
+function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
+    blocks = Queue{ProgramBlock}()
+    enqueue!(blocks, block)
+    bm = Strict
+    outs = Dict()
+    while !isempty(blocks)
+        bl = dequeue!(blocks)
+        inputs = [haskey(outs, key) ? outs[key] : sc.known_vars[key].values for key in bl.inputs]
+        mv, outputs = try_run_block(sc, bl, inputs)
+        if mv == NoMatch
+            return (NoMatch, nothing)
+        else
+            for (key, out_values) in zip(bl.outputs, outputs)
+                outs[key] = out_values
+                for b in sc.ops_by_input[key]
+                    enqueue!(blocks, b)
+                end
+            end
+            bm = minimal_match(mv, bm)
+        end
+    end
+    (bm, outs)
+end
+
+function add_new_block(sc::SolutionBranch, block::ProgramBlock)
+    unknown_inputs = filter((key -> haskey(sc.unknown_vars, key)), block.inputs)
+
+    if isempty(unknown_inputs)
+        best_match, outputs = try_run_block_with_downstream(sc, block)
+        if best_match == NoMatch
+            sc
+        elseif best_match == Strict
+            #  TODO: move variable to known ones and create a branch
+            push!(sc.operations, block)
+            for key in block.inputs
+                insert!(sc.ops_by_input, key, block)
+            end
+            for key in block.outputs
+                insert!(sc.ops_by_output, key, block)
+            end
+            sc
+        else
+            #  TODO: move variable to known ones and create a branch
+            push!(sc.operations, block)
+            for key in block.inputs
+                insert!(sc.ops_by_input, key, block)
+            end
+            for key in block.outputs
+                insert!(sc.ops_by_output, key, block)
+            end
+            sc
+        end
+    else
+        push!(sc.operations, block)
+        for key in block.inputs
+            insert!(sc.ops_by_input, key, block)
+        end
+        for key in block.outputs
+            insert!(sc.ops_by_output, key, block)
+        end
+        sc
+    end
+end
+
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(timeout)
@@ -359,7 +483,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 end
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)
-                # new_sctx = add_new_block(s_ctx, new_block)
+                new_sctx = add_new_block(s_ctx, new_block)
                 # matches = get_matches(new_sctx, new_block.inputs)
 
             else

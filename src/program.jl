@@ -235,5 +235,31 @@ end
 application_parse(p::Program) = (p, [])
 
 
+analyze_evaluation(p::Abstraction) = environment -> (x -> (analyze_evaluation(p.b)(vcat([x], environment))))
+
+analyze_evaluation(p::Index) = environment -> environment[p.n]
+
+analyze_evaluation(p::Primitive) = _ -> p.code
+
+analyze_evaluation(p::Invented) = _ -> analyze_evaluation(p.b)([])
+
+function analyze_evaluation(p::Apply)
+    if isa(p.f, Apply) && isa(p.f.f, Apply) && isa(p.f.f.f, Primitive) && p.f.f.f.name == "if"
+        branch = analyze_evaluation(p.f.f.x)
+        yes = analyze_evaluation(p.f.x)
+        no = analyze_evaluation(p.x)
+        return environment -> (branch(environment) ? yes(environment) : no(environment))
+    else
+        environment -> (analyze_evaluation(p.f)(environment)(analyze_evaluation(p.x)(environment)))
+    end
+end
+
+function run_analyzed_with_arguments(p, arguments)
+    l = p([])
+    for x in arguments
+        l = l(x)
+    end
+    return l
+end
 
 include("primitives.jl")

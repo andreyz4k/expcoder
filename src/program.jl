@@ -35,11 +35,23 @@ struct Invented <: Program
     b::Program
 end
 
+struct Hole <: Program
+    t::Tp
+    grammar::Any
+end
+
+struct FreeVar <: Program
+    t::Tp
+    env_depth::Int64
+end
+
 Base.show(io::IO, p::Index) = print(io, "\$", p.n)
 Base.show(io::IO, p::Abstraction) = print(io, "(lambda ", p.b, ")")
 Base.show(io::IO, p::Apply) = print(io, "(", p.f, " ", p.x, ")")
-Base.show(io::IO, p::Primitive) = p.name == "FREE_VAR" ? print(io, "FREE_VAR(", p.t, ")") : print(io, p.name)
+Base.show(io::IO, p::Primitive) = print(io, p.name)
 Base.show(io::IO, p::Invented) = print(io, "#(", p.b, ")")
+Base.show(io::IO, ::Hole) = print(io, "??")
+Base.show(io::IO, p::FreeVar) = print(io, "FREE_VAR(", p.t, ")")
 
 
 struct ProgramBlock
@@ -222,8 +234,9 @@ closed_inference(p) = infer_program_type(empty_context, [], p)[2]
 number_of_free_parameters(p::Invented) = number_of_free_parameters(p.b)
 number_of_free_parameters(p::Abstraction) = number_of_free_parameters(p.b)
 number_of_free_parameters(p::Apply) = number_of_free_parameters(p.f) + number_of_free_parameters(p.x)
+number_of_free_parameters(p::FreeVar) = 1
 number_of_free_parameters(p::Primitive) =
-    if in(p.name, Set(["REAL", "STRING", "r_const", "FREE_VAR"]))
+    if in(p.name, Set(["REAL", "STRING", "r_const"]))
         1
     else
         0
@@ -269,4 +282,4 @@ end
 
 include("primitives.jl")
 
-copy_field = Primitive("copy",arrow(t0, t0),  (x -> x); skip_saving=true)
+copy_field = Primitive("copy", arrow(t0, t0), (x -> x); skip_saving = true)

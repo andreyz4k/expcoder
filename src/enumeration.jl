@@ -5,121 +5,9 @@ using DataStructures
 get_enumeration_timeout(timeout) = time() + timeout
 enumeration_timed_out(timeout) = time() > timeout
 
-abstract type Entry end
-
-struct ValueEntry <: Entry
-    type::Tp
-    values::Vector
-end
-
-get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
-
-match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
-    if entry.type == other.type && entry.values == other.values
-        (key, Strict, copy_field)
-    else
-        missing
-    end
-
-struct NoDataEntry <: Entry
-    type::Tp
-end
-
-get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
-match_with_task_val(entry::NoDataEntry, other::ValueEntry, key) =
-    entry.type == other.type ? (key, TypeOnly, copy_field) : missing
-
-abstract type Turn end
-
-struct LeftTurn <: Turn end
-struct RightTurn <: Turn end
-struct ArgTurn <: Turn
-    type::Tp
-end
-
-struct EnumerationState
-    skeleton::Program
-    context::Context
-    path::Vector{Turn}
-    cost::Float64
-    free_parameters::Int64
-end
-
-
-struct BlockPrototype
-    state::EnumerationState
-    input_vals::Vector{String}
-    output_vals::Vector{String}
-end
-
-mutable struct SolutionBranch
-    known_vars::Dict{String,ValueEntry}
-    unknown_vars::Dict{String,Entry}
-    fill_percentages::Dict{String,Float64}
-    operations::Vector{ProgramBlock}
-    parent::Union{Nothing,SolutionBranch}
-    children::Vector{SolutionBranch}
-    example_count::Int64
-    created_vars::Int64
-    ops_by_input::MultiDict{String,ProgramBlock}
-    ops_by_output::MultiDict{String,ProgramBlock}
-end
-
-
-function create_start_solution(task::Task)::SolutionBranch
-    known_vars = Dict{String,ValueEntry}()
-    fill_percentages = Dict{String,Float64}()
-    argument_types = arguments_of_type(task.task_type)
-    for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
-        key = "\$$i"
-        known_vars[key] = ValueEntry(t, collect(values))
-        fill_percentages[key] = 1.0
-    end
-    unknown_vars = Dict{String,Entry}("out" => ValueEntry(return_of_type(task.task_type), task.train_outputs))
-    fill_percentages["out"] = 0.0
-    example_count = length(task.train_outputs)
-    SolutionBranch(
-        known_vars,
-        unknown_vars,
-        fill_percentages,
-        [],
-        nothing,
-        [],
-        example_count,
-        0,
-        MultiDict{String,ProgramBlock}(),
-        MultiDict{String,ProgramBlock}(),
-    )
-end
-
-function create_next_var(solution_ctx)
-    solution_ctx.created_vars += 1
-    solution_ctx.created_vars - 1
-end
-
-iter_unknown_vars(solution_ctx) = solution_ctx.unknown_vars
-
-primitive_unknown(t, g) = Primitive("??", t, g; skip_saving = true)
-
-initial_enumeration_state(request, g::Grammar) =
-    EnumerationState(primitive_unknown(request, g), empty_context, [], 0.0, 0)
-
-
-initial_block_prototype(request, g::Grammar, inputs, outputs) =
-    BlockPrototype(initial_enumeration_state(request, g), inputs, outputs)
-
-
-get_candidates_for_unknown_var(sol_ctx, key, value, g) = [initial_block_prototype(value.type, g.no_context, [], [key])]
-
 
 get_argument_requests(::Index, argument_types, cg) = [(at, cg.variable_context) for at in argument_types]
-get_argument_requests(candidate::Primitive, argument_types, cg) =
-    if candidate.name == "FREE_VAR"
-        []
-    else
-        invoke(get_argument_requests, Tuple{Any,Any,Any}, candidate, argument_types, cg)
-    end
-
+get_argument_requests(::FreeVar, argumet_types, cg) = []
 get_argument_requests(candidate, argument_types, cg) = zip(argument_types, cg.contextual_library[candidate])
 
 
@@ -139,8 +27,8 @@ follow_path(skeleton::Abstraction, path) =
         error("Wrong path")
     end
 
-follow_path(skeleton::Primitive, path) =
-    if skeleton.name == "??" && isempty(path)
+follow_path(skeleton::Hole, path) =
+    if isempty(path)
         skeleton
     else
         error("Wrong path")
@@ -157,8 +45,8 @@ modify_skeleton(skeleton::Abstraction, template, path) =
         error("Wrong path")
     end
 
-modify_skeleton(skeleton::Primitive, template, path) =
-    if skeleton.name == "??" && isempty(path)
+modify_skeleton(::Hole, template, path) =
+    if isempty(path)
         template
     else
         error("Wrong path")
@@ -234,7 +122,7 @@ end
 
 
 block_state_violates_symmetry(state::EnumerationState) =
-    if isa(state.skeleton, Primitive) && state.skeleton.name == "FREE_VAR"
+    if isa(state.skeleton, FreeVar)
         true
     else
         state_violates_symmetry(state.skeleton)
@@ -250,27 +138,24 @@ end
 state_violates_symmetry(::Program) = false
 
 
-
-
-
 function block_state_successors(
     maxFreeParameters,
     cg::ContextualGrammar,
     state::EnumerationState,
 )::Vector{EnumerationState}
     current_hole = follow_path(state.skeleton, state.path)
-    if !isa(current_hole, Primitive) || current_hole.name != "??"
+    if !isa(current_hole, Hole)
         error("Error during following path")
     end
     request = current_hole.t
-    g = current_hole.code
+    g = current_hole.grammar
 
     context = state.context
     context, request = apply_context(context, request)
     if isarrow(request)
         return [
             EnumerationState(
-                modify_skeleton(state.skeleton, (Abstraction(primitive_unknown(request.arguments[2], g))), state.path),
+                modify_skeleton(state.skeleton, (Abstraction(Hole(request.arguments[2], g))), state.path),
                 context,
                 vcat(state.path, [ArgTurn(request.arguments[1])]),
                 state.cost,
@@ -282,7 +167,7 @@ function block_state_successors(
         candidates = unifying_expressions(g, environment, request, context)
         push!(
             candidates,
-            (Primitive("FREE_VAR", request, length(environment); skip_saving = true), [], context, g.log_variable),
+            (FreeVar(request, length(environment)), [], context, g.log_variable),
         )
 
         states = map(candidates) do (candidate, argument_types, context, ll)
@@ -300,7 +185,7 @@ function block_state_successors(
             else
                 application_template = candidate
                 for (a, at) in argument_requests
-                    application_template = Apply(application_template, primitive_unknown(a, at))
+                    application_template = Apply(application_template, Hole(a, at))
                 end
                 return EnumerationState(
                     modify_skeleton(state.skeleton, application_template, state.path),
@@ -320,12 +205,6 @@ function block_state_successors(
 
 end
 
-state_finished(state::EnumerationState) =
-    if isa(state.skeleton, Primitive) && state.skeleton.name == "??"
-        false
-    else
-        isempty(state.path)
-    end
 
 function replace_free_vars(p::Apply, captured, types)
     f, captured, types = replace_free_vars(p.f, captured, types)
@@ -338,12 +217,12 @@ function replace_free_vars(p::Abstraction, captured, types)
     (Abstraction(b), captured, types)
 end
 
+replace_free_vars(p::FreeVar, captured, types) =
+    (Index(p.env_depth + captured), captured + 1, vcat([p.t], types))
+
 replace_free_vars(p::Primitive, captured, types) =
-    if p.name == "FREE_VAR"
-        (Index(p.code + captured), captured + 1, vcat([p.t], types))
-    else
-        (p, captured, types)
-    end
+    (p, captured, types)
+
 replace_free_vars(p::Program, captured, types) = (p, captured, types)
 
 function capture_free_vars(p)

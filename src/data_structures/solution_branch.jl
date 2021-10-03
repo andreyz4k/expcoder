@@ -41,9 +41,54 @@ function create_start_solution(task::Task)::SolutionBranch
     )
 end
 
-function create_next_var(solution_ctx)
-    solution_ctx.created_vars += 1
-    solution_ctx.created_vars - 1
+function Base.getindex(branch::SolutionBranch, key)
+    if haskey(branch.known_vars, key)
+        return branch.known_vars[key]
+    elseif haskey(branch.unknown_vars, key)
+        return branch.unknown_vars[key]
+    elseif !isnothing(branch.parent)
+        return branch.parent[key]
+    else
+        throw(KeyError(key))
+    end
 end
+
+function isknown(branch::SolutionBranch, key)
+    if haskey(branch.known_vars, key)
+        true
+    elseif !isnothing(branch.parent)
+        isknown(branch.parent, key)
+    else
+        false
+    end
+end
+
+function create_next_var(solution_ctx)
+    if !isnothing(solution_ctx.parent)
+        return create_next_var(solution_ctx.parent)
+    else
+        solution_ctx.created_vars += 1
+        solution_ctx.created_vars - 1
+    end
+end
+
+function insert_operation(sc::SolutionBranch, block)
+    push!(sc.operations, block)
+    for key in block.inputs
+        insert!(sc.ops_by_input, key, block)
+    end
+    for key in block.outputs
+        insert!(sc.ops_by_output, key, block)
+    end
+end
+
+function downstream_ops(sc::SolutionBranch, key)
+    if isnothing(sc.parent)
+        sc.ops_by_input[key]
+    else
+        flatten([sc.ops_by_input[key], downstream_ops(sc.parent, key)])
+    end
+end
+
 
 iter_unknown_vars(solution_ctx) = solution_ctx.unknown_vars

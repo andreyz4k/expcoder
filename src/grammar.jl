@@ -154,12 +154,11 @@ function unifying_expressions(
 
     grammar_candidates = collect(skipmissing(map(g.library) do (p, t, ll)
         try
-            return_type = return_of_type(t)
-            if !might_unify(return_type, request)
+            if !might_unify(return_of_type(t), request)
                 return missing
             else
                 new_context, t = instantiate(t, context)
-                new_context = unify(new_context, return_type, request)
+                new_context = unify(new_context, return_of_type(t), request)
                 (new_context, t) = apply_context(new_context, t)
                 return (p, arguments_of_type(t), new_context, ll)
             end

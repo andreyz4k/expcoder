@@ -24,8 +24,7 @@ struct BlockPrototype
 end
 
 
-initial_enumeration_state(request, g::Grammar) =
-    EnumerationState(Hole(request, g), empty_context, [], 0.0, 0)
+initial_enumeration_state(request, g::Grammar) = EnumerationState(Hole(request, g), empty_context, [], 0.0, 0)
 
 
 initial_block_prototype(request, g::Grammar, inputs, outputs) =

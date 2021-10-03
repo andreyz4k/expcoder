@@ -22,14 +22,20 @@ ARROW = "->"
 Base.:(==)(a::TypeVariable, b::TypeVariable) = a.id == b.id
 Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.arguments == b.arguments
 
-Base.show(io::IO, t::TypeVariable) = print(io, "t$(t.id)")
-function Base.show(io::IO, t::TypeConstructor)
+Base.show(io::IO, t::Tp) = print(io, show_type(t, true)...)
+
+show_type(t::TypeVariable, is_return::Bool) = ["t", t.id]
+function show_type(t::TypeConstructor, is_return::Bool)
     if isempty(t.arguments)
-        print(io, t.name)
+        [t.name]
     elseif t.name == ARROW
-        print(io, t.arguments[1], " -> ", t.arguments[2])
+        if is_return
+            vcat(show_type(t.arguments[1], false), [" -> "], show_type(t.arguments[2], true))
+        else
+            vcat(["("], show_type(t.arguments[1], false), [" -> "], show_type(t.arguments[2], true), [")"])
+        end
     else
-        print(io, t.name, "(", join(t.arguments, ", "), ")")
+        vcat([t.name, "("], vcat([vcat(show_type(a, true), [", "]) for a in t.arguments]...)[1:end - 1], [")"])
     end
 end
 

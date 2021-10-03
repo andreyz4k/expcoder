@@ -45,13 +45,20 @@ struct FreeVar <: Program
     env_depth::Int64
 end
 
-Base.show(io::IO, p::Index) = print(io, "\$", p.n)
-Base.show(io::IO, p::Abstraction) = print(io, "(lambda ", p.b, ")")
-Base.show(io::IO, p::Apply) = print(io, "(", p.f, " ", p.x, ")")
-Base.show(io::IO, p::Primitive) = print(io, p.name)
-Base.show(io::IO, p::Invented) = print(io, "#(", p.b, ")")
-Base.show(io::IO, ::Hole) = print(io, "??")
-Base.show(io::IO, p::FreeVar) = print(io, "FREE_VAR(", p.t, ")")
+Base.show(io::IO, p::Program) = print(io, show_program(p, false)...)
+
+show_program(p::Index, is_function::Bool) = ["\$", p.n]
+show_program(p::Abstraction, is_function::Bool) = vcat(["(lambda "], show_program(p.b, false), [")"])
+show_program(p::Apply, is_function::Bool) =
+    if is_function
+        vcat(show_program(p.f, true), [" "], show_program(p.x, false))
+    else
+        vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
+    end
+show_program(p::Primitive, is_function::Bool) = [p.name]
+show_program(p::FreeVar, is_function::Bool) = ["FREE_VAR(", p.t, ")"]
+show_program(p::Hole, is_function::Bool) = ["??"]
+show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 
 
 struct ProgramBlock

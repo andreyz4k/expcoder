@@ -165,10 +165,7 @@ function block_state_successors(
     else
         environment = path_environment(state.path)
         candidates = unifying_expressions(g, environment, request, context)
-        push!(
-            candidates,
-            (FreeVar(request, length(environment)), [], context, g.log_variable),
-        )
+        push!(candidates, (FreeVar(request, length(environment)), [], context, g.log_variable))
 
         states = map(candidates) do (candidate, argument_types, context, ll)
             new_free_parameters = number_of_free_parameters(candidate)
@@ -217,11 +214,9 @@ function replace_free_vars(p::Abstraction, captured, types)
     (Abstraction(b), captured, types)
 end
 
-replace_free_vars(p::FreeVar, captured, types) =
-    (Index(p.env_depth + captured), captured + 1, vcat([p.t], types))
+replace_free_vars(p::FreeVar, captured, types) = (Index(p.env_depth + captured), captured + 1, vcat([p.t], types))
 
-replace_free_vars(p::Primitive, captured, types) =
-    (p, captured, types)
+replace_free_vars(p::Primitive, captured, types) = (p, captured, types)
 
 replace_free_vars(p::Program, captured, types) = (p, captured, types)
 
@@ -253,7 +248,7 @@ end
 
 function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     input_vals = zip(inputs...)
-    expected_outputs = [sc.unknown_vars[k] for k in block.outputs]
+    expected_outputs = [sc[k] for k in block.outputs]
 
     out_matchers = zip([get_matching_seq(exp) for exp in expected_outputs]...)
 
@@ -286,17 +281,17 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
     outs = Dict()
     while !isempty(blocks)
         bl = dequeue!(blocks)
-        if any(!haskey(outs, key) && !haskey(sc.known_vars, key) for key in bl.inputs)
+        if any(!haskey(outs, key) && !isknown(sc, key) for key in bl.inputs)
             continue
         end
-        inputs = [haskey(outs, key) ? outs[key] : sc.known_vars[key].values for key in bl.inputs]
+        inputs = [haskey(outs, key) ? outs[key] : sc[key].values for key in bl.inputs]
         mv, outputs = try_run_block(sc, bl, inputs)
         if mv == NoMatch
             return (NoMatch, nothing)
         else
             for (key, out_values) in zip(bl.outputs, outputs)
-                outs[key] = out_values
-                for b in sc.ops_by_input[key]
+                outs[key] = collect(out_values)
+                for b in downstream_ops(sc, key)
                     enqueue!(blocks, b)
                 end
             end
@@ -307,41 +302,48 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
 end
 
 function add_new_block(sc::SolutionBranch, block::ProgramBlock)
-    unknown_inputs = filter((key -> haskey(sc.unknown_vars, key)), block.inputs)
-
-    if isempty(unknown_inputs)
+    if all(isknown(sc, key) for key in block.inputs)
         best_match, outputs = try_run_block_with_downstream(sc, block)
         if best_match == NoMatch
             sc
         elseif best_match == Strict
-            #  TODO: move variable to known ones and create a branch
-            push!(sc.operations, block)
-            for key in block.inputs
-                insert!(sc.ops_by_input, key, block)
+            @info "Strict match"
+            insert_operation(sc, block)
+            for (key, out_values) in outputs
+                for (k, v) in value_updates(sc[key], key, out_values)
+                    delete!(sc.unknown_vars, k)
+                    sc.known_vars[k] = v
+                    sc.fill_percentages[k] = 1.0
+                end
             end
-            for key in block.outputs
-                insert!(sc.ops_by_output, key, block)
-            end
+            # TODO: compute downstream partial fill percentages
             sc
         else
-            #  TODO: move variable to known ones and create a branch
-            push!(sc.operations, block)
-            for key in block.inputs
-                insert!(sc.ops_by_input, key, block)
+            @info "Non strict match"
+            new_branch = SolutionBranch(
+                Dict{String,ValueEntry}(),
+                Dict{String,Entry}(),
+                Dict{String,Float64}(),
+                [],
+                sc,
+                [],
+                sc.example_count,
+                0,
+                MultiDict{String, ProgramBlock}(),
+                MultiDict{String, ProgramBlock}()
+            )
+            for (key, out_values) in outputs
+                for (k, v) in value_updates(sc[key], key, out_values)
+                    new_branch.known_vars[k] = v
+                    new_branch.fill_percentages[k] = 1.0
+                end
             end
-            for key in block.outputs
-                insert!(sc.ops_by_output, key, block)
-            end
-            sc
+            # TODO: compute downstream partial fill percentages
+            insert_operation(new_branch, block)
+            new_branch
         end
     else
-        push!(sc.operations, block)
-        for key in block.inputs
-            insert!(sc.ops_by_input, key, block)
-        end
-        for key in block.outputs
-            insert!(sc.ops_by_output, key, block)
-        end
+        insert_operation(sc, block)
         sc
     end
 end
@@ -410,6 +412,8 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
             end
         end
     end
+
+    @info(enumeration_timed_out(enumeration_timeout))
 
     (collect(keys(hits)), total_number_of_enumerated_programs)
 

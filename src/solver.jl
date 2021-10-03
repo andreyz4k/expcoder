@@ -7,6 +7,7 @@ include("grammar.jl")
 include("task.jl")
 include("load.jl")
 include("data_structures/data_structures.jl")
+include("pattern_matching.jl")
 include("enumeration.jl")
 include("export.jl")
 

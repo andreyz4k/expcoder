@@ -262,7 +262,7 @@ application_parse(p::Program) = (p, [])
 
 analyze_evaluation(p::Abstraction) = environment -> (x -> (analyze_evaluation(p.b)(vcat([x], environment))))
 
-analyze_evaluation(p::Index) = environment -> environment[p.n]
+analyze_evaluation(p::Index) = environment -> environment[p.n + 1]
 
 analyze_evaluation(p::Primitive) = _ -> p.code
 

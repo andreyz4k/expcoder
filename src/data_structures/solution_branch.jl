@@ -83,11 +83,14 @@ function insert_operation(sc::SolutionBranch, block)
 end
 
 function downstream_ops(sc::SolutionBranch, key)
-    if isnothing(sc.parent)
-        sc.ops_by_input[key]
-    else
-        flatten([sc.ops_by_input[key], downstream_ops(sc.parent, key)])
+    outs = []
+    if haskey(sc.ops_by_input, key)
+        push!(outs, sc.ops_by_input[key])
     end
+    if !isnothing(sc.parent)
+        push!(outs, downstream_ops(sc.parent, key))
+    end
+    flatten(outs)
 end
 
 

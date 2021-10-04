@@ -311,9 +311,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
             insert_operation(sc, block)
             for (key, out_values) in outputs
                 for (k, v) in value_updates(sc[key], key, out_values)
-                    delete!(sc.unknown_vars, k)
-                    sc.known_vars[k] = v
-                    sc.fill_percentages[k] = 1.0
+                    move_to_known(sc, k, v)
                 end
             end
             # TODO: compute downstream partial fill percentages
@@ -330,12 +328,14 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
                 sc.example_count,
                 0,
                 MultiDict{String, ProgramBlock}(),
-                MultiDict{String, ProgramBlock}()
+                MultiDict{String, ProgramBlock}(),
+                sc.updated_keys,
+                sc.target_keys,
+                sc.input_keys,
             )
             for (key, out_values) in outputs
                 for (k, v) in value_updates(sc[key], key, out_values)
-                    new_branch.known_vars[k] = v
-                    new_branch.fill_percentages[k] = 1.0
+                    set_known(new_branch, k, v)
                 end
             end
             # TODO: compute downstream partial fill percentages
@@ -348,6 +348,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
     end
 end
 
+include("extract_solution.jl")
 
 
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
@@ -377,6 +378,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
+        reset_updated_keys(s_ctx)
         dequeue!(pq)
         for child in block_state_successors(maxFreeParameters, g, bp.state)
 
@@ -387,13 +389,21 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 new_vars = map(ts) do t
                     ntv = NoDataEntry(t)
                     key = "v$(create_next_var(s_ctx))"
-                    s_ctx.unknown_vars[key] = ntv
+                    set_unknown(s_ctx, key, ntv)
                     key
                 end
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)
                 new_sctx = add_new_block(s_ctx, new_block)
-                matches = get_matches(new_sctx, new_block.inputs)
+                matches = get_matches(new_sctx)
+                @info(matches)
+                for branch in matches
+                    if is_solved(branch)
+                        solution = extract_solution(branch)
+                        @info(solution)
+                    else
+                    end
+                end
 
             else
 

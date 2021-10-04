@@ -1,14 +1,41 @@
 
-function get_matches(sc::SolutionBranch, keys)
-    @info(keys)
-    for key in keys
-        kv = sc.unknown_vars[key]
-        matched_inputs = skipmissing(match_with_task_val(kv, inp_value, k) for (k, inp_value) in sc.known_vars)
 
-        new_branches = map(matched_inputs) do (k, m, pr)
+function match_with_known_field(sc::SolutionBranch, key)
+    kv = sc[key]
+    new_branches = []
+    for (k, inp_value) in iter_known_vars(sc)
+        match = match_with_task_val(kv, inp_value, k)
+        if !ismissing(match)
+            (k, m, pr) = match
             new_block = ProgramBlock(pr, [k], [key])
-            add_new_block(sc, new_block)
+            push!(new_branches, add_new_block(sc, new_block))
         end
     end
+    new_branches
+end
 
+function get_matches(sc::SolutionBranch)
+    @info(sc.updated_keys)
+    if is_solved(sc)
+        return [sc]
+    end
+    for key in sc.updated_keys
+        if !isknown(sc, key)
+            matchers = [
+                match_with_known_field
+            ]
+        else
+            matchers = []
+        end
+        matched_results = Set()
+        for matcher in matchers
+            for new_branch in matcher(sc, key)
+                push!(matched_results, new_branch)
+            end
+        end
+        if !isempty(matched_results)
+            return vcat([get_matches(b) for b in matched_results]...)
+        end
+    end
+    return [sc]
 end

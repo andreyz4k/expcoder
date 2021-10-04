@@ -136,7 +136,7 @@ using solver: load_problems, enumerate_for_task
         ),
         "name" => "empty",
         "programTimeout" => 10,
-        "timeout" => 7,
+        "timeout" => 10,
         "verbose" => false,
         "shatter" => 10,
     )

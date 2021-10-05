@@ -8,7 +8,10 @@ function match_with_known_field(sc::SolutionBranch, key)
         if !ismissing(match)
             (k, m, pr) = match
             new_block = ProgramBlock(pr, [k], [key])
-            push!(new_branches, add_new_block(sc, new_block))
+            new_branch = add_new_block(sc, new_block)
+            if !isnothing(new_branch)
+                push!(new_branches, new_branch)
+            end
         end
     end
     new_branches

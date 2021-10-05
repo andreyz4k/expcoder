@@ -305,7 +305,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
     if all(isknown(sc, key) for key in block.inputs)
         best_match, outputs = try_run_block_with_downstream(sc, block)
         if best_match == NoMatch
-            sc
+            nothing
         elseif best_match == Strict
             @info "Strict match"
             insert_operation(sc, block)
@@ -402,8 +402,10 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)
                 new_sctx = add_new_block(s_ctx, new_block)
+                if isnothing(new_sctx)
+                    continue
+                end
                 matches = get_matches(new_sctx)
-                @info(matches)
                 for branch in matches
                     if is_solved(branch)
                         solution = extract_solution(branch)
@@ -427,7 +429,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
         end
     end
 
-    @info(enumeration_timed_out(enumeration_timeout))
+    @info(collect(keys(hits)))
 
     (collect(keys(hits)), total_number_of_enumerated_programs)
 

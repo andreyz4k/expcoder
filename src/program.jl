@@ -289,4 +289,4 @@ end
 
 include("primitives.jl")
 
-copy_field = Primitive("copy", arrow(t0, t0), (x -> x); skip_saving = true)
+copy_field = Abstraction(Index(0))

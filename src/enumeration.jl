@@ -350,6 +350,12 @@ end
 
 include("extract_solution.jl")
 
+struct Hit_result
+    hit_program::String
+    hit_prior
+    hit_likelihood
+    hit_time
+end
 
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
@@ -366,6 +372,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
     maxFreeParameters = 2
 
     pq = PriorityQueue()
+    start_time = time()
 
     #   SolutionCtx.iter_known_vars start_solution_ctx ~f:(fun ~key ~data ->
     #       List.iter (get_candidates_for_known_var start_solution_ctx key data g) ~f:(fun candidate ->
@@ -400,7 +407,15 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 for branch in matches
                     if is_solved(branch)
                         solution = extract_solution(branch)
+                        ll = task.log_likelihood_checker(task, solution)
                         @info(solution)
+                        if !isinf(ll)
+                            dt = time() - start_time
+                            hits[Hit_result(join(show_program(solution, false)), -child.cost, ll, dt)] = -child.cost + ll
+                            while length(hits) > maximum_frontier
+                                dequeue!(hits)
+                            end
+                        end
                     else
                     end
                 end

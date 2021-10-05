@@ -13,10 +13,11 @@ end
 @enum MatchResult NoMatch = 0 TypeOnly = 1 Pattern = 2 Strict = 3
 
 
-supervised_task_checker(task::Task, p::Program) =
+function supervised_task_checker(task::Task, p::Program)
+    p = analyze_evaluation(p)
     if all(
         try
-            evaluate_program(p, xs) == y
+            run_analyzed_with_arguments(p, xs) == y
         catch e
             if isa(e, UnknownPrimitive)
                 error("Unknown primitive: $(e.name)")
@@ -29,8 +30,9 @@ supervised_task_checker(task::Task, p::Program) =
     )
         0.0
     else
-        1.0
+        log(0)
     end
+end
 
 
 function build_task(handler, name, task_type, examples, test_examples)

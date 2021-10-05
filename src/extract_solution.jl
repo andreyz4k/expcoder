@@ -57,5 +57,28 @@ function extract_solution(branch::SolutionBranch)
         push!(path, ArgTurn(t0))
         append!(environment, block.outputs)
     end
-    return output
+    @info output
+    return simplify_solution(output)
+end
+
+function simplify_solution(p::Program)
+    p
+end
+
+function simplify_solution(p::Apply)
+    if isa(p.f, Abstraction) && p.f.b == Index(0)
+        return simplify_solution(p.x)
+    end
+    return Apply(simplify_solution(p.f), simplify_solution(p.x))
+end
+
+function simplify_solution(p::Abstraction)
+    if isa(p.b, Apply) && p.b.x == Index(0)
+        return simplify_solution(p.b.f)
+    end
+    simple_inner = simplify_solution(p.b)
+    # if simple_inner != p.b
+    #     return simplify_solution(Abstraction(simple_inner))
+    # end
+    Abstraction(simple_inner)
 end

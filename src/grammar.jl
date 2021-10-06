@@ -117,7 +117,7 @@ function unifying_expressions(
     #    (leaf, argument types, context with leaf return type unified with requested type, normalized log likelihood)
 
     variable_candidates = collect(skipmissing(map(enumerate(environment)) do (j, t)
-        p = Index(j)
+        p = Index(j - 1)
         ll = g.log_variable
         (new_context, t) = apply_context(context, t)
         return_type = return_of_type(t)

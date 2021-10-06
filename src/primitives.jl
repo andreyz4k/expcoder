@@ -60,28 +60,36 @@ _is_prime(n) = in(
     ]),
 )
 
-Primitive("map", arrow(arrow(t0, t1), tlist(t0), tlist(t1)), map)
-Primitive("unfold", arrow(t0, arrow(t0, tbool), arrow(t0, t1), arrow(t0, t0), tlist(t1)), _unfold)
-Primitive("range", arrow(tint, tlist(tint)), (n -> range(0, n)))
-Primitive("index", arrow(tint, tlist(t0), t0), ((j, l) -> l[j]))
-Primitive("fold", arrow(tlist(t0), t1, arrow(t0, t1, t1), t1), ((itr, init, op) -> foldl(op, itr, init = init)))
+Primitive("map", arrow(arrow(t0, t1), tlist(t0), tlist(t1)), (f -> (xs -> map(f, xs))))
+Primitive(
+    "unfold",
+    arrow(t0, arrow(t0, tbool), arrow(t0, t1), arrow(t0, t0), tlist(t1)),
+    (x -> (p -> (h -> (n -> _unfold(x, p, h, n))))),
+)
+Primitive("range", arrow(tint, tlist(tint)), (n -> collect(0:n-1)))
+Primitive("index", arrow(tint, tlist(t0), t0), (j -> (l -> l[j])))
+Primitive(
+    "fold",
+    arrow(tlist(t0), t1, arrow(t0, t1, t1), t1),
+    (itr -> (init -> (op -> foldr((v, acc) -> op(v)(acc), itr, init = init)))),
+)
 Primitive("length", arrow(tlist(t0), tint), length)
 
 # built-ins
-Primitive("if", arrow(tbool, t0, t0, t0), ((c, t, f) -> c ? t : f))
-Primitive("+", arrow(tint, tint, tint), +)
-Primitive("-", arrow(tint, tint, tint), -)
+Primitive("if", arrow(tbool, t0, t0, t0), (c -> (t -> (f -> c ? t : f))))
+Primitive("+", arrow(tint, tint, tint), (a -> (b -> a + b)))
+Primitive("-", arrow(tint, tint, tint), (a -> (b -> a - b)))
 Primitive("empty", tlist(t0), [])
-Primitive("cons", arrow(t0, tlist(t0), tlist(t0)), ((x, y) -> vcat([x], y)))
+Primitive("cons", arrow(t0, tlist(t0), tlist(t0)), (x -> (y -> vcat([x], y))))
 Primitive("car", arrow(tlist(t0), t0), first)
 Primitive("cdr", arrow(tlist(t0), tlist(t0)), (l -> l[2:end]))
 Primitive("empty?", arrow(tlist(t0), tbool), isempty)
 
-[Primitive(string(j), tint, j) for j in 0:1]
+[Primitive(string(j), tint, j) for j = 0:1]
 
-Primitive("*", arrow(tint, tint, tint), *)
-Primitive("mod", arrow(tint, tint, tint), %)
-Primitive("gt?", arrow(tint, tint, tbool), >)
-Primitive("eq?", arrow(tint, tint, tbool), ==)
+Primitive("*", arrow(tint, tint, tint), (a -> (b -> a * b)))
+Primitive("mod", arrow(tint, tint, tint), (a -> (b -> a % b)))
+Primitive("gt?", arrow(tint, tint, tbool), (a -> (b -> a > b)))
+Primitive("eq?", arrow(tint, tint, tbool), (a -> (b -> a == b)))
 Primitive("is-prime", arrow(tint, tbool), _is_prime)
 Primitive("is-square", arrow(tint, tbool), (n -> floor(sqrt(n))^2 == n))

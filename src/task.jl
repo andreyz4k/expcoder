@@ -17,7 +17,7 @@ function supervised_task_checker(task::Task, p::Program)
     p = analyze_evaluation(p)
     if all(
         try
-            run_analyzed_with_arguments(p, [], Dict("\$i$i" => v for (i, v) in enumerate(xs))) == y
+            run_analyzed_with_arguments(p, xs, Dict()) == y
         catch e
             if isa(e, UnknownPrimitive)
                 error("Unknown primitive: $(e.name)")

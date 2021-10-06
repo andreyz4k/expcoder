@@ -42,8 +42,16 @@ end
 
 struct FreeVar <: Program
     t::Tp
-    env_depth::Int64
+    key::Union{String,Nothing}
 end
+
+
+struct LetClause <: Program
+    var_name::String
+    v::Program
+    b::Program
+end
+
 
 Base.show(io::IO, p::Program) = print(io, show_program(p, false)...)
 
@@ -56,9 +64,11 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) = ["FREE_VAR(", p.t, ")"]
+show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key]
 show_program(p::Hole, is_function::Bool) = ["??"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
+show_program(p::LetClause, is_function::Bool) =
+    vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 
 
 struct ProgramBlock
@@ -260,27 +270,45 @@ end
 application_parse(p::Program) = (p, [])
 
 
-analyze_evaluation(p::Abstraction) = environment -> (x -> (analyze_evaluation(p.b)(vcat([x], environment))))
+function analyze_evaluation(p::Abstraction)
+    b = analyze_evaluation(p.b)
+    (environment, workspace) -> (x -> (b(vcat([x], environment), workspace)))
+end
 
-analyze_evaluation(p::Index) = environment -> environment[p.n + 1]
+analyze_evaluation(p::Index) = (environment, workspace) -> environment[p.n+1]
 
-analyze_evaluation(p::Primitive) = _ -> p.code
+analyze_evaluation(p::FreeVar) = (environment, workspace) -> workspace[p.key]
 
-analyze_evaluation(p::Invented) = _ -> analyze_evaluation(p.b)([])
+analyze_evaluation(p::Primitive) = (_, _) -> p.code
+
+function analyze_evaluation(p::Invented)
+    b = analyze_evaluation(p.b)
+    (_, _) -> b([], Dict())
+end
 
 function analyze_evaluation(p::Apply)
     if isa(p.f, Apply) && isa(p.f.f, Apply) && isa(p.f.f.f, Primitive) && p.f.f.f.name == "if"
         branch = analyze_evaluation(p.f.f.x)
         yes = analyze_evaluation(p.f.x)
         no = analyze_evaluation(p.x)
-        return environment -> (branch(environment) ? yes(environment) : no(environment))
+        return (environment, workspace) ->
+            (branch(environment, workspace) ? yes(environment, workspace) : no(environment, workspace))
     else
-        environment -> (analyze_evaluation(p.f)(environment)(analyze_evaluation(p.x)(environment)))
+        f = analyze_evaluation(p.f)
+        x = analyze_evaluation(p.x)
+        (environment, workspace) -> (f(environment, workspace)(x(environment, workspace)))
     end
 end
 
-function run_analyzed_with_arguments(p, arguments)
-    l = p([])
+function analyze_evaluation(p::LetClause)
+    v = analyze_evaluation(p.v)
+    b = analyze_evaluation(p.b)
+    (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_name => v(environment, workspace))))
+
+end
+
+function run_analyzed_with_arguments(p, arguments, workspace)
+    l = p([], workspace)
     for x in arguments
         l = l(x)
     end
@@ -288,5 +316,3 @@ function run_analyzed_with_arguments(p, arguments)
 end
 
 include("primitives.jl")
-
-copy_field = Abstraction(Index(0))

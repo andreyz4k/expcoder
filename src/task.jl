@@ -17,13 +17,12 @@ function supervised_task_checker(task::Task, p::Program)
     p = analyze_evaluation(p)
     if all(
         try
-            run_analyzed_with_arguments(p, xs) == y
+            run_analyzed_with_arguments(p, [], Dict("\$i$i" => v for (i, v) in enumerate(xs))) == y
         catch e
             if isa(e, UnknownPrimitive)
                 error("Unknown primitive: $(e.name)")
-            elseif isa(e, EnumerationTimeout)
-                rethrow()
             else
+                @error e
                 false
             end
         end for (xs, y) in zip(vcat(task.train_inputs, task.test_inputs), vcat(task.train_outputs, task.test_outputs))

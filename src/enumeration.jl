@@ -165,7 +165,7 @@ function block_state_successors(
     else
         environment = path_environment(state.path)
         candidates = unifying_expressions(g, environment, request, context)
-        push!(candidates, (FreeVar(request, length(environment)), [], context, g.log_variable))
+        push!(candidates, (FreeVar(request, nothing), [], context, g.log_variable))
 
         states = map(candidates) do (candidate, argument_types, context, ll)
             new_free_parameters = number_of_free_parameters(candidate)
@@ -203,34 +203,30 @@ function block_state_successors(
 end
 
 
-function replace_free_vars(p::Apply, captured, types)
-    f, captured, types = replace_free_vars(p.f, captured, types)
-    x, captured, types = replace_free_vars(p.x, captured, types)
-    (Apply(f, x), captured, types)
+capture_free_vars(sc::SolutionBranch, p::Program) = p, []
+
+function capture_free_vars(sc::SolutionBranch, p::Apply)
+    new_f, new_keys_f = capture_free_vars(sc, p.f)
+    new_x, new_keys_x = capture_free_vars(sc, p.x)
+    Apply(new_f, new_x), vcat(new_keys_f, new_keys_x)
 end
 
-function replace_free_vars(p::Abstraction, captured, types)
-    b, captured, types = replace_free_vars(p.b, captured, types)
-    (Abstraction(b), captured, types)
+function capture_free_vars(sc::SolutionBranch, p::Abstraction)
+    new_b, new_keys = capture_free_vars(sc, p.b)
+    Abstraction(new_b), new_keys
 end
 
-replace_free_vars(p::FreeVar, captured, types) = (Index(p.env_depth + captured), captured + 1, vcat([p.t], types))
-
-replace_free_vars(p::Primitive, captured, types) = (p, captured, types)
-
-replace_free_vars(p::Program, captured, types) = (p, captured, types)
-
-function capture_free_vars(p)
-    p, free_c, ts = replace_free_vars(p, 0, [])
-    for _ = 1:free_c
-        p = Abstraction(p)
-    end
-    (p, ts)
+function capture_free_vars(sc::SolutionBranch, p::FreeVar)
+    ntv = NoDataEntry(p.t)
+    key = "\$v$(create_next_var(sc))"
+    set_unknown(sc, key, ntv)
+    FreeVar(p.t, key), [key]
 end
 
-function try_evaluate_program(p, xs)
+
+function try_evaluate_program(p, xs, workspace)
     try
-        [run_analyzed_with_arguments(p, xs)]
+        [run_analyzed_with_arguments(p, xs, workspace)]
         #    TODO: allow several return values from the block s
     catch e
         #  We have to be a bit careful with exceptions if the
@@ -240,7 +236,10 @@ function try_evaluate_program(p, xs)
         #     exception on
         if isa(e, UnknownPrimitive)
             error("Unknown primitive: $(e.name)")
+        elseif isa(e, MethodError)
+            rethrow()
         else
+            @error e
             return nothing
         end
     end
@@ -257,7 +256,7 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     bm = Strict
     outs = []
     for (xs, matchers) in zip(input_vals, out_matchers)
-        v = try_evaluate_program(p, xs)
+        v = try_evaluate_program(p, [], Dict(k => v for (k, v) in zip(block.inputs, xs)))
         if isnothing(v)
             return NoMatch, []
         end
@@ -327,8 +326,8 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
                 [],
                 sc.example_count,
                 0,
-                MultiDict{String, ProgramBlock}(),
-                MultiDict{String, ProgramBlock}(),
+                MultiDict{String,ProgramBlock}(),
+                MultiDict{String,ProgramBlock}(),
                 sc.updated_keys,
                 sc.target_keys,
                 sc.input_keys,
@@ -352,9 +351,9 @@ include("extract_solution.jl")
 
 struct Hit_result
     hit_program::String
-    hit_prior
-    hit_likelihood
-    hit_time
+    hit_prior::Any
+    hit_likelihood::Any
+    hit_time::Any
 end
 
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
@@ -366,7 +365,6 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
     hits = PriorityQueue()
-
 
     total_number_of_enumerated_programs = 0
     maxFreeParameters = 2
@@ -391,14 +389,8 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
             if state_finished(child)
                 @info(child.skeleton)
-                p, ts = capture_free_vars(child.skeleton)
-
-                new_vars = map(ts) do t
-                    ntv = NoDataEntry(t)
-                    key = "v$(create_next_var(s_ctx))"
-                    set_unknown(s_ctx, key, ntv)
-                    key
-                end
+                p, new_vars = capture_free_vars(s_ctx, child.skeleton)
+                @info(p)
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)
                 new_sctx = add_new_block(s_ctx, new_block)
@@ -413,7 +405,8 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                         @info(solution)
                         if !isinf(ll)
                             dt = time() - start_time
-                            hits[Hit_result(join(show_program(solution, false)), -child.cost, ll, dt)] = -child.cost + ll
+                            hits[Hit_result(join(show_program(solution, false)), -child.cost, ll, dt)] =
+                                -child.cost + ll
                             while length(hits) > maximum_frontier
                                 dequeue!(hits)
                             end

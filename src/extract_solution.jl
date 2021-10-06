@@ -24,61 +24,11 @@ function extract_solution(branch::SolutionBranch)
             union!(needed_keys, op.inputs)
         end
     end
-    result_blocks = reverse(result)
-    environment = []
-    path = []
-    output = Hole(t0, nothing)
-    for key in reverse(branch.input_keys)
-        output = modify_skeleton(output, Abstraction(Hole(t0, nothing)), path)
-        push!(path, ArgTurn(t0))
-        push!(environment, key)
-    end
-    for block in result_blocks
-        vars = []
-        for key in block.inputs
-            for i in 0:length(environment) - 1
-                if environment[length(environment) - i] == key
-                    push!(vars, i)
-                    break
-                end
-            end
-        end
-        op = block.p
-        for v in vars
-            op = Apply(op, Index(v))
-        end
-        if block.outputs == branch.target_keys
-            template = op
-        else
-            template = Apply(Abstraction(Hole(t0, nothing)), op)
-        end
-        output = modify_skeleton(output, template, path)
-        push!(path, LeftTurn())
-        push!(path, ArgTurn(t0))
-        append!(environment, block.outputs)
+
+    output = result[1].p
+    for block in view(result, 2:length(result))
+        output = LetClause(block.outputs[1], block.p, output)
     end
     @info output
-    return simplify_solution(output)
-end
-
-function simplify_solution(p::Program)
-    p
-end
-
-function simplify_solution(p::Apply)
-    if isa(p.f, Abstraction) && p.f.b == Index(0)
-        return simplify_solution(p.x)
-    end
-    return Apply(simplify_solution(p.f), simplify_solution(p.x))
-end
-
-function simplify_solution(p::Abstraction)
-    if isa(p.b, Apply) && p.b.x == Index(0)
-        return simplify_solution(p.b.f)
-    end
-    simple_inner = simplify_solution(p.b)
-    # if simple_inner != p.b
-    #     return simplify_solution(Abstraction(simple_inner))
-    # end
-    Abstraction(simple_inner)
+    return output
 end

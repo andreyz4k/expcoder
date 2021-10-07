@@ -203,24 +203,25 @@ function block_state_successors(
 end
 
 
-capture_free_vars(sc::SolutionBranch, p::Program) = p, []
+capture_free_vars(sc::SolutionBranch, p::Program, context) = p, []
 
-function capture_free_vars(sc::SolutionBranch, p::Apply)
-    new_f, new_keys_f = capture_free_vars(sc, p.f)
-    new_x, new_keys_x = capture_free_vars(sc, p.x)
+function capture_free_vars(sc::SolutionBranch, p::Apply, context)
+    new_f, new_keys_f = capture_free_vars(sc, p.f, context)
+    new_x, new_keys_x = capture_free_vars(sc, p.x, context)
     Apply(new_f, new_x), vcat(new_keys_f, new_keys_x)
 end
 
-function capture_free_vars(sc::SolutionBranch, p::Abstraction)
-    new_b, new_keys = capture_free_vars(sc, p.b)
+function capture_free_vars(sc::SolutionBranch, p::Abstraction, context)
+    new_b, new_keys = capture_free_vars(sc, p.b, context)
     Abstraction(new_b), new_keys
 end
 
-function capture_free_vars(sc::SolutionBranch, p::FreeVar)
-    ntv = NoDataEntry(p.t)
+function capture_free_vars(sc::SolutionBranch, p::FreeVar, context)
+    _, t = apply_context(context, p.t)
+    ntv = NoDataEntry(t)
     key = "\$v$(create_next_var(sc))"
     set_unknown(sc, key, ntv)
-    FreeVar(p.t, key), [key]
+    FreeVar(t, key), [key]
 end
 
 
@@ -385,13 +386,13 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
-        reset_updated_keys(s_ctx)
         dequeue!(pq)
         for child in block_state_successors(maxFreeParameters, g, bp.state)
 
+            reset_updated_keys(s_ctx)
             if state_finished(child)
                 @info(child.skeleton)
-                p, new_vars = capture_free_vars(s_ctx, child.skeleton)
+                p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
                 @info(p)
 
                 new_block = ProgramBlock(p, new_vars, bp.output_vals)

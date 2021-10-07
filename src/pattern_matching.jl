@@ -7,7 +7,7 @@ function match_with_known_field(sc::SolutionBranch, key)
         match = match_with_task_val(kv, inp_value, k)
         if !ismissing(match)
             (k, m, pr) = match
-            new_block = ProgramBlock(pr, [k], [key])
+            new_block = ProgramBlock(pr, [k], key)
             new_branch = add_new_block(sc, new_block)
             if !isnothing(new_branch)
                 push!(new_branches, new_branch)

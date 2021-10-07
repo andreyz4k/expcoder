@@ -227,8 +227,7 @@ end
 
 function try_evaluate_program(p, xs, workspace)
     try
-        [run_analyzed_with_arguments(p, xs, workspace)]
-        #    TODO: allow several return values from the block s
+        run_analyzed_with_arguments(p, xs, workspace)
     catch e
         #  We have to be a bit careful with exceptions if the
         #     synthesized program generated an exception, then we just
@@ -248,30 +247,35 @@ end
 
 function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     input_vals = zip(inputs...)
-    expected_outputs = [sc[k] for k in block.outputs]
+    expected_output = sc[block.output]
 
-    out_matchers = zip([get_matching_seq(exp) for exp in expected_outputs]...)
+    out_matcher = get_matching_seq(expected_output)
 
     p = analyze_evaluation(block.p)
 
     bm = Strict
     outs = []
-    for (xs, matchers) in zip(input_vals, out_matchers)
-        v = try_evaluate_program(p, [], Dict(k => v for (k, v) in zip(block.inputs, xs)))
-        if isnothing(v)
+    for (xs, matcher) in zip(input_vals, out_matcher)
+        out_value = try
+            try_evaluate_program(p, [], Dict(k => v for (k, v) in zip(block.inputs, xs)))
+        catch e
+            @error xs
+            @error block.p
+            @error Dict(k => sc[k] for k in block.inputs)
+            rethrow()
+        end
+        if isnothing(out_value)
             return NoMatch, []
         end
-        for (out_value, matcher) in zip(v, matchers)
-            m = matcher(out_value)
-            if m == NoMatch
-                return NoMatch, []
-            else
-                bm = min(bm, m)
-            end
+        m = matcher(out_value)
+        if m == NoMatch
+            return NoMatch, []
+        else
+            bm = min(bm, m)
         end
-        push!(outs, v)
+        push!(outs, out_value)
     end
-    return bm, zip(outs...)
+    return bm, outs
 end
 
 function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
@@ -289,11 +293,9 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
         if mv == NoMatch
             return (NoMatch, nothing)
         else
-            for (key, out_values) in zip(bl.outputs, outputs)
-                outs[key] = collect(out_values)
-                for b in downstream_ops(sc, key)
-                    enqueue!(blocks, b)
-                end
+            outs[bl.output] = collect(outputs)
+            for b in downstream_ops(sc, bl.output)
+                enqueue!(blocks, b)
             end
             bm = min(mv, bm)
         end
@@ -330,7 +332,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
                 MultiDict{String,ProgramBlock}(),
                 MultiDict{String,ProgramBlock}(),
                 sc.updated_keys,
-                sc.target_keys,
+                sc.target_key,
                 sc.input_keys,
             )
             for (key, out_values) in outputs
@@ -395,7 +397,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
                 @info(p)
 
-                new_block = ProgramBlock(p, new_vars, bp.output_vals)
+                new_block = ProgramBlock(p, new_vars, bp.output_val)
                 new_sctx = add_new_block(s_ctx, new_block)
                 if isnothing(new_sctx)
                     continue
@@ -420,7 +422,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
             else
 
-                pq[(s_ctx, BlockPrototype(child, bp.input_vals, bp.output_vals))] = child.cost
+                pq[(s_ctx, BlockPrototype(child, bp.input_vals, bp.output_val))] = child.cost
             end
         end
     end

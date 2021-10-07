@@ -64,7 +64,7 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key]
+show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key, "(", p.t, ")"]
 show_program(p::Hole, is_function::Bool) = ["??"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::LetClause, is_function::Bool) =
@@ -74,7 +74,7 @@ show_program(p::LetClause, is_function::Bool) =
 struct ProgramBlock
     p::Program
     inputs::Vector{String}
-    outputs::Vector{String}
+    output::String
 end
 
 

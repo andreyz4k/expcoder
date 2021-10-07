@@ -13,7 +13,7 @@ mutable struct SolutionBranch
     ops_by_input::MultiDict{String,ProgramBlock}
     ops_by_output::MultiDict{String,ProgramBlock}
     updated_keys::Set{String}
-    target_keys::Vector{String}
+    target_key::String
     input_keys::Vector{String}
 end
 
@@ -44,7 +44,7 @@ function create_start_solution(task::Task)::SolutionBranch
         MultiDict{String,ProgramBlock}(),
         MultiDict{String,ProgramBlock}(),
         Set{String}(),
-        ["out"],
+        "out",
         input_keys,
     )
 end
@@ -110,9 +110,7 @@ function insert_operation(sc::SolutionBranch, block)
     for key in block.inputs
         insert!(sc.ops_by_input, key, block)
     end
-    for key in block.outputs
-        insert!(sc.ops_by_output, key, block)
-    end
+    insert!(sc.ops_by_output, block.output, block)
 end
 
 function downstream_ops(sc::SolutionBranch, key)
@@ -136,7 +134,7 @@ function iter_known_vars(sc::SolutionBranch)
     end
 end
 
-is_solved(sc::SolutionBranch) = all(isknown(sc, k) for k in sc.target_keys)
+is_solved(sc::SolutionBranch) = isknown(sc, sc.target_key)
 
 iter_operations(sc::SolutionBranch) =
     if isnothing(sc.parent)

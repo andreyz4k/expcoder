@@ -234,7 +234,9 @@ function try_evaluate_program(p, xs, workspace)
         #     terminate w/ false but if the enumeration timeout was
         #     triggered during program evaluation, we need to pass the
         #     exception on
-        if isa(e, UnknownPrimitive)
+        if isa(e, InterruptException)
+            rethrow()
+        elseif isa(e, UnknownPrimitive)
             error("Unknown primitive: $(e.name)")
         elseif isa(e, MethodError)
             @error(xs)

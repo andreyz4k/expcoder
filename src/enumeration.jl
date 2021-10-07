@@ -349,12 +349,14 @@ end
 
 include("extract_solution.jl")
 
-struct Hit_result
+struct HitResult
     hit_program::String
     hit_prior::Any
     hit_likelihood::Any
     hit_time::Any
 end
+
+Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 
 function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
@@ -405,7 +407,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                         @info(solution)
                         if !isinf(ll)
                             dt = time() - start_time
-                            hits[Hit_result(join(show_program(solution, false)), -child.cost, ll, dt)] =
+                            hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] =
                                 -child.cost + ll
                             while length(hits) > maximum_frontier
                                 dequeue!(hits)

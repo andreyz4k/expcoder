@@ -221,7 +221,7 @@ function capture_free_vars(sc::SolutionBranch, p::FreeVar, context)
     ntv = NoDataEntry(t)
     key = "\$v$(create_next_var(sc))"
     set_unknown(sc, key, ntv)
-    FreeVar(t, key), [key]
+    FreeVar(t, key), [(key, t)]
 end
 
 
@@ -237,6 +237,8 @@ function try_evaluate_program(p, xs, workspace)
         if isa(e, UnknownPrimitive)
             error("Unknown primitive: $(e.name)")
         elseif isa(e, MethodError)
+            @error(xs)
+            @error(workspace)
             rethrow()
         else
             @error e
@@ -288,12 +290,18 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
         if any(!haskey(outs, key) && !isknown(sc, key) for key in bl.inputs)
             continue
         end
-        inputs = [haskey(outs, key) ? outs[key] : sc[key].values for key in bl.inputs]
+        inputs = [haskey(outs, key) ? outs[key][1] : sc[key].values for key in bl.inputs]
         mv, outputs = try_run_block(sc, bl, inputs)
         if mv == NoMatch
             return (NoMatch, nothing)
         else
-            outs[bl.output] = collect(outputs)
+            return_type = return_of_type(block.type)
+            if is_polymorphic(return_type)
+                @warn "returning polymorphic type"
+                # TODO: handle polymorphic types
+            end
+            # TODO: update expected types for downstream blocks
+            outs[bl.output] = collect(outputs), return_type
             for b in downstream_ops(sc, bl.output)
                 enqueue!(blocks, b)
             end
@@ -311,8 +319,8 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
         elseif best_match == Strict
             @info "Strict match"
             insert_operation(sc, block)
-            for (key, out_values) in outputs
-                for (k, v) in value_updates(sc[key], key, out_values)
+            for (key, (out_values, t)) in outputs
+                for (k, v) in value_updates(sc[key], key, out_values, t)
                     move_to_known(sc, k, v)
                 end
             end
@@ -335,8 +343,8 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
                 sc.target_key,
                 sc.input_keys,
             )
-            for (key, out_values) in outputs
-                for (k, v) in value_updates(sc[key], key, out_values)
+            for (key, (out_values, t)) in outputs
+                for (k, v) in value_updates(sc[key], key, out_values, t)
                     set_known(new_branch, k, v)
                 end
             end
@@ -396,8 +404,14 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 @info(child.skeleton)
                 p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
                 @info(p)
+                arg_types = [v[2] for v in new_vars]
+                if isempty(arg_types)
+                    p_type = return_of_type(bp.request)
+                else
+                    p_type = arrow(arg_types..., return_of_type(bp.request))
+                end
 
-                new_block = ProgramBlock(p, new_vars, bp.output_val)
+                new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
                 new_sctx = add_new_block(s_ctx, new_block)
                 if isnothing(new_sctx)
                     continue
@@ -422,7 +436,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
             else
 
-                pq[(s_ctx, BlockPrototype(child, bp.input_vals, bp.output_val))] = child.cost
+                pq[(s_ctx, BlockPrototype(child, bp.request, bp.input_vals, bp.output_val))] = child.cost
             end
         end
     end

@@ -73,6 +73,7 @@ show_program(p::LetClause, is_function::Bool) =
 
 struct ProgramBlock
     p::Program
+    type::Tp
     inputs::Vector{String}
     output::String
 end

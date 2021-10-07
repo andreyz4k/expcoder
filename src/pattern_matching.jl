@@ -18,7 +18,7 @@ function match_with_known_field(sc::SolutionBranch, key)
 end
 
 function get_matches(sc::SolutionBranch)
-    @info(sc.updated_keys)
+    # @info(sc.updated_keys)
     if is_solved(sc)
         return [sc]
     end

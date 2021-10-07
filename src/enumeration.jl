@@ -267,6 +267,8 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
             rethrow()
         end
         if isnothing(out_value)
+            @error block.p
+            @error Dict(k => v for (k, v) in zip(block.inputs, xs))
             return NoMatch, []
         end
         m = matcher(out_value)
@@ -317,7 +319,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
         if best_match == NoMatch
             nothing
         elseif best_match == Strict
-            @info "Strict match"
+            # @info "Strict match"
             insert_operation(sc, block)
             for (key, (out_values, t)) in outputs
                 for (k, v) in value_updates(sc[key], key, out_values, t)
@@ -327,7 +329,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
             # TODO: compute downstream partial fill percentages
             sc
         else
-            @info "Non strict match"
+            # @info "Non strict match"
             new_branch = SolutionBranch(
                 Dict{String,ValueEntry}(),
                 Dict{String,Entry}(),
@@ -401,9 +403,9 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
 
             reset_updated_keys(s_ctx)
             if state_finished(child)
-                @info(child.skeleton)
+                # @info(child.skeleton)
                 p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
-                @info(p)
+                # @info(p)
                 arg_types = [v[2] for v in new_vars]
                 if isempty(arg_types)
                     p_type = return_of_type(bp.request)
@@ -421,7 +423,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                     if is_solved(branch)
                         solution = extract_solution(branch)
                         ll = task.log_likelihood_checker(task, solution)
-                        @info(solution)
+                        # @info(solution)
                         if !isinf(ll)
                             dt = time() - start_time
                             hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] =

@@ -4,12 +4,10 @@ function extract_solution(branch::SolutionBranch)
     operations_map = Dict()
     for block in iter_operations(branch)
         if all(isknown(branch, key) for key in block.inputs)
-            for key in block.outputs
-                operations_map[key] = block
-            end
+            operations_map[block.output] = block
         end
     end
-    needed_keys = Set(branch.target_keys)
+    needed_keys = Set([branch.target_key])
     result = []
     used_ops = Set()
     while !isempty(needed_keys)
@@ -27,7 +25,7 @@ function extract_solution(branch::SolutionBranch)
 
     output = result[1].p
     for block in view(result, 2:length(result))
-        output = LetClause(block.outputs[1], block.p, output)
+        output = LetClause(block.output, block.p, output)
     end
     # This is required because recognition and compression don't support let clauses
     output = beta_reduction(output)

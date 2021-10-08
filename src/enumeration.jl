@@ -399,48 +399,56 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
     end
 
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
-        (s_ctx, bp), pr = peek(pq)
-        dequeue!(pq)
-        for child in block_state_successors(maxFreeParameters, g, bp.state)
+        try
+            (s_ctx, bp), pr = peek(pq)
+            dequeue!(pq)
+            for child in block_state_successors(maxFreeParameters, g, bp.state)
 
-            reset_updated_keys(s_ctx)
-            if state_finished(child)
-                # @info(child.skeleton)
-                p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
-                # @info(p)
-                arg_types = [v[2] for v in new_vars]
-                if isempty(arg_types)
-                    p_type = return_of_type(bp.request)
-                else
-                    p_type = arrow(arg_types..., return_of_type(bp.request))
-                end
-
-                new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
-                new_sctx = add_new_block(s_ctx, new_block)
-                if isnothing(new_sctx)
-                    continue
-                end
-                matches = get_matches(new_sctx)
-                for branch in matches
-                    if is_solved(branch)
-                        solution = extract_solution(branch)
-                        ll = task.log_likelihood_checker(task, solution)
-                        # @info(solution)
-                        if !isinf(ll)
-                            dt = time() - start_time
-                            hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] =
-                                -child.cost + ll
-                            while length(hits) > maximum_frontier
-                                dequeue!(hits)
-                            end
-                        end
+                reset_updated_keys(s_ctx)
+                if state_finished(child)
+                    # @info(child.skeleton)
+                    p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
+                    # @info(p)
+                    arg_types = [v[2] for v in new_vars]
+                    if isempty(arg_types)
+                        p_type = return_of_type(bp.request)
                     else
+                        p_type = arrow(arg_types..., return_of_type(bp.request))
                     end
+
+                    new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
+                    new_sctx = add_new_block(s_ctx, new_block)
+                    if isnothing(new_sctx)
+                        continue
+                    end
+                    matches = get_matches(new_sctx)
+                    for branch in matches
+                        if is_solved(branch)
+                            solution = extract_solution(branch)
+                            ll = task.log_likelihood_checker(task, solution)
+                            # @info(solution)
+                            if !isinf(ll)
+                                dt = time() - start_time
+                                hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] =
+                                    -child.cost + ll
+                                while length(hits) > maximum_frontier
+                                    dequeue!(hits)
+                                end
+                            end
+                        else
+                        end
+                    end
+
+                else
+
+                    pq[(s_ctx, BlockPrototype(child, bp.request, bp.input_vals, bp.output_val))] = child.cost
                 end
-
+            end
+        catch e
+            if isa(e, InterruptException)
+                break
             else
-
-                pq[(s_ctx, BlockPrototype(child, bp.request, bp.input_vals, bp.output_val))] = child.cost
+                rethrow()
             end
         end
     end

@@ -8,7 +8,11 @@ using JSON
 
 function run_with_timeout(seconds, pid, name, semaphore, available_workers, workers_info_lock, payload)
     fut = @spawnat pid solver.run_solving_process(payload)
-    timer_fut = @async isready(fut)
+    timer_fut = @async begin
+        while !isready(fut)
+        end
+        true
+    end
     Timer(seconds + 1) do _
         istaskdone(timer_fut) || interrupt(pid)
     end

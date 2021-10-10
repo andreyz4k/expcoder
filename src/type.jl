@@ -109,7 +109,7 @@ arguments_of_type(t::TypeConstructor) =
         return []
     end
 
-arguments_of_type(::Any) = []
+arguments_of_type(::TypeVariable) = []
 
 return_of_type(t::TypeConstructor) =
     if t.name == ARROW
@@ -118,7 +118,7 @@ return_of_type(t::TypeConstructor) =
         t
     end
 
-return_of_type(t::Any) = t
+return_of_type(t::TypeVariable) = t
 
 occurs(i::Int64, t::TypeVariable) = t.id == i
 occurs(i::Int64, t::TypeConstructor) =

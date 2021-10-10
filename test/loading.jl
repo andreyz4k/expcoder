@@ -242,6 +242,73 @@ using solver: load_problems, enumerate_for_task
         "verbose" => false,
         "shatter" => 10,
     )
+
+    payload4 = Dict{String,Any}(
+        "DSL" => Dict{String,Any}(
+            "logVariable" => 0.0,
+            "productions" => Any[
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "map"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "range"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "index"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "fold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "length"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "if"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "+"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "-"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cons"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "car"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "0"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "1"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "*"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "mod"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+            ],
+        ),
+        "task" => Dict{String,Any}(
+            "name" => "len",
+            "maximumFrontier" => 10,
+            "examples" => Any[
+                Dict{String,Any}("output" => 3, "inputs" => Any[Any[1, 2, 3]]),
+                Dict{String,Any}("output" => 1, "inputs" => Any[Any[0]]),
+                Dict{String,Any}("output" => 4, "inputs" => Any[Any[1, 1, 2, 1]]),
+                Dict{String,Any}("output" => 2, "inputs" => Any[Any[2, 9]]),
+                Dict{String,Any}("output" => 1, "inputs" => Any[Any[0]]),
+                Dict{String,Any}("output" => 7, "inputs" => Any[Any[10, 14, 8, 2, 12, 10, 3]]),
+                Dict{String,Any}("output" => 0, "inputs" => Any[Any[]]),
+                Dict{String,Any}("output" => 2, "inputs" => Any[Any[2, 7]]),
+                Dict{String,Any}("output" => 5, "inputs" => Any[Any[13, 11, 10, 12, 13]]),
+                Dict{String,Any}("output" => 1, "inputs" => Any[Any[15]]),
+                Dict{String,Any}("output" => 5, "inputs" => Any[Any[5, 6, 2, 8, 9]]),
+                Dict{String,Any}("output" => 0, "inputs" => Any[Any[]]),
+                Dict{String,Any}("output" => 1, "inputs" => Any[Any[3]]),
+                Dict{String,Any}("output" => 3, "inputs" => Any[Any[7, 14, 11]]),
+                Dict{String,Any}("output" => 6, "inputs" => Any[Any[15, 15, 0, 1, 3, 16]]),
+            ],
+            "test_examples" => Any[],
+            "request" => Dict{String,Any}(
+                "arguments" => Any[
+                    Dict{String,Any}(
+                        "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
+                        "constructor" => "list",
+                    ),
+                    Dict{String,Any}("arguments" => Any[], "constructor" => "int"),
+                ],
+                "constructor" => "->",
+            ),
+        ),
+        "name" => "len",
+        "programTimeout" => 40,
+        "timeout" => 40,
+        "verbose" => false,
+        "shatter" => 10,
+    )
     @testset "full loading" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, _verbose = load_problems(payload1)
     end
@@ -256,8 +323,13 @@ using solver: load_problems, enumerate_for_task
         solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
     end
 
-    @testset "try_enumerate3" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload3)
+    # @testset "try_enumerate3" begin
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload3)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    # end
+
+    @testset "try_enumerate4" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload4)
         solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
     end
 end

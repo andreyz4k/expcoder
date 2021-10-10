@@ -243,7 +243,7 @@ function try_evaluate_program(p, xs, workspace)
             @error(workspace)
             rethrow()
         else
-            @error e
+            # @error e
             return nothing
         end
     end
@@ -269,8 +269,8 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
             rethrow()
         end
         if isnothing(out_value)
-            @error block.p
-            @error Dict(k => v for (k, v) in zip(block.inputs, xs))
+            # @error block.p
+            # @error Dict(k => v for (k, v) in zip(block.inputs, xs))
             return NoMatch, []
         end
         m = matcher(out_value)
@@ -324,8 +324,12 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
             # @info "Strict match"
             insert_operation(sc, block)
             for (key, (out_values, t)) in outputs
-                for (k, v) in value_updates(sc[key], key, out_values, t)
+                known_updates, unknown_updates = value_updates(sc, key, out_values, t)
+                for (k, v) in known_updates
                     move_to_known(sc, k, v)
+                end
+                for (k, v) in unknown_updates
+                    set_unknown(sc, k, v)
                 end
             end
             # TODO: compute downstream partial fill percentages
@@ -348,8 +352,12 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock)
                 sc.input_keys,
             )
             for (key, (out_values, t)) in outputs
-                for (k, v) in value_updates(sc[key], key, out_values, t)
+                known_updates, unknown_updates = value_updates(sc, key, out_values, t)
+                for (k, v) in known_updates
                     set_known(new_branch, k, v)
+                end
+                for (k, v) in unknown_updates
+                    set_unknown(new_branch, k, v)
                 end
             end
             # TODO: compute downstream partial fill percentages

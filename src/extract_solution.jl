@@ -29,7 +29,7 @@ function extract_solution(branch::SolutionBranch)
     ready_to_add = Set()
     filled_keys = Set()
     for key in branch.input_keys
-        union!(ready_to_add, result_ops[key])
+        union!(ready_to_add, get(result_ops, key, []))
         push!(filled_keys, key)
     end
     while !isempty(ready_to_add)

@@ -7,6 +7,7 @@ using JSON
 
 
 function run_with_timeout(seconds, pid, name, semaphore, available_workers, workers_info_lock, payload)
+    @info "sending to pid $pid payload $payload"
     fut = @spawnat pid solver.run_solving_process(payload)
     timer_fut = @async begin
         while !isready(fut)
@@ -52,6 +53,7 @@ end
 
 
 function main()
+    @everywhere solver.init_logger()
     conn = RedisConnection()
     semaphore = Base.Semaphore(length(workers()))
     available_workers = Dict(w => true for w in workers())
@@ -60,7 +62,7 @@ function main()
     while true
         @info "waiting message"
         queue, message = blpop(conn, ["commands", "tasks"], 0)
-        @info "got message" message
+        # @info "got message" message
 
         if queue == "commands" && message == "stop"
             @info "Stopping enumeration service"

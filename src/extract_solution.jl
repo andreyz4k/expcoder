@@ -17,6 +17,9 @@ function extract_solution(branch::SolutionBranch)
         end
         op = operations_map[key]
         if !in(op, used_ops)
+            if isempty(op.inputs)
+                insert!(result_ops, "", op)
+            end
             for k in op.inputs
                 insert!(result_ops, k, op)
             end
@@ -28,7 +31,7 @@ function extract_solution(branch::SolutionBranch)
     result = []
     ready_to_add = Set()
     filled_keys = Set()
-    for key in branch.input_keys
+    for key in flatten([branch.input_keys, [""]])
         union!(ready_to_add, get(result_ops, key, []))
         push!(filled_keys, key)
     end

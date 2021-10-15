@@ -37,5 +37,5 @@ function load_problems(message)
     timeout = message["timeout"]
     nCPUs = get(message, "nc", 1)
 
-    (task, maximum_frontier, grammar, max_parameters, nCPUs, timeout, verbose)
+    (task, maximum_frontier, grammar, max_parameters, nCPUs, timeout, verbose, program_timeout)
 end

@@ -378,31 +378,31 @@ using solver: load_problems, enumerate_for_task
     )
 
     # @testset "full loading" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose = load_problems(payload1)
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(payload1)
     # end
 
     # @testset "try_enumerate1" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload1)
-    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, verbose)
     # end
 
     # @testset "try_enumerate2" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload2)
-    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload2)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, verbose)
     # end
 
     # @testset "try_enumerate3" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload3)
-    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, verbose)
     # end
 
     # @testset "try_enumerate4" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload4)
-    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, verbose)
     # end
 
     @testset "try_enumerate5" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload5)
-        solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
+        solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, verbose)
     end
 end

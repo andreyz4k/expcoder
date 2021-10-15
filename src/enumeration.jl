@@ -284,7 +284,7 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     return bm, outs
 end
 
-function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
+function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
     blocks = Queue{ProgramBlock}()
     enqueue!(blocks, block)
     bm = Strict
@@ -295,10 +295,11 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
             continue
         end
         inputs = [haskey(outs, key) ? outs[key][1] : sc[key].values for key in bl.inputs]
-        mv, outputs = try_run_block(sc, bl, inputs)
-        if mv == NoMatch
+        result = @run_with_timeout timeout redis try_run_block(sc, bl, inputs)
+        if isnothing(result) || result[1] == NoMatch
             return (NoMatch, nothing)
         else
+            mv, outputs = result
             return_type = return_of_type(block.type)
             if is_polymorphic(return_type)
                 @warn "returning polymorphic type"
@@ -315,9 +316,9 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock)
     (bm, outs)
 end
 
-function add_new_block(sc::SolutionBranch, block::ProgramBlock)
+function add_new_block(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
     if all(isknown(sc, key) for key in block.inputs)
-        best_match, outputs = try_run_block_with_downstream(sc, block)
+        best_match, outputs = try_run_block_with_downstream(sc, block, timeout, redis)
         if best_match == NoMatch
             nothing
         elseif best_match == Strict
@@ -381,7 +382,7 @@ end
 
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 
-function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, verbose = true)
+function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, program_timeout, redis, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(timeout)
 
@@ -424,15 +425,15 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 end
 
                 new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
-                new_sctx = add_new_block(s_ctx, new_block)
+                new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
                 if isnothing(new_sctx)
                     continue
                 end
-                matches = get_matches(new_sctx)
+                matches = get_matches(new_sctx, program_timeout, redis)
                 for branch in matches
                     if is_solved(branch)
                         solution = extract_solution(branch)
-                        ll = task.log_likelihood_checker(task, solution)
+                        ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
                         # @info(solution)
                         if !isinf(ll)
                             dt = time() - start_time

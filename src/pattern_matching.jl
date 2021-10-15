@@ -1,6 +1,6 @@
 
 
-function match_with_known_field(sc::SolutionBranch, key)
+function match_with_known_field(sc::SolutionBranch, key, timeout, redis)
     kv = sc[key]
     new_branches = []
     for (k, inp_value) in iter_known_vars(sc)
@@ -8,7 +8,7 @@ function match_with_known_field(sc::SolutionBranch, key)
         if !ismissing(match)
             (k, m, pr) = match
             new_block = ProgramBlock(pr, arrow(inp_value.type, inp_value.type), [k], key)
-            new_branch = add_new_block(sc, new_block)
+            new_branch = add_new_block(sc, new_block, timeout, redis)
             if !isnothing(new_branch)
                 push!(new_branches, new_branch)
             end
@@ -17,7 +17,7 @@ function match_with_known_field(sc::SolutionBranch, key)
     new_branches
 end
 
-function get_matches(sc::SolutionBranch)
+function get_matches(sc::SolutionBranch, timeout, redis)
     # @info(sc.updated_keys)
     if is_solved(sc)
         return [sc]
@@ -32,12 +32,12 @@ function get_matches(sc::SolutionBranch)
         end
         matched_results = Set()
         for matcher in matchers
-            for new_branch in matcher(sc, key)
+            for new_branch in matcher(sc, key, timeout, redis)
                 push!(matched_results, new_branch)
             end
         end
         if !isempty(matched_results)
-            return vcat([get_matches(b) for b in matched_results]...)
+            return vcat([get_matches(b, timeout, redis) for b in matched_results]...)
         end
     end
     return [sc]

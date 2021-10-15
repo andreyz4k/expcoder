@@ -435,7 +435,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                         solution = extract_solution(branch)
                         ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
                         # @info(solution)
-                        if !isinf(ll)
+                        if !isnothing(ll) && !isinf(ll)
                             dt = time() - start_time
                             hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] = -child.cost + ll
                             while length(hits) > maximum_frontier

@@ -309,27 +309,100 @@ using solver: load_problems, enumerate_for_task
         "verbose" => false,
         "shatter" => 10,
     )
-    @testset "full loading" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, _verbose = load_problems(payload1)
-    end
 
-    @testset "try_enumerate1" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload1)
-        solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
-    end
+    payload5 = Dict{String,Any}(
+        "DSL" => Dict{String,Any}(
+            "logVariable" => 0.0,
+            "productions" => Any[
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "map"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "range"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "index"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "fold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "length"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "if"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "+"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "-"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cons"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "car"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "0"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "1"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "*"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "mod"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+            ],
+        ),
+        "task" => Dict{String,Any}(
+            "name" => "is-mod-k with k=1",
+            "maximumFrontier" => 10,
+            "examples" => Any[
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[4, 7, 16, 11, 10, 3, 15]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[4]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[6, 0, 14, 0, 2, 12]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[0, 6, 4, 12, 15]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[2, 16, 2, 5, 15, 6, 7]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[6, 11, 0, 11, 7, 9]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[9, 10, 4]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[1, 13, 10, 13]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[6, 1, 13, 7]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[1, 12, 3]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[14, 1]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[2, 13, 3]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[14, 13, 12, 6]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[6, 14, 7]]),
+                Dict{String,Any}("output" => true, "inputs" => Any[Any[13, 14, 7, 1, 0, 11, 0]]),
+            ],
+            "test_examples" => Any[],
+            "request" => Dict{String,Any}(
+                "arguments" => Any[
+                    Dict{String,Any}(
+                        "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
+                        "constructor" => "list",
+                    ),
+                    Dict{String,Any}("arguments" => Any[], "constructor" => "bool"),
+                ],
+                "constructor" => "->",
+            ),
+        ),
+        "name" => "is-mod-k with k=1",
+        "programTimeout" => 20,
+        "timeout" => 20,
+        "verbose" => false,
+        "shatter" => 10,
+    )
 
-    @testset "try_enumerate2" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload2)
-        solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
-    end
+    # @testset "full loading" begin
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose = load_problems(payload1)
+    # end
+
+    # @testset "try_enumerate1" begin
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload1)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    # end
+
+    # @testset "try_enumerate2" begin
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload2)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    # end
 
     # @testset "try_enumerate3" begin
     #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload3)
     #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
     # end
 
-    @testset "try_enumerate4" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload4)
+    # @testset "try_enumerate4" begin
+    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload4)
+    #     solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
+    # end
+
+    @testset "try_enumerate5" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose = load_problems(payload5)
         solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, verbose)
     end
 end

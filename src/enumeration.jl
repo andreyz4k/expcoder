@@ -423,6 +423,7 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
                 else
                     p_type = arrow(arg_types..., return_of_type(bp.request))
                 end
+                total_number_of_enumerated_programs += 1
 
                 new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
                 new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)

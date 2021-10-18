@@ -128,7 +128,15 @@ block_state_violates_symmetry(state::EnumerationState) =
         state_violates_symmetry(state.skeleton)
     end
 
-state_violates_symmetry(p::Abstraction) = state_violates_symmetry(p.b)
+has_index(p::Index, i) = p.n == i
+has_index(p::Hole, i) = true
+has_index(p::Primitive, i) = false
+has_index(p::Invented, i) = false
+has_index(p::Apply, i) = has_index(p.f, i) || has_index(p.x, i)
+has_index(p::FreeVar, i) = false
+has_index(p::Abstraction, i) = has_index(p.b, i + 1)
+
+state_violates_symmetry(p::Abstraction) = state_violates_symmetry(p.b) || !has_index(p.b, 0)
 function state_violates_symmetry(p::Apply)
     (f, a) = application_parse(p)
     return state_violates_symmetry(f) ||

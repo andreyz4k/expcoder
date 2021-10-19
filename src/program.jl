@@ -65,7 +65,7 @@ show_program(p::Apply, is_function::Bool) =
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
 show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key, "(", p.t, ")"]
-show_program(p::Hole, is_function::Bool) = ["??"]
+show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))

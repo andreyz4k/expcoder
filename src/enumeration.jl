@@ -11,30 +11,32 @@ get_argument_requests(::FreeVar, argumet_types, cg) = []
 get_argument_requests(candidate, argument_types, cg) = zip(argument_types, cg.contextual_library[candidate])
 
 
+struct WrongPath <: Exception end
+
 follow_path(skeleton::Apply, path) =
     if isa(path[1], LeftTurn)
         follow_path(skeleton.f, view(path, 2:length(path)))
     elseif isa(path[1], RightTurn)
         follow_path(skeleton.x, view(path, 2:length(path)))
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
 follow_path(skeleton::Abstraction, path) =
     if isa(path[1], ArgTurn)
         follow_path(skeleton.b, view(path, 2:length(path)))
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
 follow_path(skeleton::Hole, path) =
     if isempty(path)
         skeleton
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
-follow_path(::Any, path) = error("Wrong path")
+follow_path(::Any, path) = throw(WrongPath())
 
 path_environment(path) = reverse([t.type for t in path if isa(t, ArgTurn)])
 
@@ -42,14 +44,14 @@ modify_skeleton(skeleton::Abstraction, template, path) =
     if isa(path[1], ArgTurn)
         Abstraction(modify_skeleton(skeleton.b, template, view(path, 2:length(path))))
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
 modify_skeleton(::Hole, template, path) =
     if isempty(path)
         template
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
 modify_skeleton(skeleton::Apply, template, path) =
@@ -58,11 +60,10 @@ modify_skeleton(skeleton::Apply, template, path) =
     elseif isa(path[1], RightTurn)
         Apply(skeleton.f, modify_skeleton(skeleton.x, template, view(path, 2:length(path))))
     else
-        error("Wrong path")
+        throw(WrongPath())
     end
 
-
-function unwind_path(path)
+function _unwind_path(path)
     k = length(path)
     while k > 0
         if isa(path[k], LeftTurn)
@@ -75,6 +76,22 @@ function unwind_path(path)
     else
         []
     end
+end
+
+function unwind_path(path, skeleton)
+    new_path = _unwind_path(path)
+    if !isempty(new_path)
+        try
+            follow_path(skeleton, new_path)
+        catch e
+            if isa(e, WrongPath)
+                return unwind_path(new_path, skeleton)
+            else
+                rethrow()
+            end
+        end
+    end
+    return new_path
 end
 
 violates_symmetry(::Program, a, n) = false
@@ -180,10 +197,11 @@ function block_state_successors(
             argument_requests = get_argument_requests(candidate, argument_types, cg)
 
             if isempty(argument_types)
+                new_skeleton = modify_skeleton(state.skeleton, candidate, state.path)
                 return EnumerationState(
-                    modify_skeleton(state.skeleton, candidate, state.path),
+                    new_skeleton,
                     context,
-                    unwind_path(state.path),
+                    unwind_path(state.path, new_skeleton),
                     state.cost - ll,
                     state.free_parameters + new_free_parameters,
                 )
@@ -225,11 +243,15 @@ function capture_free_vars(sc::SolutionBranch, p::Abstraction, context)
 end
 
 function capture_free_vars(sc::SolutionBranch, p::FreeVar, context)
-    _, t = apply_context(context, p.t)
-    ntv = NoDataEntry(t)
-    key = "\$v$(create_next_var(sc))"
-    set_unknown(sc, key, ntv)
-    FreeVar(t, key), [(key, t)]
+    if isnothing(p.key)
+        _, t = apply_context(context, p.t)
+        ntv = NoDataEntry(t)
+        key = "\$v$(create_next_var(sc))"
+        set_unknown(sc, key, ntv)
+        FreeVar(t, key), [(key, t)]
+    else
+        p, [(p.key, p.t)]
+    end
 end
 
 
@@ -259,9 +281,12 @@ end
 
 function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     input_vals = zip(inputs...)
-    expected_output = sc[block.output]
-
-    out_matcher = get_matching_seq(expected_output)
+    if haskey(sc, block.output)
+        expected_output = sc[block.output]
+        out_matcher = get_matching_seq(expected_output)
+    else
+        out_matcher = Iterators.repeated(_ -> Strict)
+    end
 
     p = analyze_evaluation(block.p)
 
@@ -310,8 +335,7 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock, 
             mv, outputs = result
             return_type = return_of_type(block.type)
             if is_polymorphic(return_type)
-                @warn "returning polymorphic type"
-                # TODO: handle polymorphic types
+                error("returning polymorphic type from $block")
             end
             # TODO: update expected types for downstream blocks
             outs[bl.output] = collect(outputs), return_type
@@ -390,7 +414,15 @@ end
 
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 
-function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontier, program_timeout, redis, verbose = true)
+function enumerate_for_task(
+    g::ContextualGrammar,
+    timeout,
+    task,
+    maximum_frontier,
+    program_timeout,
+    redis,
+    verbose = true,
+)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(timeout)
 
@@ -406,58 +438,63 @@ function enumerate_for_task(g::ContextualGrammar, timeout, task, maximum_frontie
     pq = PriorityQueue()
     start_time = time()
 
-    #   SolutionCtx.iter_known_vars start_solution_ctx ~f:(fun ~key ~data ->
-    #       List.iter (get_candidates_for_known_var start_solution_ctx key data g) ~f:(fun candidate ->
-    #           Heap.add pq (start_solution_ctx, candidate)));
+    for (key, var) in iter_known_vars(start_solution_ctx)
+        for candidate in get_candidates_for_known_var(start_solution_ctx, key, var, g)
+            pq[(start_solution_ctx, candidate)] = candidate.state.cost
+        end
+    end
     for (key, var) in iter_unknown_vars(start_solution_ctx)
         for candidate in get_candidates_for_unknown_var(start_solution_ctx, key, var, g)
-            pq[(start_solution_ctx, candidate)] = 0
+            pq[(start_solution_ctx, candidate)] = candidate.state.cost
         end
     end
 
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
         dequeue!(pq)
-        for child in block_state_successors(maxFreeParameters, g, bp.state)
-
-            reset_updated_keys(s_ctx)
-            if state_finished(child)
-                # @info(child.skeleton)
-                p, new_vars = capture_free_vars(s_ctx, child.skeleton, child.context)
-                # @info(p)
-                arg_types = [v[2] for v in new_vars]
-                if isempty(arg_types)
-                    p_type = return_of_type(bp.request)
-                else
-                    p_type = arrow(arg_types..., return_of_type(bp.request))
-                end
-                total_number_of_enumerated_programs += 1
-
-                new_block = ProgramBlock(p, p_type, [v[1] for v in new_vars], bp.output_val)
-                new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
-                if isnothing(new_sctx)
-                    continue
-                end
-                matches = get_matches(new_sctx, program_timeout, redis)
-                for branch in matches
-                    if is_solved(branch)
-                        solution = extract_solution(branch)
-                        ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
-                        # @info(solution)
-                        if !isnothing(ll) && !isinf(ll)
-                            dt = time() - start_time
-                            hits[HitResult(join(show_program(solution, false)), -child.cost, ll, dt)] = -child.cost + ll
-                            while length(hits) > maximum_frontier
-                                dequeue!(hits)
-                            end
-                        end
-                    else
-                    end
-                end
-
+        reset_updated_keys(s_ctx)
+        if state_finished(bp.state)
+            state = bp.state
+            p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
+            arg_types = [v[2] for v in input_vars]
+            if isempty(arg_types)
+                p_type = return_of_type(bp.request)
             else
+                p_type = arrow(arg_types..., return_of_type(bp.request))
+            end
+            total_number_of_enumerated_programs += 1
 
-                pq[(s_ctx, BlockPrototype(child, bp.request, bp.input_vals, bp.output_val))] = child.cost
+            if isnothing(bp.output_val)
+                output_val = "\$v$(create_next_var(s_ctx))"
+            else
+                output_val = bp.output_val
+            end
+
+            new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
+            new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
+            if isnothing(new_sctx)
+                continue
+            end
+            matches = get_matches(new_sctx, program_timeout, redis)
+            for branch in matches
+                if is_solved(branch)
+                    solution = extract_solution(branch)
+                    ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
+                    # @info(solution)
+                    if !isnothing(ll) && !isinf(ll)
+                        dt = time() - start_time
+                        hits[HitResult(join(show_program(solution, false)), -state.cost, ll, dt)] = -state.cost + ll
+                        while length(hits) > maximum_frontier
+                            dequeue!(hits)
+                        end
+                    end
+                else
+                end
+            end
+        else
+            for child in block_state_successors(maxFreeParameters, g, bp.state)
+                _, new_request = apply_context(child.context, bp.request)
+                pq[(s_ctx, BlockPrototype(child, new_request, bp.input_vals, bp.output_val))] = child.cost
             end
         end
     end

@@ -15,7 +15,12 @@ match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
         missing
     end
 
-value_updates(sc, key, new_values, t) = _value_updates(sc, sc[key], key, new_values, t)
+value_updates(sc, key, new_values, t) =
+    if haskey(sc, key)
+        _value_updates(sc, sc[key], key, new_values, t)
+    else
+        Dict(key => ValueEntry(t, new_values)), Dict()
+    end
 
 _value_updates(sc, entry::ValueEntry, key, new_values, t) = Dict(key => entry), Dict()
 

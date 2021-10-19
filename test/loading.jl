@@ -394,7 +394,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated > 850
+        @test number_enumerated > 50
     end
 
     @testset "try_enumerate empty" begin
@@ -409,7 +409,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 1603
+        @test number_enumerated == 82
     end
 
     @testset "try_enumerate append-index-k with k=5" begin
@@ -424,7 +424,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated > 1500
+        @test number_enumerated > 200
     end
 
     @testset "try_enumerate len" begin
@@ -439,7 +439,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 1517
+        @test number_enumerated == 86
     end
 
     @testset "try_enumerate is-mod-k with k=1" begin
@@ -454,6 +454,6 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 11
+        @test number_enumerated == 52
     end
 end

@@ -175,3 +175,18 @@ function unifying_expressions(
     z = lse([ll for (_, _, _, ll) in candidates])
     return [(p, t, k, ll - z) for (p, t, k, ll) in candidates]
 end
+
+function following_expressions(g::Grammar, request)
+    collect(flatten(map(g.library) do (p, t, ll)
+        output = []
+        for (i, a_type) in enumerate(arguments_of_type(t))
+            if might_unify(a_type, request)
+                context, new_t = instantiate(t, empty_context)
+                context = unify(context, arguments_of_type(new_t)[i], request)
+                context, new_t = apply_context(context, new_t)
+                push!(output, (p, new_t, context, ll, i))
+            end
+        end
+        output
+    end))
+end

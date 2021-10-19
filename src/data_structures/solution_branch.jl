@@ -61,6 +61,12 @@ function Base.getindex(branch::SolutionBranch, key)
     end
 end
 
+Base.haskey(branch::SolutionBranch, key) =
+    haskey(branch.known_vars, key) ||
+    haskey(branch.unknown_vars, key) ||
+    (!isnothing(branch.parent) && haskey(branch.parent, key))
+
+
 function set_known(branch::SolutionBranch, key, value)
     branch.known_vars[key] = value
     push!(branch.updated_keys, key)

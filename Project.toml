@@ -5,7 +5,9 @@ version = "0.1.0"
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Redis = "0cf705f9-a9e2-50d1-a699-2b372a39b750"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

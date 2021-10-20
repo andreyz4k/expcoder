@@ -130,7 +130,35 @@ function downstream_ops(sc::SolutionBranch, key)
     flatten(outs)
 end
 
-iter_unknown_vars(sc::SolutionBranch) = sc.unknown_vars
+function _iter_unknown_vars_from_parent(sc::SolutionBranch)
+    result = Any[((sc, (k, v)) for (k, v) in sc.unknown_vars)]
+    if !isnothing(sc.parent)
+        push!(
+            result,
+            (
+                (sc, (k, v)) for
+                (br, (k, v)) in _iter_unknown_vars_from_parent(sc.parent) if !haskey(sc.unknown_vars, k) && !haskey(sc.known_vars, k)
+            ),
+        )
+    end
+    flatten(result)
+end
+
+function _iter_unknown_vars_from_children(sc::SolutionBranch)
+    result = Any[((sc, (k, v)) for (k, v) in sc.unknown_vars)]
+    for child in sc.children
+        push!(result, _iter_unknown_vars_from_children(child))
+    end
+    flatten(result)
+end
+
+function iter_unknown_vars(sc::SolutionBranch)
+    result = Any[_iter_unknown_vars_from_parent(sc)]
+    for child in sc.children
+        push!(result, _iter_unknown_vars_from_children(child))
+    end
+    flatten(result)
+end
 
 function iter_known_vars(sc::SolutionBranch)
     if !isnothing(sc.parent)

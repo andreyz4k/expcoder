@@ -65,7 +65,6 @@ function get_candidates_for_known_var(sc, key, var, g::ContextualGrammar)
             ),
         )
     end
-    @info candidates
     candidates
 end
 

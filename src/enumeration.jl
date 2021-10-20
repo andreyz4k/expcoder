@@ -255,6 +255,39 @@ function capture_free_vars(sc::SolutionBranch, p::FreeVar, context)
 end
 
 
+fix_known_free_vars(sc, p::Program, context) = [(p, [], context)]
+
+function fix_known_free_vars(sc, p::Abstraction, context)
+    ((Abstraction(new_b), inp_keys, ctx) for (new_b, inp_keys, ctx) in fix_known_free_vars(sc, p.b, context))
+end
+
+function fix_known_free_vars(sc, p::Apply, context)
+    output = []
+    for (new_f, inp_keys_f, ctx) in fix_known_free_vars(sc, p.f, context)
+        for (new_x, inp_keys_x, ctx2) in fix_known_free_vars(sc, p.x, ctx)
+            push!(output, (Apply(new_f, new_x), vcat(inp_keys_f, inp_keys_x), ctx2))
+        end
+    end
+    output
+end
+
+function fix_known_free_vars(sc, p::FreeVar, context)
+    if isnothing(p.key)
+        output = []
+        ctx, t = apply_context(context, p.t)
+        for (k, v) in iter_known_vars(sc)
+            if might_unify(t, v.type)
+                new_ctx = unify(ctx, t, v.type)
+                push!(output, (FreeVar(v.type, k), [(k, v.type)], new_ctx))
+            end
+        end
+        output
+    else
+        [(p, [(p.key, p.t)], context)]
+    end
+end
+
+
 function try_evaluate_program(p, xs, workspace)
     try
         run_analyzed_with_arguments(p, xs, workspace)
@@ -414,6 +447,50 @@ end
 
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 
+function insert_new_block(
+    s_ctx,
+    hits,
+    p,
+    input_vars,
+    output_val,
+    request,
+    cost,
+    program_timeout,
+    redis,
+    start_time,
+    task,
+    maximum_frontier,
+)
+    arg_types = [v[2] for v in input_vars]
+    if isempty(arg_types)
+        p_type = return_of_type(request)
+    else
+        p_type = arrow(arg_types..., return_of_type(request))
+    end
+
+    new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
+    new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
+    if isnothing(new_sctx)
+        return
+    end
+    matches = get_matches(new_sctx, program_timeout, redis)
+    for branch in matches
+        if is_solved(branch)
+            # @info p
+            solution = extract_solution(branch)
+            ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
+            if !isnothing(ll) && !isinf(ll)
+                dt = time() - start_time
+                hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
+                while length(hits) > maximum_frontier
+                    dequeue!(hits)
+                end
+            end
+        else
+        end
+    end
+end
+
 function enumerate_for_task(
     g::ContextualGrammar,
     timeout,
@@ -443,9 +520,9 @@ function enumerate_for_task(
             pq[(start_solution_ctx, candidate)] = candidate.state.cost
         end
     end
-    for (key, var) in iter_unknown_vars(start_solution_ctx)
-        for candidate in get_candidates_for_unknown_var(start_solution_ctx, key, var, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost
+    for (sc, (key, var)) in iter_unknown_vars(start_solution_ctx)
+        for candidate in get_candidates_for_unknown_var(sc, key, var, g)
+            pq[(sc, candidate)] = candidate.state.cost
         end
     end
 
@@ -455,41 +532,44 @@ function enumerate_for_task(
         reset_updated_keys(s_ctx)
         if state_finished(bp.state)
             state = bp.state
-            p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
-            arg_types = [v[2] for v in input_vars]
-            if isempty(arg_types)
-                p_type = return_of_type(bp.request)
-            else
-                p_type = arrow(arg_types..., return_of_type(bp.request))
-            end
-            total_number_of_enumerated_programs += 1
-
             if isnothing(bp.output_val)
-                output_val = "\$v$(create_next_var(s_ctx))"
-            else
-                output_val = bp.output_val
-            end
-
-            new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
-            new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
-            if isnothing(new_sctx)
-                continue
-            end
-            matches = get_matches(new_sctx, program_timeout, redis)
-            for branch in matches
-                if is_solved(branch)
-                    solution = extract_solution(branch)
-                    ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
-                    # @info(solution)
-                    if !isnothing(ll) && !isinf(ll)
-                        dt = time() - start_time
-                        hits[HitResult(join(show_program(solution, false)), -state.cost, ll, dt)] = -state.cost + ll
-                        while length(hits) > maximum_frontier
-                            dequeue!(hits)
-                        end
-                    end
-                else
+                fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context)
+                # @info fix_options
+                for (p, input_vars, _) in fix_options
+                    output_val = "\$v$(create_next_var(s_ctx))"
+                    insert_new_block(
+                        s_ctx,
+                        hits,
+                        p,
+                        input_vars,
+                        output_val,
+                        bp.request,
+                        state.cost,
+                        program_timeout,
+                        redis,
+                        start_time,
+                        task,
+                        maximum_frontier,
+                    )
+                    total_number_of_enumerated_programs += 1
                 end
+            else
+                p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
+                insert_new_block(
+                    s_ctx,
+                    hits,
+                    p,
+                    input_vars,
+                    bp.output_val,
+                    bp.request,
+                    state.cost,
+                    program_timeout,
+                    redis,
+                    start_time,
+                    task,
+                    maximum_frontier,
+                )
+                total_number_of_enumerated_programs += 1
             end
         else
             for child in block_state_successors(maxFreeParameters, g, bp.state)

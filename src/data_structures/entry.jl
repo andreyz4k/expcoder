@@ -6,6 +6,8 @@ struct ValueEntry <: Entry
     values::Vector
 end
 
+Base.hash(v::ValueEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)
+
 get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
 
 match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
@@ -27,6 +29,7 @@ _value_updates(sc, entry::ValueEntry, key, new_values, t) = Dict(key => entry), 
 struct NoDataEntry <: Entry
     type::Tp
 end
+Base.hash(v::NoDataEntry, h::UInt64) = hash(v.type, h)
 
 get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
 match_with_task_val(entry::NoDataEntry, other::ValueEntry, key) =

@@ -15,11 +15,13 @@ include("export.jl")
 
 
 
-function run_solving_process(message, redis)
+function run_solving_process(run_context, message)
     @info "running processing"
     @info message
     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(message)
-    solutions, number_enumerated = enumerate_for_task(g, timeout, task, maximum_frontier, program_timeout, redis)
+    run_context["program_timeout"] = program_timeout
+    run_context["timeout"] = timeout
+    solutions, number_enumerated = enumerate_for_task(run_context, g, task, maximum_frontier)
     return export_frontiers(number_enumerated, task, solutions)
 end
 
@@ -67,7 +69,7 @@ function worker_loop()
             timeout = payload["timeout"]
             name = payload["name"]
             output = try
-                result = @run_with_timeout timeout redis run_solving_process(payload, redis)
+                result = @run_with_timeout timeout redis run_solving_process(Dict("redis" => redis), payload)
                 if isnothing(result)
                     result = Dict("number_enumerated" => 0, "solutions" => [])
                 end

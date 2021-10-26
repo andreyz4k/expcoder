@@ -229,29 +229,25 @@ function block_state_successors(
 end
 
 
-capture_free_vars(sc::SolutionBranch, p::Program, context) = p, []
+capture_free_vars(sc::SolutionContext, p::Program, context) = p, []
 
-function capture_free_vars(sc::SolutionBranch, p::Apply, context)
+function capture_free_vars(sc::SolutionContext, p::Apply, context)
     new_f, new_keys_f = capture_free_vars(sc, p.f, context)
     new_x, new_keys_x = capture_free_vars(sc, p.x, context)
     Apply(new_f, new_x), vcat(new_keys_f, new_keys_x)
 end
 
-function capture_free_vars(sc::SolutionBranch, p::Abstraction, context)
+function capture_free_vars(sc::SolutionContext, p::Abstraction, context)
     new_b, new_keys = capture_free_vars(sc, p.b, context)
     Abstraction(new_b), new_keys
 end
 
-function capture_free_vars(sc::SolutionBranch, p::FreeVar, context)
-    if isnothing(p.key)
-        _, t = apply_context(context, p.t)
-        ntv = NoDataEntry(t)
-        key = "\$v$(create_next_var(sc))"
-        set_unknown(sc, key, ntv)
-        FreeVar(t, key), [(key, t)]
-    else
-        p, [(p.key, p.t)]
-    end
+function capture_free_vars(sc::SolutionContext, p::FreeVar, context)
+    _, t = apply_context(context, p.t)
+    ntv = NoDataEntry(t)
+    key = "\$v$(create_next_var(sc))"
+    set_unknown(sc, key, ntv)
+    FreeVar(t, key), [(key, hash(ntv), t)]
 end
 
 
@@ -275,15 +271,16 @@ function fix_known_free_vars(sc, p::FreeVar, context)
     if isnothing(p.key)
         output = []
         ctx, t = apply_context(context, p.t)
-        for (k, v) in iter_known_vars(sc)
+        for (k, h, v) in iter_known_vars(sc)
             if might_unify(t, v.type)
                 new_ctx = unify(ctx, t, v.type)
-                push!(output, (FreeVar(v.type, k), [(k, v.type)], new_ctx))
+                push!(output, (FreeVar(v.type, k), [(k, h, v.type)], new_ctx))
             end
         end
         output
     else
-        [(p, [(p.key, p.t)], context)]
+        # TODO: deal with nothings
+        [(p, [(p.key, nothing, p.t)], context)]
     end
 end
 
@@ -312,10 +309,10 @@ function try_evaluate_program(p, xs, workspace)
     end
 end
 
-function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
+function try_run_block(sc::SolutionContext, block::ProgramBlock, inputs)
     input_vals = zip(inputs...)
-    if haskey(sc, block.output)
-        expected_output = sc[block.output]
+    if haskey(sc.var_data, block.output[1])
+        expected_output = sc.var_data[block.output[1]].options[block.output[2]].value
         out_matcher = get_matching_seq(expected_output)
     else
         out_matcher = Iterators.repeated(_ -> Strict)
@@ -350,18 +347,21 @@ function try_run_block(sc::SolutionBranch, block::ProgramBlock, inputs)
     return bm, outs
 end
 
-function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
-    blocks = Queue{ProgramBlock}()
-    enqueue!(blocks, block)
+function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, input_vars)
+    blocks = Queue{Tuple{ProgramBlock,Vector{Tuple{String,UInt64,Tp}}}}()
+    enqueue!(blocks, (block, input_vars))
     bm = Strict
     outs = Dict()
+    @info block
     while !isempty(blocks)
-        bl = dequeue!(blocks)
-        if any(!haskey(outs, key) && !isknown(sc, key) for key in bl.inputs)
+        bl, inps = dequeue!(blocks)
+        if any(!haskey(outs, inp[1]) && !isknown(sc, inp[1], inp[2]) for inp in inps)
             continue
         end
-        inputs = [haskey(outs, key) ? outs[key][1] : sc[key].values for key in bl.inputs]
-        result = @run_with_timeout timeout redis try_run_block(sc, bl, inputs)
+        inputs =
+            [haskey(outs, inp[1]) ? outs[inp[1]][1] : sc.var_data[inp[1]].options[inp[2]].value.values for inp in inps]
+        result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(sc, bl, inputs)
+        @info result
         if isnothing(result) || result[1] == NoMatch
             return (NoMatch, nothing)
         else
@@ -371,8 +371,8 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock, 
                 error("returning polymorphic type from $block")
             end
             # TODO: update expected types for downstream blocks
-            outs[bl.output] = collect(outputs), return_type
-            for b in downstream_ops(sc, bl.output)
+            outs[bl.output[1]] = collect(outputs), return_type
+            for b in sc.var_data[bl.output[1]].options[bl.output[2]].outgoing_blocks
                 enqueue!(blocks, b)
             end
             bm = min(mv, bm)
@@ -381,11 +381,11 @@ function try_run_block_with_downstream(sc::SolutionBranch, block::ProgramBlock, 
     (bm, outs)
 end
 
-function add_new_block(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
-    if all(isknown(sc, key) for key in block.inputs)
-        best_match, outputs = try_run_block_with_downstream(sc, block, timeout, redis)
+function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
+    if all(isknown(sc, key, entry_hash) for (key, entry_hash, _) in inputs)
+        best_match, outputs = try_run_block_with_downstream(run_context, sc, block, inputs)
         if best_match == NoMatch
-            nothing
+            false
         elseif best_match == Strict
             # @info "Strict match"
             insert_operation(sc, block)
@@ -402,21 +402,7 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
             sc
         else
             # @info "Non strict match"
-            new_branch = SolutionBranch(
-                Dict{String,ValueEntry}(),
-                Dict{String,Entry}(),
-                Dict{String,Float64}(),
-                [],
-                sc,
-                [],
-                sc.example_count,
-                0,
-                MultiDict{String,ProgramBlock}(),
-                MultiDict{String,ProgramBlock}(),
-                sc.updated_keys,
-                sc.target_key,
-                sc.input_keys,
-            )
+
             for (key, (out_values, t)) in outputs
                 known_updates, unknown_updates = value_updates(sc, key, out_values, t)
                 for (k, v) in known_updates
@@ -431,8 +417,8 @@ function add_new_block(sc::SolutionBranch, block::ProgramBlock, timeout, redis)
             new_branch
         end
     else
-        insert_operation(sc, block)
-        sc
+        insert_operation_no_updates(sc, block)
+        true
     end
 end
 
@@ -448,6 +434,7 @@ end
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 
 function insert_new_block(
+    run_context,
     s_ctx,
     hits,
     p,
@@ -455,13 +442,11 @@ function insert_new_block(
     output_val,
     request,
     cost,
-    program_timeout,
-    redis,
     start_time,
     task,
     maximum_frontier,
 )
-    arg_types = [v[2] for v in input_vars]
+    arg_types = [v[3] for v in input_vars]
     if isempty(arg_types)
         p_type = return_of_type(request)
     else
@@ -469,41 +454,33 @@ function insert_new_block(
     end
 
     new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
-    new_sctx = add_new_block(s_ctx, new_block, program_timeout, redis)
-    if isnothing(new_sctx)
+    @info new_block
+    if !add_new_block(run_context, s_ctx, new_block, input_vars)
         return
     end
-    matches = get_matches(new_sctx, program_timeout, redis)
-    for branch in matches
-        if is_solved(branch)
-            # @info p
-            solution = extract_solution(branch)
-            ll = @run_with_timeout program_timeout redis task.log_likelihood_checker(task, solution)
-            if !isnothing(ll) && !isinf(ll)
-                dt = time() - start_time
-                hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
-                while length(hits) > maximum_frontier
-                    dequeue!(hits)
-                end
-            end
-        else
-        end
-    end
+    matches = get_matches(run_context, s_ctx)
+    # for branch in matches
+    #     if is_solved(branch)
+    #         # @info p
+    #         solution = extract_solution(branch)
+    #         ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(task, solution)
+    #         if !isnothing(ll) && !isinf(ll)
+    #             dt = time() - start_time
+    #             hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
+    #             while length(hits) > maximum_frontier
+    #                 dequeue!(hits)
+    #             end
+    #         end
+    #     else
+    #     end
+    # end
 end
 
-function enumerate_for_task(
-    g::ContextualGrammar,
-    timeout,
-    task,
-    maximum_frontier,
-    program_timeout,
-    redis,
-    verbose = true,
-)
+function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
-    enumeration_timeout = get_enumeration_timeout(timeout)
+    enumeration_timeout = get_enumeration_timeout(run_context["timeout"])
 
-    start_solution_ctx = create_start_solution(task)
+    start_solution_ctx = create_starting_context(task)
 
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
@@ -515,15 +492,13 @@ function enumerate_for_task(
     pq = PriorityQueue()
     start_time = time()
 
-    for (key, var) in iter_known_vars(start_solution_ctx)
-        for candidate in get_candidates_for_known_var(start_solution_ctx, key, var, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost
-        end
-    end
-    for (sc, (key, var)) in iter_unknown_vars(start_solution_ctx)
-        for candidate in get_candidates_for_unknown_var(sc, key, var, g)
-            pq[(sc, candidate)] = candidate.state.cost
-        end
+    # for key in start_solution_ctx.input_keys
+    #     for candidate in get_candidates_for_known_var(start_solution_ctx, key, g)
+    #         pq[(start_solution_ctx, candidate)] = candidate.state.cost
+    #     end
+    # end
+    for candidate in get_candidates_for_unknown_var(start_solution_ctx, start_solution_ctx.target_key, g)
+        pq[(start_solution_ctx, candidate)] = candidate.state.cost
     end
 
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
@@ -538,6 +513,7 @@ function enumerate_for_task(
                 for (p, input_vars, _) in fix_options
                     output_val = "\$v$(create_next_var(s_ctx))"
                     insert_new_block(
+                        run_context,
                         s_ctx,
                         hits,
                         p,
@@ -545,8 +521,6 @@ function enumerate_for_task(
                         output_val,
                         bp.request,
                         state.cost,
-                        program_timeout,
-                        redis,
                         start_time,
                         task,
                         maximum_frontier,
@@ -556,6 +530,7 @@ function enumerate_for_task(
             else
                 p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
                 insert_new_block(
+                    run_context,
                     s_ctx,
                     hits,
                     p,
@@ -563,8 +538,6 @@ function enumerate_for_task(
                     bp.output_val,
                     bp.request,
                     state.cost,
-                    program_timeout,
-                    redis,
                     start_time,
                     task,
                     maximum_frontier,

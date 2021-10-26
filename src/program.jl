@@ -75,7 +75,7 @@ struct ProgramBlock
     p::Program
     type::Tp
     inputs::Vector{String}
-    output::String
+    output::Tuple{String,UInt64}
 end
 
 

@@ -1,6 +1,6 @@
 
 
-function extract_solution(branch::SolutionBranch)
+function extract_solution(branch::SolutionContext)
     operations_map = Dict()
     for block in iter_operations(branch)
         if all(isknown(branch, key) for key in block.inputs)
@@ -52,6 +52,7 @@ function extract_solution(branch::SolutionBranch)
     for block in view(result, length(result)-1:-1:1)
         output = LetClause(block.output, block.p, output)
     end
+    # @info output
     # This is required because recognition and compression don't support let clauses
     output = beta_reduction(output)
     output = replace_inputs(output, branch.input_keys, 0)

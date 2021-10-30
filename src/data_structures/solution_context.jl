@@ -33,11 +33,8 @@ function create_next_var(solution_ctx::SolutionContext)
     solution_ctx.created_vars += 1
 end
 
-function insert_operation(sc::SolutionContext, block::ProgramBlock, outputs)
-    @info sc
-    @info block
-    @info outputs
-    for (key, (bl, branch, input_branches)) in outputs
+function insert_operation(sc::SolutionContext, updates)
+    for (key, (bl, branch, input_branches)) in updates
         if bl.output_var[2] != branch
             bl = ProgramBlock(
                 bl.p,
@@ -52,11 +49,19 @@ function insert_operation(sc::SolutionContext, block::ProgramBlock, outputs)
             push!(branch.parent.children, branch)
         end
         push!(sc.updated_options, (key, branch))
+        for inp_branch in input_branches
+            for k in keys(inp_branch.values)
+                if !haskey(sc.var_data, k)
+                    sc.var_data[k] = inp_branch
+                    push!(sc.updated_options, (k, inp_branch))
+                end
+            end
+        end
         paths_count = 1
         for k in bl.input_vars
-            for branch in input_branches
-                if haskey(branch.values, k)
-                    item = branch.values[k]
+            for inp_branch in input_branches
+                if haskey(inp_branch.values, k)
+                    item = inp_branch.values[k]
                     push!(item.outgoing_blocks, bl)
                     if !isempty(item.incoming_blocks)
                         paths_count *= sum(values(item.incoming_blocks))
@@ -67,7 +72,6 @@ function insert_operation(sc::SolutionContext, block::ProgramBlock, outputs)
         end
         branch.values[key].incoming_blocks[bl] = paths_count
     end
-    @info sc
 end
 
 using IterTools:imap

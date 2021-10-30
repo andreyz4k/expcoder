@@ -229,23 +229,45 @@ function block_state_successors(
 end
 
 
-capture_free_vars(sc::SolutionContext, p::Program, context) = p, []
+capture_free_vars(sc::SolutionContext, p::Program, context, common_branch) = p, []
 
-function capture_free_vars(sc::SolutionContext, p::Apply, context)
-    new_f, new_keys_f = capture_free_vars(sc, p.f, context)
-    new_x, new_keys_x = capture_free_vars(sc, p.x, context)
+function capture_free_vars(sc::SolutionContext, p::Apply, context, common_branch)
+    new_f, new_keys_f = capture_free_vars(sc, p.f, context, common_branch)
+    new_x, new_keys_x = capture_free_vars(sc, p.x, context, common_branch)
     Apply(new_f, new_x), vcat(new_keys_f, new_keys_x)
 end
 
-function capture_free_vars(sc::SolutionContext, p::Abstraction, context)
-    new_b, new_keys = capture_free_vars(sc, p.b, context)
+function capture_free_vars(sc::SolutionContext, p::Abstraction, context, common_branch)
+    new_b, new_keys = capture_free_vars(sc, p.b, context, common_branch)
     Abstraction(new_b), new_keys
 end
 
-function capture_free_vars(sc::SolutionContext, p::FreeVar, context)
+function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    FreeVar(t, key), [(key, nothing, t)]
+    if !is_polymorphic(t)
+        branch = EntriesBranch(
+            Dict(
+                key => EntryBranchItem(
+                    NoDataEntry(t),
+                    Dict(),
+                    [],
+                    false
+                )
+            ),
+            nothing,
+            [],
+        )
+    else
+        common_branch.values[key] = EntryBranchItem(
+            NoDataEntry(t),
+            Dict(),
+            [],
+            false
+        )
+        branch = common_branch
+    end
+    FreeVar(t, key), [(key, branch, t)]
 end
 
 
@@ -379,15 +401,22 @@ end
 function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
     if all(isknown(branch, key) for (key, branch, _) in inputs)
         fixed_branches = Set(branch for (_, branch, _) in inputs)
-        best_match, outputs = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
+        best_match, updates = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
         if best_match == NoMatch
             false
         else
-            insert_operation(sc, block, outputs)
+            insert_operation(sc, updates)
             true
         end
     else
-        insert_operation_no_updates(sc, block)
+        updates = Dict(
+            block.output_var[1] => (
+                block,
+                block.output_var[2],
+                Set(branch for (_, branch, _) in inputs)
+            )
+        )
+        insert_operation(sc, updates)
         true
     end
 end
@@ -505,7 +534,7 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                     total_number_of_enumerated_programs += 1
                 end
             else
-                p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
+                p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, []))
                 insert_new_block(
                     run_context,
                     s_ctx,

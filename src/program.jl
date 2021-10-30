@@ -74,8 +74,8 @@ show_program(p::LetClause, is_function::Bool) =
 struct ProgramBlock
     p::Program
     type::Tp
-    inputs::Vector{String}
-    output::Tuple{String,UInt64}
+    input_vars::Vector{String}
+    output_var::Tuple{String,Any}
 end
 
 

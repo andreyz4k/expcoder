@@ -245,29 +245,13 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    if !is_polymorphic(t)
-        branch = EntriesBranch(
-            Dict(
-                key => EntryBranchItem(
-                    NoDataEntry(t),
-                    Dict(),
-                    [],
-                    false
-                )
-            ),
-            nothing,
-            [],
-        )
-    else
-        common_branch.values[key] = EntryBranchItem(
-            NoDataEntry(t),
-            Dict(),
-            [],
-            false
-        )
-        branch = common_branch
-    end
-    FreeVar(t, key), [(key, branch, t)]
+    common_branch.values[key] = EntryBranchItem(
+        NoDataEntry(t),
+        Dict(),
+        [],
+        false
+    )
+    FreeVar(t, key), [(key, common_branch, t)]
 end
 
 
@@ -369,7 +353,6 @@ function try_run_block(block::ProgramBlock, inputs)
 end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
-    bm = Strict
     outs = Dict()
     @info block
     @info fixed_branches
@@ -387,21 +370,49 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
-        mv, new_branch = result
+        bm, new_branch = result
         outs[block.output_var[1]] = block, new_branch, fixed_branches
         new_fixed_branches = union(fixed_branches, [new_branch])
         for b in new_branch.values[block.output_var[1]].outgoing_blocks
-            error("TODO: run following blocks")
+            unknown = false
+            for key in b.input_vars
+                found = false
+                for br in new_fixed_branches
+                    if haskey(br.values, key)
+                        found = true
+                        if !br.values[key].is_known
+                            unknown = true
+                        end
+                        break
+                    end
+                end
+                if !found
+                    error("Missing variable $key in fixed branches $new_fixed_branches")
+                end
+                if unknown
+                    break
+                end
+            end
+            if unknown
+                continue
+            end
+            down_match, updates = try_run_block_with_downstream(run_context, sc, b, new_fixed_branches)
+            if down_match == NoMatch
+                return (NoMatch, nothing)
+            else
+                bm = min(down_match, bm)
+                merge!(outs, updates)
+            end
         end
-        bm = min(mv, bm)
+        return (bm, outs)
     end
-    (bm, outs)
 end
 
 function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
     if all(isknown(branch, key) for (key, branch, _) in inputs)
         fixed_branches = Set(branch for (_, branch, _) in inputs)
         best_match, updates = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
+        @info updates
         if best_match == NoMatch
             false
         else

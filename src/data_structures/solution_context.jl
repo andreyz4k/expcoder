@@ -46,13 +46,15 @@ function insert_operation(sc::SolutionContext, updates)
                 bl.input_vars,
                 (bl.output_var[1], branch)
             )
+            for k in keys(branch.values)
+                push!(sc.updated_options, (k, branch))
+            end
         end
         if isnothing(branch.parent)
             sc.var_data[key] = branch
         else
             push!(branch.parent.children, branch)
         end
-        push!(sc.updated_options, (key, branch))
         for inp_branch in input_branches
             for k in keys(inp_branch.values)
                 if !haskey(sc.var_data, k)

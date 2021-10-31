@@ -13,7 +13,7 @@ struct EntriesBranch
 end
 
 function iter_options(branch::EntriesBranch, key)
-    result = [[(branch, branch.values[key])]]
+    result = Any[[(branch, branch.values[key])]]
     for child in branch.children
         push!(result, iter_options(child, key))
     end
@@ -29,7 +29,7 @@ function is_branch_compatible(key, branch, fixed_vars)
     return true
 end
 
-isknown(branch, key) = !isnothing(branch) && branch.values[key].is_known
+isknown(branch::EntriesBranch, key) = branch.values[key].is_known
 
 function value_updates(block::ProgramBlock, new_values)
     branch = block.output_var[2]
@@ -53,7 +53,7 @@ function value_updates(block::ProgramBlock, new_values)
         )
     else
         return_type = return_of_type(block.type)
-        return updated_branch(branch, key, branch.values[key], new_values, return_type)
+        return updated_branch(branch, key, branch.values[key].value, new_values, return_type)
     end
 end
 

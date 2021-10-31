@@ -6,23 +6,27 @@ mutable struct SolutionContext
     input_keys::Vector{String}
     updated_options::Set{Tuple{String,EntriesBranch}}
     example_count::Int64
+    previous_keys::Dict{String,Set{String}}
 end
 
 function create_starting_context(task::Task)::SolutionContext
     var_data = Dict{String,EntriesBranch}()
     argument_types = arguments_of_type(task.task_type)
     input_keys = []
+    previous_keys = Dict{String,Set{String}}()
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
         entry = ValueEntry(t, collect(values))
         var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), [], true)), nothing, [])
         push!(input_keys, key)
+        previous_keys[key] = Set([key])
     end
     target_key = "out"
     entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
     var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), [], false)), nothing, [])
+    previous_keys[target_key] = Set([target_key])
     example_count = length(task.train_outputs)
-    return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count)
+    return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count, previous_keys)
 end
 
 function reset_updated_keys(ctx::SolutionContext)
@@ -57,6 +61,9 @@ function insert_operation(sc::SolutionContext, updates)
                 end
             end
         end
+        if !haskey(sc.previous_keys, key)
+            sc.previous_keys[key] = Set([key])
+        end
         paths_count = 1
         for k in bl.input_vars
             for inp_branch in input_branches
@@ -69,6 +76,10 @@ function insert_operation(sc::SolutionContext, updates)
                     break
                 end
             end
+            if !haskey(sc.previous_keys, k)
+                sc.previous_keys[k] = Set([k])
+            end
+            union!(sc.previous_keys[key], sc.previous_keys[k])
         end
         branch.values[key].incoming_blocks[bl] = paths_count
     end

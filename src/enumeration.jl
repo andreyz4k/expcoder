@@ -460,7 +460,7 @@ function insert_new_block(
     if !add_new_block(run_context, s_ctx, new_block, input_vars)
         return
     end
-    # matches = get_matches(run_context, s_ctx)
+    matches = get_matches(run_context, s_ctx)
     # for branch in matches
     #     if is_solved(branch)
     #         # @info p

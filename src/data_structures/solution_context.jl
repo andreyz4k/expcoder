@@ -74,6 +74,8 @@ function insert_operation(sc::SolutionContext, updates)
                     push!(item.outgoing_blocks, bl)
                     if !isempty(item.incoming_blocks)
                         paths_count *= sum(values(item.incoming_blocks))
+                    elseif !item.is_known
+                        paths_count = 0
                     end
                     break
                 end

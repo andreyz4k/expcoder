@@ -354,8 +354,8 @@ end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
     outs = Dict()
-    @info block
-    @info fixed_branches
+    # @info block
+    # @info fixed_branches
     inputs = []
     for key in block.input_vars
         for branch in fixed_branches
@@ -366,7 +366,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
         end
     end
     result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(block, inputs)
-    @info result
+    # @info result
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
@@ -412,7 +412,7 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
     if all(isknown(branch, key) for (key, branch, _) in inputs)
         fixed_branches = Set(branch for (_, branch, _) in inputs)
         best_match, updates = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
-        @info updates
+        # @info updates
         if best_match == NoMatch
             false
         else
@@ -463,15 +463,15 @@ function insert_new_block(
         p_type = arrow(arg_types..., return_of_type(request))
     end
 
-    @info p
-    @info input_vars
-    @info output_val
+    # @info p
+    # @info input_vars
+    # @info output_val
     new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
-    @info new_block
+    # @info new_block
     if !add_new_block(run_context, s_ctx, new_block, input_vars)
         return
     end
-    matches = get_matches(run_context, s_ctx)
+    get_matches(run_context, s_ctx)
     # for branch in matches
     #     if is_solved(branch)
     #         # @info p
@@ -523,7 +523,7 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
         if state_finished(bp.state)
             state = bp.state
             if isnothing(bp.output_var)
-                @info bp.input_vars
+                # @info bp.input_vars
                 fixed_inputs = Dict(kv[1] => kv[2] for kv in bp.input_vars if !isnothing(kv))
                 fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context, fixed_inputs)
                 # @info fix_options
@@ -561,6 +561,7 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                 )
                 total_number_of_enumerated_programs += 1
             end
+            # @info s_ctx
         else
             for child in block_state_successors(maxFreeParameters, g, bp.state)
                 _, new_request = apply_context(child.context, bp.request)

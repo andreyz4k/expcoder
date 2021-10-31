@@ -49,15 +49,15 @@ function get_matches(run_context, sc::SolutionContext)
 end
 
 function _get_matches(run_context, sc::SolutionContext, checked_options)
-    @info "Start matching iteration"
-    @info(sc.updated_options)
-    @info checked_options
+    # @info "Start matching iteration"
+    # @info(sc.updated_options)
+    # @info checked_options
     for (key, branch) in sc.updated_options
         if in((key, branch), checked_options)
             continue
         end
-        @info key
-        @info branch
+        # @info key
+        # @info branch
         if !isknown(branch, key)
             matchers = [match_with_known_field]
         else

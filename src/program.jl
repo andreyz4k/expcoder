@@ -78,6 +78,7 @@ struct ProgramBlock
     output_var::Tuple{String,Any}
 end
 
+Base.show(io::IO, block::ProgramBlock) = print(io, "ProgramBlock(", block.p, ", ", block.type, ", ", block.input_vars, ", (", block.output_var[1], ", ", hash(block.output_var[2]), "))")
 
 struct UnknownPrimitive <: Exception
     name::String

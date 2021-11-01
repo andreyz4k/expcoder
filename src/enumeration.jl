@@ -245,12 +245,7 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    common_branch.values[key] = EntryBranchItem(
-        NoDataEntry(t),
-        Dict(),
-        [],
-        false
-    )
+    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), Dict(), [], false)
     FreeVar(t, key), [(key, common_branch, t)]
 end
 
@@ -258,7 +253,10 @@ end
 fix_known_free_vars(sc, p::Program, context, fixed_vars) = [(p, [], context, fixed_vars)]
 
 function fix_known_free_vars(sc, p::Abstraction, context, fixed_vars)
-    ((Abstraction(new_b), inp_keys, ctx, f_vars) for (new_b, inp_keys, ctx, f_vars) in fix_known_free_vars(sc, p.b, context, fixed_vars))
+    (
+        (Abstraction(new_b), inp_keys, ctx, f_vars) for
+        (new_b, inp_keys, ctx, f_vars) in fix_known_free_vars(sc, p.b, context, fixed_vars)
+    )
 end
 
 function fix_known_free_vars(sc, p::Apply, context, fixed_vars)
@@ -276,11 +274,14 @@ function fix_known_free_vars(sc, p::FreeVar, context, fixed_vars)
         output = []
         ctx, t = apply_context(context, p.t)
         for (k, branch, branch_item) in iter_known_vars(sc)
-            if is_branch_compatible(k, branch, fixed_vars) && might_unify(t, branch_item.value.type)
+            if is_branch_compatible(k, branch, unique(values(fixed_vars))) && might_unify(t, branch_item.value.type)
                 new_ctx = unify(ctx, t, branch_item.value.type)
                 new_f_vars = copy(fixed_vars)
                 new_f_vars[k] = branch
-                push!(output, (FreeVar(branch_item.value.type, k), [(k, branch, branch_item.value.type)], new_ctx, new_f_vars))
+                push!(
+                    output,
+                    (FreeVar(branch_item.value.type, k), [(k, branch, branch_item.value.type)], new_ctx, new_f_vars),
+                )
             end
         end
         output
@@ -354,42 +355,28 @@ end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
     outs = Dict()
-    # @info block
-    # @info fixed_branches
+    @info block
+    @info fixed_branches
     inputs = []
     for key in block.input_vars
-        for branch in fixed_branches
-            if haskey(branch.values, key)
-                push!(inputs, branch.values[key].value.values)
-                break
-            end
-        end
+        push!(inputs, fixed_branches[key].values[key].value.values)
     end
     result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(block, inputs)
-    # @info result
+    @info result
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
         bm, new_branch = result
         outs[block.output_var[1]] = block, new_branch, fixed_branches
-        new_fixed_branches = union(fixed_branches, [new_branch])
+        new_fixed_branches = merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
         for b in new_branch.values[block.output_var[1]].outgoing_blocks
             unknown = false
             for key in b.input_vars
-                found = false
-                for br in new_fixed_branches
-                    if haskey(br.values, key)
-                        found = true
-                        if !br.values[key].is_known
-                            unknown = true
-                        end
-                        break
-                    end
-                end
-                if !found
+                if !haskey(new_fixed_branches, key)
                     error("Missing variable $key in fixed branches $new_fixed_branches")
                 end
-                if unknown
+                if !new_fixed_branches[key].values[key].is_known
+                    unknown = true
                     break
                 end
             end
@@ -410,9 +397,9 @@ end
 
 function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
     if all(isknown(branch, key) for (key, branch, _) in inputs)
-        fixed_branches = Set(branch for (_, branch, _) in inputs)
+        fixed_branches = Dict(key => branch for (key, branch, _) in inputs)
         best_match, updates = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
-        # @info updates
+        @info updates
         if best_match == NoMatch
             false
         else
@@ -421,11 +408,7 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
         end
     else
         updates = Dict(
-            block.output_var[1] => (
-                block,
-                block.output_var[2],
-                Set(branch for (_, branch, _) in inputs)
-            )
+            block.output_var[1] => (block, block.output_var[2], Dict(key => branch for (key, branch, _) in inputs)),
         )
         insert_operation(sc, updates)
         true
@@ -463,15 +446,16 @@ function insert_new_block(
         p_type = arrow(arg_types..., return_of_type(request))
     end
 
-    # @info p
-    # @info input_vars
-    # @info output_val
+    @info p
+    @info input_vars
+    @info output_val
     new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
     # @info new_block
     if !add_new_block(run_context, s_ctx, new_block, input_vars)
         return
     end
     get_matches(run_context, s_ctx)
+    @info [ke[1] for ke in s_ctx.updated_options]
     # for branch in matches
     #     if is_solved(branch)
     #         # @info p
@@ -519,7 +503,6 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
         dequeue!(pq)
-        reset_updated_keys(s_ctx)
         if state_finished(bp.state)
             state = bp.state
             if isnothing(bp.output_var)
@@ -528,6 +511,7 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                 fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context, fixed_inputs)
                 # @info fix_options
                 for (p, input_vars, _, _) in fix_options
+                    reset_updated_keys(s_ctx)
                     output_var = ("\$v$(create_next_var(s_ctx))", nothing)
                     insert_new_block(
                         run_context,
@@ -545,7 +529,9 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                     total_number_of_enumerated_programs += 1
                 end
             else
-                p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, []))
+                p, input_vars =
+                    capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                reset_updated_keys(s_ctx)
                 insert_new_block(
                     run_context,
                     s_ctx,

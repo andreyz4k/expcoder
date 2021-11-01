@@ -6,10 +6,12 @@ struct EntryBranchItem
     is_known::Bool
 end
 
+# Base.show(io::IO, item::EntryBranchItem) = print(io, "EntryBranchItem(", item.value, ", ", item.incoming_blocks, "")
+
 struct EntriesBranch
     values::Dict{String,EntryBranchItem}
     parent::Union{Nothing,EntriesBranch}
-    children::Vector{EntriesBranch}
+    children::Set{EntriesBranch}
 end
 
 function iter_options(branch::EntriesBranch, key)
@@ -20,8 +22,8 @@ function iter_options(branch::EntriesBranch, key)
     flatten(result)
 end
 
-function is_branch_compatible(key, branch, fixed_vars)
-    for fixed_branch in unique(values(fixed_vars))
+function is_branch_compatible(key, branch, fixed_branches)
+    for fixed_branch in fixed_branches
         if haskey(fixed_branch.values, key)
             return fixed_branch == branch
         end
@@ -49,7 +51,7 @@ function value_updates(block::ProgramBlock, new_values)
                 )
             ),
             nothing,
-            [],
+            Set(),
         )
     else
         return_type = return_of_type(block.type)
@@ -69,7 +71,7 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
         new_branch = EntriesBranch(
             Dict(),
             branch,
-            []
+            Set()
         )
         for (k, item) in branch.values
             if k == key
@@ -101,7 +103,7 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
     new_branch = EntriesBranch(
         Dict(),
         branch,
-        [],
+        Set(),
     )
     for (k, item) in branch.values
         if k == key

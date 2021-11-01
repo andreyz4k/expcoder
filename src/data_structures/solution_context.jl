@@ -17,13 +17,13 @@ function create_starting_context(task::Task)::SolutionContext
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
         entry = ValueEntry(t, collect(values))
-        var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), [], true)), nothing, [])
+        var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), [], true)), nothing, Set())
         push!(input_keys, key)
         previous_keys[key] = Set([key])
     end
     target_key = "out"
     entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
-    var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), [], false)), nothing, [])
+    var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), [], false)), nothing, Set())
     previous_keys[target_key] = Set([target_key])
     example_count = length(task.train_outputs)
     return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count, previous_keys)
@@ -49,18 +49,16 @@ function insert_operation(sc::SolutionContext, updates)
             for k in keys(branch.values)
                 push!(sc.updated_options, (k, branch))
             end
+            if isnothing(branch.parent)
+                sc.var_data[key] = branch
+            else
+                push!(branch.parent.children, branch)
+            end
         end
-        if isnothing(branch.parent)
-            sc.var_data[key] = branch
-        else
-            push!(branch.parent.children, branch)
-        end
-        for inp_branch in input_branches
-            for k in keys(inp_branch.values)
-                if !haskey(sc.var_data, k)
-                    sc.var_data[k] = inp_branch
-                    push!(sc.updated_options, (k, inp_branch))
-                end
+        for (k, inp_branch) in input_branches
+            if !haskey(sc.var_data, k)
+                sc.var_data[k] = inp_branch
+                push!(sc.updated_options, (k, inp_branch))
             end
         end
         if !haskey(sc.previous_keys, key)
@@ -68,18 +66,15 @@ function insert_operation(sc::SolutionContext, updates)
         end
         paths_count = 1
         for k in bl.input_vars
-            for inp_branch in input_branches
-                if haskey(inp_branch.values, k)
-                    item = inp_branch.values[k]
-                    push!(item.outgoing_blocks, bl)
-                    if !isempty(item.incoming_blocks)
-                        paths_count *= sum(values(item.incoming_blocks))
-                    elseif !item.is_known
-                        paths_count = 0
-                    end
-                    break
-                end
+            item = input_branches[k].values[k]
+
+            push!(item.outgoing_blocks, bl)
+            if !isempty(item.incoming_blocks)
+                paths_count *= sum(values(item.incoming_blocks))
+            elseif !item.is_known
+                paths_count = 0
             end
+
             if !haskey(sc.previous_keys, k)
                 sc.previous_keys[k] = Set([k])
             end

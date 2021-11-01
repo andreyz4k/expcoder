@@ -371,11 +371,22 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
         new_fixed_branches = merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
         for b in new_branch.values[block.output_var[1]].outgoing_blocks
             unknown = false
+            downstream_branches = new_fixed_branches
             for key in b.input_vars
-                if !haskey(new_fixed_branches, key)
-                    error("Missing variable $key in fixed branches $new_fixed_branches")
+                if !haskey(downstream_branches, key)
+                    possible_branches = []
+                    for (br, _) in iter_options(sc.var_data[key], key)
+                        item = br.values[key]
+                        if item.is_known && in(b, item.outgoing_blocks)
+                            push!(possible_branches, br)
+                        end
+                    end
+                    if length(possible_branches) != 1
+                        error("Incorrect possible branches for variable $key $possible_branches")
+                    end
+                    downstream_branches = merge(downstream_branches, Dict(key => possible_branches[1]))
                 end
-                if !new_fixed_branches[key].values[key].is_known
+                if !downstream_branches[key].values[key].is_known
                     unknown = true
                     break
                 end
@@ -383,7 +394,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
             if unknown
                 continue
             end
-            down_match, updates = try_run_block_with_downstream(run_context, sc, b, new_fixed_branches)
+            down_match, updates = try_run_block_with_downstream(run_context, sc, b, downstream_branches)
             if down_match == NoMatch
                 return (NoMatch, nothing)
             else

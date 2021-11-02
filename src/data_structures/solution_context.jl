@@ -38,21 +38,26 @@ function create_next_var(solution_ctx::SolutionContext)
 end
 
 function insert_operation(sc::SolutionContext, updates)
-    for (key, (bl, branch, input_branches)) in updates
-        if bl.output_var[2] != branch
+    for (out_key, (bl, out_branch, input_branches)) in updates
+        if bl.output_var[2] != out_branch || any(inp_br != input_branches[k] for (k, inp_br) in bl.input_vars)
             bl = ProgramBlock(
                 bl.p,
                 bl.type,
-                bl.input_vars,
-                (bl.output_var[1], branch)
+                bl.cost,
+                [(k, input_branches[k]) for (k, _) in bl.input_vars],
+                (bl.output_var[1], out_branch)
             )
-            for k in keys(branch.values)
-                push!(sc.updated_options, (k, branch))
-            end
-            if isnothing(branch.parent)
-                sc.var_data[key] = branch
-            else
-                push!(branch.parent.children, branch)
+
+            if isnothing(out_branch.parent)
+                sc.var_data[out_key] = out_branch
+                for k in keys(out_branch.values)
+                    push!(sc.updated_options, (k, out_branch))
+                end
+            elseif !in(out_branch, out_branch.parent.children)
+                push!(out_branch.parent.children, out_branch)
+                for k in keys(out_branch.values)
+                    push!(sc.updated_options, (k, out_branch))
+                end
             end
         end
         for (k, inp_branch) in input_branches
@@ -61,12 +66,12 @@ function insert_operation(sc::SolutionContext, updates)
                 push!(sc.updated_options, (k, inp_branch))
             end
         end
-        if !haskey(sc.previous_keys, key)
-            sc.previous_keys[key] = Set([key])
+        if !haskey(sc.previous_keys, out_key)
+            sc.previous_keys[out_key] = Set([out_key])
         end
         paths_count = 1
-        for k in bl.input_vars
-            item = input_branches[k].values[k]
+        for (k, inp_branch) in bl.input_vars
+            item = inp_branch.values[k]
 
             push!(item.outgoing_blocks, bl)
             if !isempty(item.incoming_blocks)
@@ -78,9 +83,9 @@ function insert_operation(sc::SolutionContext, updates)
             if !haskey(sc.previous_keys, k)
                 sc.previous_keys[k] = Set([k])
             end
-            union!(sc.previous_keys[key], sc.previous_keys[k])
+            union!(sc.previous_keys[out_key], sc.previous_keys[k])
         end
-        branch.values[key].incoming_blocks[bl] = paths_count
+        out_branch.values[out_key].incoming_blocks[bl] = paths_count
     end
 end
 

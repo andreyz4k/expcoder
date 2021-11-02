@@ -74,11 +74,27 @@ show_program(p::LetClause, is_function::Bool) =
 struct ProgramBlock
     p::Program
     type::Tp
-    input_vars::Vector{String}
+    cost::Float64
+    input_vars::Vector{Tuple{String,Any}}
     output_var::Tuple{String,Any}
 end
 
-Base.show(io::IO, block::ProgramBlock) = print(io, "ProgramBlock(", block.p, ", ", block.type, ", ", block.input_vars, ", (", block.output_var[1], ", ", hash(block.output_var[2]), "))")
+Base.show(io::IO, block::ProgramBlock) = print(
+    io,
+    "ProgramBlock(",
+    block.p,
+    ", ",
+    block.type,
+    ", ",
+    block.cost,
+    ", ",
+    [(k, hash(br)) for (k, br) in block.input_vars],
+    ", (",
+    block.output_var[1],
+    ", ",
+    hash(block.output_var[2]),
+    "))",
+)
 
 struct UnknownPrimitive <: Exception
     name::String

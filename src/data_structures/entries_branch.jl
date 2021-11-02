@@ -123,18 +123,18 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
         end
     end
     for op in branch.values[key].outgoing_blocks
-        i = findfirst(k -> k == key, op.input_vars)
+        i = findfirst(kv -> kv[1] == key, op.input_vars)
         arg_type = arguments_of_type(op.type)[i]
         if is_polymorphic(arg_type)
             context = empty_context
             context, op_type = instantiate(op.type, context)
-            for (k, arg_type) in zip(op.input_vars, arguments_of_type(op_type))
+            for ((k, _), arg_type) in zip(op.input_vars, arguments_of_type(op_type))
                 if haskey(new_branch.values, k) && isknown(new_branch, k)
                     context = unify(context, arg_type, new_branch.values[k].value.type)
                 end
             end
             context, new_op_type = apply_context(context, op_type)
-            for (k, old_type, new_type) in zip(op.input_vars, arguments_of_type(op_type), arguments_of_type(new_op_type))
+            for ((k, _), old_type, new_type) in zip(op.input_vars, arguments_of_type(op_type), arguments_of_type(new_op_type))
                 if k != key && haskey(new_branch, k) && !isknown(new_branch, k) && old_type != new_type
                     new_branch.values[k] = EntryBranchItem(
                         NoDataEntry(new_type),

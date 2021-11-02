@@ -12,7 +12,7 @@ get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v 
 
 match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
     if entry.type == other.type && entry.values == other.values
-        (key, Strict, FreeVar(other.type, key))
+        (Strict, FreeVar(other.type, key))
     else
         missing
     end
@@ -33,7 +33,7 @@ Base.hash(v::NoDataEntry, h::UInt64) = hash(v.type, h)
 
 get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
 match_with_task_val(entry::NoDataEntry, other::ValueEntry, key) =
-    might_unify(entry.type, other.type) ? (key, TypeOnly, FreeVar(other.type, key)) : missing
+    might_unify(entry.type, other.type) ? (TypeOnly, FreeVar(other.type, key)) : missing
 
 function _value_updates(sc, entry::NoDataEntry, key, new_values, t)
     known_updates = Dict(key => ValueEntry(t, new_values))

@@ -330,7 +330,7 @@ function try_run_block(block::ProgramBlock, inputs)
     outs = []
     for (xs, matcher) in zip(input_vals, out_matcher)
         out_value = try
-            try_evaluate_program(p, [], Dict(k => v for (k, v) in zip(block.input_vars, xs)))
+            try_evaluate_program(p, [], Dict(k => v for ((k, _), v) in zip(block.input_vars, xs)))
         catch e
             @error xs
             @error block.p
@@ -355,14 +355,14 @@ end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
     outs = Dict()
-    @info block
-    @info fixed_branches
+    # @info block
+    # @info fixed_branches
     inputs = []
-    for key in block.input_vars
+    for (key, _) in block.input_vars
         push!(inputs, fixed_branches[key].values[key].value.values)
     end
     result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(block, inputs)
-    @info result
+    # @info result
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
@@ -372,19 +372,9 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
         for b in new_branch.values[block.output_var[1]].outgoing_blocks
             unknown = false
             downstream_branches = new_fixed_branches
-            for key in b.input_vars
+            for (key, br) in b.input_vars
                 if !haskey(downstream_branches, key)
-                    possible_branches = []
-                    for (br, _) in iter_options(sc.var_data[key], key)
-                        item = br.values[key]
-                        if item.is_known && in(b, item.outgoing_blocks)
-                            push!(possible_branches, br)
-                        end
-                    end
-                    if length(possible_branches) != 1
-                        error("Incorrect possible branches for variable $key $possible_branches")
-                    end
-                    downstream_branches = merge(downstream_branches, Dict(key => possible_branches[1]))
+                    downstream_branches = merge(downstream_branches, Dict(key => br))
                 end
                 if !downstream_branches[key].values[key].is_known
                     unknown = true
@@ -407,10 +397,9 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
 end
 
 function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
-    if all(isknown(branch, key) for (key, branch, _) in inputs)
-        fixed_branches = Dict(key => branch for (key, branch, _) in inputs)
-        best_match, updates = try_run_block_with_downstream(run_context, sc, block, fixed_branches)
-        @info updates
+    if all(isknown(branch, key) for (key, branch) in inputs)
+        best_match, updates = try_run_block_with_downstream(run_context, sc, block, inputs)
+        # @info updates
         if best_match == NoMatch
             false
         else
@@ -419,7 +408,7 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
         end
     else
         updates = Dict(
-            block.output_var[1] => (block, block.output_var[2], Dict(key => branch for (key, branch, _) in inputs)),
+            block.output_var[1] => (block, block.output_var[2], inputs),
         )
         insert_operation(sc, updates)
         true
@@ -436,6 +425,7 @@ struct HitResult
 end
 
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
+Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
 
 function insert_new_block(
     run_context,
@@ -460,18 +450,20 @@ function insert_new_block(
     @info p
     @info input_vars
     @info output_val
-    new_block = ProgramBlock(p, p_type, [v[1] for v in input_vars], output_val)
+    new_block = ProgramBlock(p, p_type, cost, [(v[1], v[2]) for v in input_vars], output_val)
     # @info new_block
-    if !add_new_block(run_context, s_ctx, new_block, input_vars)
+    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+    if !add_new_block(run_context, s_ctx, new_block, input_branches)
         return
     end
     get_matches(run_context, s_ctx)
     @info [ke[1] for ke in s_ctx.updated_options]
-    # for branch in matches
-    #     if is_solved(branch)
-    #         # @info p
-    #         solution = extract_solution(branch)
-    #         ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(task, solution)
+    # if any(s_ctx.target_key == upd[1] for upd in s_ctx.updated_options)
+    #     for (solution, cost) in extract_solutions(s_ctx)
+    #         ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
+    #             task,
+    #             solution,
+    #         )
     #         if !isnothing(ll) && !isinf(ll)
     #             dt = time() - start_time
     #             hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
@@ -479,7 +471,6 @@ function insert_new_block(
     #                 dequeue!(hits)
     #             end
     #         end
-    #     else
     #     end
     # end
 end

@@ -1,6 +1,6 @@
 
 
-function extract_solution(branch::SolutionContext)
+function extract_solutions(sc::SolutionContext)
     operations_map = Dict()
     for block in iter_operations(branch)
         if all(isknown(branch, key) for key in block.inputs)

@@ -103,3 +103,13 @@ function iter_unknown_vars(sc::SolutionContext)
         ((key, branch, option) for (branch, option) in iter_options(entries_branch, key) if !option.is_known)
     end)
 end
+
+function target_inputs(sc::SolutionContext)
+    result = Dict()
+    for (br, option) in iter_options(sc.var_data[sc.target_key], sc.target_key)
+        if option.is_known
+            merge!(result, option.incoming_blocks)
+        end
+    end
+    result
+end

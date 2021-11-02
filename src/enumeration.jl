@@ -354,7 +354,7 @@ function try_run_block(block::ProgramBlock, inputs)
 end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
-    outs = Dict()
+    outs = OrderedDict()
     # @info block
     # @info fixed_branches
     inputs = []
@@ -447,32 +447,37 @@ function insert_new_block(
         p_type = arrow(arg_types..., return_of_type(request))
     end
 
-    @info p
-    @info input_vars
-    @info output_val
+    # @info p
+    # @info input_vars
+    # @info output_val
     new_block = ProgramBlock(p, p_type, cost, [(v[1], v[2]) for v in input_vars], output_val)
     # @info new_block
     input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+    old_target_paths = target_inputs(s_ctx)
     if !add_new_block(run_context, s_ctx, new_block, input_branches)
         return
     end
     get_matches(run_context, s_ctx)
-    @info [ke[1] for ke in s_ctx.updated_options]
-    # if any(s_ctx.target_key == upd[1] for upd in s_ctx.updated_options)
-    #     for (solution, cost) in extract_solutions(s_ctx)
-    #         ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
-    #             task,
-    #             solution,
-    #         )
-    #         if !isnothing(ll) && !isinf(ll)
-    #             dt = time() - start_time
-    #             hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
-    #             while length(hits) > maximum_frontier
-    #                 dequeue!(hits)
-    #             end
-    #         end
-    #     end
-    # end
+    new_target_paths = target_inputs(s_ctx)
+    target_paths_diff = filter(((k, v),) -> !haskey(old_target_paths, k) || old_target_paths[k] != v, new_target_paths)
+    if !isempty(target_paths_diff)
+        # @info target_paths_diff
+        for (solution, cost) in extract_solutions(s_ctx, target_paths_diff)
+            @info solution
+            @info cost
+            ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
+                task,
+                solution,
+            )
+            if !isnothing(ll) && !isinf(ll)
+                dt = time() - start_time
+                hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
+                while length(hits) > maximum_frontier
+                    dequeue!(hits)
+                end
+            end
+        end
+    end
 end
 
 function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_frontier, verbose = true)

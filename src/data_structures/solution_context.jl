@@ -7,6 +7,7 @@ mutable struct SolutionContext
     updated_options::Set{Tuple{String,EntriesBranch}}
     example_count::Int64
     previous_keys::Dict{String,Set{String}}
+    following_keys::Dict{String,Set{String}}
 end
 
 function create_starting_context(task::Task)::SolutionContext
@@ -14,19 +15,22 @@ function create_starting_context(task::Task)::SolutionContext
     argument_types = arguments_of_type(task.task_type)
     input_keys = []
     previous_keys = Dict{String,Set{String}}()
+    following_keys = Dict{String,Set{String}}()
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
         entry = ValueEntry(t, collect(values))
         var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), [], true)), nothing, Set())
         push!(input_keys, key)
         previous_keys[key] = Set([key])
+        following_keys[key] = Set([key])
     end
     target_key = "out"
     entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
     var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), [], false)), nothing, Set())
     previous_keys[target_key] = Set([target_key])
+    following_keys[target_key] = Set([target_key])
     example_count = length(task.train_outputs)
-    return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count, previous_keys)
+    return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count, previous_keys, following_keys)
 end
 
 function reset_updated_keys(ctx::SolutionContext)
@@ -39,15 +43,7 @@ end
 
 function insert_operation(sc::SolutionContext, updates)
     for (out_key, (bl, out_branch, input_branches)) in updates
-        if bl.output_var[2] != out_branch || any(inp_br != input_branches[k] for (k, inp_br) in bl.input_vars)
-            bl = ProgramBlock(
-                bl.p,
-                bl.type,
-                bl.cost,
-                [(k, input_branches[k]) for (k, _) in bl.input_vars],
-                (bl.output_var[1], out_branch)
-            )
-
+        if bl.output_var[2] != out_branch
             if isnothing(out_branch.parent)
                 sc.var_data[out_key] = out_branch
                 for k in keys(out_branch.values)
@@ -60,17 +56,27 @@ function insert_operation(sc::SolutionContext, updates)
                 end
             end
         end
-        for (k, inp_branch) in input_branches
-            if !haskey(sc.var_data, k)
-                sc.var_data[k] = inp_branch
-                push!(sc.updated_options, (k, inp_branch))
-            end
+        if bl.output_var[2] != out_branch || any(inp_br != input_branches[k] for (k, inp_br) in bl.input_vars)
+            bl = ProgramBlock(
+                bl.p,
+                bl.type,
+                bl.cost,
+                [(k, input_branches[k]) for (k, _) in bl.input_vars],
+                (bl.output_var[1], out_branch),
+            )
         end
         if !haskey(sc.previous_keys, out_key)
             sc.previous_keys[out_key] = Set([out_key])
         end
+        if !haskey(sc.following_keys, out_key)
+            sc.following_keys[out_key] = Set([out_key])
+        end
         paths_count = 1
         for (k, inp_branch) in bl.input_vars
+            if !haskey(sc.var_data, k)
+                sc.var_data[k] = inp_branch
+                push!(sc.updated_options, (k, inp_branch))
+            end
             item = inp_branch.values[k]
 
             push!(item.outgoing_blocks, bl)
@@ -79,6 +85,11 @@ function insert_operation(sc::SolutionContext, updates)
             elseif !item.is_known
                 paths_count = 0
             end
+            if !haskey(sc.following_keys, k)
+                sc.following_keys[k] = Set([k])
+
+            end
+            union!(sc.following_keys[k], sc.following_keys[out_key])
 
             if !haskey(sc.previous_keys, k)
                 sc.previous_keys[k] = Set([k])
@@ -89,7 +100,7 @@ function insert_operation(sc::SolutionContext, updates)
     end
 end
 
-using IterTools:imap
+using IterTools: imap
 
 function iter_known_vars(sc::SolutionContext)
     flatten(imap(sc.var_data) do (key, entries_branch)
@@ -113,3 +124,6 @@ function target_inputs(sc::SolutionContext)
     end
     result
 end
+
+keys_in_loop(sc, known_key, unknown_key) =
+    !isempty(intersect(sc.previous_keys[known_key], sc.following_keys[unknown_key]))

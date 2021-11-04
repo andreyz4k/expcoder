@@ -5,6 +5,9 @@ function match_with_known_field(run_context, sc::SolutionContext, unknown_key, u
     found = false
     # @info "Matching unknown $unknown_key $(hash(unknown_branch))"
     for (input_key, input_branch, input_option) in iter_known_meaningful_vars(sc)
+        if run_context["timeout_checker"]()
+            break
+        end
         if keys_in_loop(sc, input_key, unknown_key) ||
            !is_branch_compatible(unknown_key, unknown_branch, [input_branch])
             continue
@@ -31,6 +34,9 @@ function match_with_unknown_field(run_context, sc::SolutionContext, input_key, i
     found = false
     # @info "Matching known $input_key $(hash(input_branch))"
     for (unknown_key, unknown_branch, unknown_option) in iter_unknown_vars(sc)
+        if run_context["timeout_checker"]()
+            break
+        end
         if keys_in_loop(sc, input_key, unknown_key) ||
            !is_branch_compatible(unknown_key, unknown_branch, [input_branch])
             continue
@@ -61,6 +67,9 @@ function _get_matches(run_context, sc::SolutionContext, checked_options)
     # @info [(ke[1], "$(hash(ke[2]))") for ke in sc.updated_options]
     # @info [(ke[1], "$(hash(ke[2]))") for ke in checked_options]
     for (key, branch) in sc.updated_options
+        if run_context["timeout_checker"]()
+            break
+        end
         if in((key, branch), checked_options)
             continue
         end

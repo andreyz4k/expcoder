@@ -509,6 +509,8 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
         end
     end
 
+    run_context["timeout_checker"] = () -> enumeration_timed_out(enumeration_timeout)
+
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
         dequeue!(pq)

@@ -382,20 +382,22 @@ import Redis
     #     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(payload1)
     # end
 
-    # @testset "try_enumerate add-k with k=1" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
-    #     solutions, number_enumerated = enumerate_for_task(
-    #         g,
-    #         timeout,
-    #         task,
-    #         maximum_frontier,
-    #         program_timeout,
-    #         RedisContext(Redis.RedisConnection()),
-    #         verbose,
-    #     )
-    #     @test length(solutions) == 0
-    #     @test number_enumerated == 50
-    # end
+    @testset "try_enumerate add-k with k=1" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
+        solutions, number_enumerated = enumerate_for_task(
+            Dict(
+                "redis" => RedisContext(Redis.RedisConnection()),
+                "program_timeout" => program_timeout,
+                "timeout" => timeout,
+            ),
+            g,
+            task,
+            maximum_frontier,
+            verbose,
+        )
+        @test length(solutions) == 0
+        @test number_enumerated == 50
+    end
 
     @testset "try_enumerate empty" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload2)
@@ -411,51 +413,57 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 13
+        @test number_enumerated == 289
     end
 
-    # @testset "try_enumerate append-index-k with k=5" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
-    #     solutions, number_enumerated = enumerate_for_task(
-    #         g,
-    #         timeout,
-    #         task,
-    #         maximum_frontier,
-    #         program_timeout,
-    #         RedisContext(Redis.RedisConnection()),
-    #         verbose,
-    #     )
-    #     @test length(solutions) == 0
-    #     @test number_enumerated == 200
-    # end
+    @testset "try_enumerate append-index-k with k=5" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
+        solutions, number_enumerated = enumerate_for_task(
+            Dict(
+                "redis" => RedisContext(Redis.RedisConnection()),
+                "program_timeout" => program_timeout,
+                "timeout" => timeout,
+            ),
+            g,
+            task,
+            maximum_frontier,
+            verbose,
+        )
+        @test length(solutions) == 0
+        @test number_enumerated == 200
+    end
 
-    # @testset "try_enumerate len" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
-    #     solutions, number_enumerated = enumerate_for_task(
-    #         g,
-    #         timeout,
-    #         task,
-    #         maximum_frontier,
-    #         program_timeout,
-    #         RedisContext(Redis.RedisConnection()),
-    #         verbose,
-    #     )
-    #     @test length(solutions) == 10
-    #     @test number_enumerated == 16
-    # end
+    @testset "try_enumerate len" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
+        solutions, number_enumerated = enumerate_for_task(
+            Dict(
+                "redis" => RedisContext(Redis.RedisConnection()),
+                "program_timeout" => program_timeout,
+                "timeout" => timeout,
+            ),
+            g,
+            task,
+            maximum_frontier,
+            verbose,
+        )
+        @test length(solutions) == 10
+        @test number_enumerated == 311
+    end
 
-    # @testset "try_enumerate is-mod-k with k=1" begin
-    #     task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
-    #     solutions, number_enumerated = enumerate_for_task(
-    #         g,
-    #         timeout,
-    #         task,
-    #         maximum_frontier,
-    #         program_timeout,
-    #         RedisContext(Redis.RedisConnection()),
-    #         verbose,
-    #     )
-    #     @test length(solutions) == 10
-    #     @test number_enumerated == 16
-    # end
+    @testset "try_enumerate is-mod-k with k=1" begin
+        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
+        solutions, number_enumerated = enumerate_for_task(
+            Dict(
+                "redis" => RedisContext(Redis.RedisConnection()),
+                "program_timeout" => program_timeout,
+                "timeout" => timeout,
+            ),
+            g,
+            task,
+            maximum_frontier,
+            verbose,
+        )
+        @test length(solutions) == 10
+        @test number_enumerated == 35
+    end
 end

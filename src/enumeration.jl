@@ -245,7 +245,7 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), Dict(), [], false)
+    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), Dict(), Set(), false)
     FreeVar(t, key), [(key, common_branch, t)]
 end
 
@@ -362,13 +362,14 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
         push!(inputs, fixed_branches[key].values[key].value.values)
     end
     result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(block, inputs)
-    # @info result
+    # @info result[1]
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
         bm, new_branch = result
         outs[block.output_var[1]] = block, new_branch, fixed_branches
         new_fixed_branches = merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
+        # @info new_branch.values[block.output_var[1]].outgoing_blocks
         for b in new_branch.values[block.output_var[1]].outgoing_blocks
             unknown = false
             downstream_branches = new_fixed_branches
@@ -392,6 +393,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
                 merge!(outs, updates)
             end
         end
+        # @info "End run downstream"
         return (bm, outs)
     end
 end

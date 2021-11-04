@@ -19,14 +19,14 @@ function create_starting_context(task::Task)::SolutionContext
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
         entry = ValueEntry(t, collect(values))
-        var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), [], true)), nothing, Set())
+        var_data[key] = EntriesBranch(Dict(key => EntryBranchItem(entry, Dict(), Set(), true)), nothing, Set())
         push!(input_keys, key)
         previous_keys[key] = Set([key])
         following_keys[key] = Set([key])
     end
     target_key = "out"
     entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
-    var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), [], false)), nothing, Set())
+    var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), Set(), false)), nothing, Set())
     previous_keys[target_key] = Set([target_key])
     following_keys[target_key] = Set([target_key])
     example_count = length(task.train_outputs)
@@ -64,6 +64,8 @@ function insert_operation(sc::SolutionContext, updates)
                 [(k, input_branches[k]) for (k, _) in bl.input_vars],
                 (bl.output_var[1], out_branch),
             )
+            # @info "Adding block"
+            # @info bl
         end
         if !haskey(sc.previous_keys, out_key)
             sc.previous_keys[out_key] = Set([out_key])

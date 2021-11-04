@@ -2,7 +2,7 @@
 struct EntryBranchItem
     value::Entry
     incoming_blocks::Dict{ProgramBlock,Int64}
-    outgoing_blocks::Vector{ProgramBlock}
+    outgoing_blocks::Set{ProgramBlock}
     is_known::Bool
 end
 
@@ -46,7 +46,7 @@ function value_updates(block::ProgramBlock, new_values)
                 key => EntryBranchItem(
                     ValueEntry(return_type, new_values),
                     Dict(),
-                    [],
+                    Set(),
                     true,
                 )
             ),
@@ -116,7 +116,7 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
         else
             new_branch.values[k] = EntryBranchItem(
                 item.value,
-                copy(item.incoming_blocks),
+                copy(item.incoming_blocks),  # TODO: update branch links in blocks?
                 copy(item.outgoing_blocks),
                 item.is_known
             )

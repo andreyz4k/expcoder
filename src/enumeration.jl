@@ -519,8 +519,9 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                 fixed_inputs = Dict(kv[1] => kv[2] for kv in bp.input_vars if !isnothing(kv))
                 fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context, fixed_inputs)
                 # @info fix_options
-                for (p, input_vars, _, _) in fix_options
+                for (p, input_vars, context, _) in fix_options
                     reset_updated_keys(s_ctx)
+                    _, request = apply_context(context, bp.request)
                     output_var = ("\$v$(create_next_var(s_ctx))", nothing)
                     insert_new_block(
                         run_context,
@@ -529,7 +530,7 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                         p,
                         input_vars,
                         output_var,
-                        bp.request,
+                        request,
                         state.cost,
                         start_time,
                         task,

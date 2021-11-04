@@ -1,12 +1,26 @@
 
-struct EntryBranchItem
+mutable struct EntryBranchItem
     value::Entry
     incoming_blocks::Dict{ProgramBlock,Int64}
     outgoing_blocks::Set{ProgramBlock}
     is_known::Bool
+    is_meaningful::Bool
 end
 
-# Base.show(io::IO, item::EntryBranchItem) = print(io, "EntryBranchItem(", item.value, ", ", item.incoming_blocks, "")
+EntryBranchItem(value, incoming_blocks, outgoing_blocks, is_known) = EntryBranchItem(
+    value,
+    incoming_blocks,
+    outgoing_blocks,
+    is_known,
+    is_known && (isempty(incoming_blocks) || any(!isa(block.p, FreeVar) for block in keys(incoming_blocks))),
+)
+
+function set_incoming_block(item::EntryBranchItem, block::ProgramBlock, paths_count::Int64)
+    item.incoming_blocks[block] = paths_count
+    if item.is_known && !item.is_meaningful
+        item.is_meaningful = !isa(block.p, FreeVar)
+    end
+end
 
 struct EntriesBranch
     values::Dict{String,EntryBranchItem}
@@ -42,14 +56,7 @@ function value_updates(block::ProgramBlock, new_values)
             error("returning polymorphic type from $block")
         end
         return EntriesBranch(
-            Dict(
-                key => EntryBranchItem(
-                    ValueEntry(return_type, new_values),
-                    Dict(),
-                    Set(),
-                    true,
-                )
-            ),
+            Dict(key => EntryBranchItem(ValueEntry(return_type, new_values), Dict(), Set(), true)),
             nothing,
             Set(),
         )
@@ -68,26 +75,14 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
                 return child
             end
         end
-        new_branch = EntriesBranch(
-            Dict(),
-            branch,
-            Set()
-        )
+        new_branch = EntriesBranch(Dict(), branch, Set())
         for (k, item) in branch.values
             if k == key
-                new_branch.values[k] = EntryBranchItem(
-                    entry,
-                    copy(item.incoming_blocks),
-                    copy(item.outgoing_blocks),
-                    true,
-                )
+                new_branch.values[k] =
+                    EntryBranchItem(entry, copy(item.incoming_blocks), copy(item.outgoing_blocks), true)
             else
-                new_branch.values[k] = EntryBranchItem(
-                    item.value,
-                    copy(item.incoming_blocks),
-                    copy(item.outgoing_blocks),
-                    item.is_known
-                )
+                new_branch.values[k] =
+                    EntryBranchItem(item.value, copy(item.incoming_blocks), copy(item.outgoing_blocks), item.is_known)
             end
         end
         return new_branch
@@ -100,25 +95,17 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
             return child
         end
     end
-    new_branch = EntriesBranch(
-        Dict(),
-        branch,
-        Set(),
-    )
+    new_branch = EntriesBranch(Dict(), branch, Set())
     for (k, item) in branch.values
         if k == key
-            new_branch.values[k] = EntryBranchItem(
-                ValueEntry(t, new_values),
-                copy(item.incoming_blocks),
-                copy(item.outgoing_blocks),
-                true,
-            )
+            new_branch.values[k] =
+                EntryBranchItem(ValueEntry(t, new_values), copy(item.incoming_blocks), copy(item.outgoing_blocks), true)
         else
             new_branch.values[k] = EntryBranchItem(
                 item.value,
                 copy(item.incoming_blocks),  # TODO: update branch links in blocks?
                 copy(item.outgoing_blocks),
-                item.is_known
+                item.is_known,
             )
         end
     end
@@ -134,13 +121,14 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
                 end
             end
             context, new_op_type = apply_context(context, op_type)
-            for ((k, _), old_type, new_type) in zip(op.input_vars, arguments_of_type(op_type), arguments_of_type(new_op_type))
+            for ((k, _), old_type, new_type) in
+                zip(op.input_vars, arguments_of_type(op_type), arguments_of_type(new_op_type))
                 if k != key && haskey(new_branch, k) && !isknown(new_branch, k) && old_type != new_type
                     new_branch.values[k] = EntryBranchItem(
                         NoDataEntry(new_type),
                         new_branch.values[k].incoming_blocks,
                         new_branch.values[k].outgoing_blocks,
-                        new_branch.values[k].is_known
+                        new_branch.values[k].is_known,
                     )
                 end
             end

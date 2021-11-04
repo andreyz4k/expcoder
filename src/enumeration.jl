@@ -273,7 +273,7 @@ function fix_known_free_vars(sc, p::FreeVar, context, fixed_vars)
     if isnothing(p.key)
         output = []
         ctx, t = apply_context(context, p.t)
-        for (k, branch, branch_item) in iter_known_vars(sc)
+        for (k, branch, branch_item) in iter_known_meaningful_vars(sc)
             if is_branch_compatible(k, branch, unique(values(fixed_vars))) && might_unify(t, branch_item.value.type)
                 new_ctx = unify(ctx, t, branch_item.value.type)
                 new_f_vars = copy(fixed_vars)
@@ -465,8 +465,8 @@ function insert_new_block(
     if !isempty(target_paths_diff)
         # @info target_paths_diff
         for (solution, cost) in extract_solutions(s_ctx, target_paths_diff)
-            @info solution
-            @info cost
+            # @info solution
+            # @info cost
             ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
                 task,
                 solution,

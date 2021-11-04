@@ -4,7 +4,7 @@ function match_with_known_field(run_context, sc::SolutionContext, unknown_key, u
     unknown_option = unknown_branch.values[unknown_key]
     found = false
     # @info "Matching unknown $unknown_key $(hash(unknown_branch))"
-    for (input_key, input_branch, input_option) in iter_known_vars(sc)
+    for (input_key, input_branch, input_option) in iter_known_meaningful_vars(sc)
         if keys_in_loop(sc, input_key, unknown_key) ||
            !is_branch_compatible(unknown_key, unknown_branch, [input_branch])
             continue
@@ -68,8 +68,10 @@ function _get_matches(run_context, sc::SolutionContext, checked_options)
         # @info branch
         if !isknown(branch, key)
             matchers = [match_with_known_field]
-        else
+        elseif branch.values[key].is_meaningful
             matchers = [match_with_unknown_field]
+        else
+            matchers = []
         end
         found = false
         for matcher in matchers

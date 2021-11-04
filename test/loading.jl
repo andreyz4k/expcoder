@@ -396,7 +396,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated == 50
+        @test number_enumerated == 216
     end
 
     @testset "try_enumerate empty" begin
@@ -430,7 +430,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated == 200
+        @test number_enumerated == 405
     end
 
     @testset "try_enumerate len" begin

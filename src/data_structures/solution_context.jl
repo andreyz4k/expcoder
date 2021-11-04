@@ -26,7 +26,8 @@ function create_starting_context(task::Task)::SolutionContext
     end
     target_key = "out"
     entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
-    var_data[target_key] = EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), Set(), false)), nothing, Set())
+    var_data[target_key] =
+        EntriesBranch(Dict(target_key => EntryBranchItem(entry, Dict(), Set(), false)), nothing, Set())
     previous_keys[target_key] = Set([target_key])
     following_keys[target_key] = Set([target_key])
     example_count = length(task.train_outputs)
@@ -98,7 +99,7 @@ function insert_operation(sc::SolutionContext, updates)
             end
             union!(sc.previous_keys[out_key], sc.previous_keys[k])
         end
-        out_branch.values[out_key].incoming_blocks[bl] = paths_count
+        set_incoming_block(out_branch.values[out_key], bl, paths_count)
     end
 end
 
@@ -110,6 +111,13 @@ function iter_known_vars(sc::SolutionContext)
     end)
 end
 
+function iter_known_meaningful_vars(sc::SolutionContext)
+    flatten(
+        imap(sc.var_data) do (key, entries_branch)
+            ((key, branch, option) for (branch, option) in iter_options(entries_branch, key) if option.is_meaningful)
+        end,
+    )
+end
 
 function iter_unknown_vars(sc::SolutionContext)
     flatten(imap(sc.var_data) do (key, entries_branch)

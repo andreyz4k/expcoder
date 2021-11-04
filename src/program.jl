@@ -73,11 +73,15 @@ show_program(p::LetClause, is_function::Bool) =
 
 struct ProgramBlock
     p::Program
+    analized_p::Function
     type::Tp
     cost::Float64
     input_vars::Vector{Tuple{String,Any}}
     output_var::Tuple{String,Any}
 end
+
+ProgramBlock(p::Program, type::Tp, cost, input_vars, output_var) =
+    ProgramBlock(p, analyze_evaluation(p), type, cost, input_vars, output_var)
 
 Base.show(io::IO, block::ProgramBlock) = print(
     io,

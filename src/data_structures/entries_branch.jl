@@ -123,7 +123,7 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
             context, new_op_type = apply_context(context, op_type)
             for ((k, _), old_type, new_type) in
                 zip(op.input_vars, arguments_of_type(op_type), arguments_of_type(new_op_type))
-                if k != key && haskey(new_branch, k) && !isknown(new_branch, k) && old_type != new_type
+                if k != key && haskey(new_branch.values, k) && !isknown(new_branch, k) && old_type != new_type
                     new_branch.values[k] = EntryBranchItem(
                         NoDataEntry(new_type),
                         new_branch.values[k].incoming_blocks,

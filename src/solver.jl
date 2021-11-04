@@ -46,7 +46,7 @@ function get_new_task(redis)
             end
         catch e
             bt = catch_backtrace()
-            @error "Error while fetching task" exception=(e,bt)
+            @error "Error while fetching task" exception = (e, bt)
             disconnect_redis(redis)
             rethrow()
         end
@@ -69,7 +69,8 @@ function worker_loop()
             timeout = payload["timeout"]
             name = payload["name"]
             output = try
-                result = @run_with_timeout timeout redis run_solving_process(Dict("redis" => redis), payload)
+                result =
+                    @run_with_timeout timeout redis run_solving_process(Dict{String,Any}("redis" => redis), payload)
                 if isnothing(result)
                     result = Dict("number_enumerated" => 0, "solutions" => [])
                 end

@@ -324,13 +324,11 @@ function try_run_block(block::ProgramBlock, inputs)
         out_matcher = Iterators.repeated(_ -> Strict)
     end
 
-    p = analyze_evaluation(block.p)
-
     bm = Strict
     outs = []
     for (xs, matcher) in zip(input_vals, out_matcher)
         out_value = try
-            try_evaluate_program(p, [], Dict(k => v for ((k, _), v) in zip(block.input_vars, xs)))
+            try_evaluate_program(block.analized_p, [], Dict(k => v for ((k, _), v) in zip(block.input_vars, xs)))
         catch e
             @error xs
             @error block.p

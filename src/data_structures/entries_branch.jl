@@ -1,26 +1,14 @@
 
+using DataStructures: OrderedDict
+
 mutable struct EntryBranchItem
     value::Entry
-    incoming_blocks::Dict{ProgramBlock,Int64}
+    incoming_paths::Vector{OrderedDict{String,ProgramBlock}}
     outgoing_blocks::Set{ProgramBlock}
     is_known::Bool
     is_meaningful::Bool
 end
 
-EntryBranchItem(value, incoming_blocks, outgoing_blocks, is_known) = EntryBranchItem(
-    value,
-    incoming_blocks,
-    outgoing_blocks,
-    is_known,
-    is_known && (isempty(incoming_blocks) || any(!isa(block.p, FreeVar) for block in keys(incoming_blocks))),
-)
-
-function set_incoming_block(item::EntryBranchItem, block::ProgramBlock, paths_count::Int64)
-    item.incoming_blocks[block] = paths_count
-    if item.is_known && !item.is_meaningful
-        item.is_meaningful = !isa(block.p, FreeVar)
-    end
-end
 
 struct EntriesBranch
     values::Dict{String,EntryBranchItem}
@@ -31,7 +19,9 @@ end
 function iter_options(branch::EntriesBranch, key)
     result = Any[[(branch, branch.values[key])]]
     for child in branch.children
-        push!(result, iter_options(child, key))
+        if haskey(child.values, key)
+            push!(result, iter_options(child, key))
+        end
     end
     flatten(result)
 end
@@ -56,17 +46,32 @@ function value_updates(block::ProgramBlock, new_values)
             error("returning polymorphic type from $block")
         end
         return EntriesBranch(
-            Dict(key => EntryBranchItem(ValueEntry(return_type, new_values), Dict(), Set(), true)),
+            Dict(key => EntryBranchItem(ValueEntry(return_type, new_values), [], Set(), true, !isa(block.p, FreeVar))),
             nothing,
             Set(),
         )
     else
-        return_type = return_of_type(block.type)
-        return updated_branch(branch, key, branch.values[key].value, new_values, return_type)
+        return updated_branch(branch, key, branch.values[key].value, new_values, block)
     end
 end
 
-function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_values, t)
+function child_outgoing_blocks(branch, new_branch, item)
+    result = Set()
+    for block in item.outgoing_blocks
+        new_inputs = []
+        for (k, br) in block.input_vars
+            if br == branch && haskey(new_branch.values, k)
+                push!(new_inputs, (k, new_branch))
+            else
+                push!(new_inputs, (k, br))
+            end
+        end
+        push!(result, ProgramBlock(block.p, block.type, block.cost, new_inputs, block.output_var))
+    end
+    return result
+end
+
+function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_values, block)
     if branch.values[key].is_known
         return branch
     else
@@ -78,18 +83,31 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
         new_branch = EntriesBranch(Dict(), branch, Set())
         for (k, item) in branch.values
             if k == key
-                new_branch.values[k] =
-                    EntryBranchItem(entry, copy(item.incoming_blocks), copy(item.outgoing_blocks), true)
-            else
-                new_branch.values[k] =
-                    EntryBranchItem(item.value, copy(item.incoming_blocks), copy(item.outgoing_blocks), item.is_known)
+                new_branch.values[k] = EntryBranchItem(
+                    entry,
+                    [],
+                    # copy(item.outgoing_blocks),
+                    child_outgoing_blocks(branch, new_branch, item),
+                    true,
+                    item.is_meaningful || !isa(block.p, FreeVar),
+                )
+            elseif !item.is_known
+                new_branch.values[k] = EntryBranchItem(
+                    item.value,
+                    copy(item.incoming_paths),
+                    # copy(item.outgoing_blocks),
+                    child_outgoing_blocks(branch, new_branch, item),
+                    item.is_known,
+                    item.is_meaningful,
+                )
             end
         end
         return new_branch
     end
 end
 
-function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_values, t)
+
+function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_values, block)
     for child in branch.children
         if child.values[key].is_known && child.values[key].value.values == new_values
             return child
@@ -98,14 +116,23 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
     new_branch = EntriesBranch(Dict(), branch, Set())
     for (k, item) in branch.values
         if k == key
-            new_branch.values[k] =
-                EntryBranchItem(ValueEntry(t, new_values), copy(item.incoming_blocks), copy(item.outgoing_blocks), true)
-        else
+            t = return_of_type(block.type)
+            new_branch.values[k] = EntryBranchItem(
+                ValueEntry(t, new_values),
+                [],
+                # copy(item.outgoing_blocks),
+                child_outgoing_blocks(branch, new_branch, item),
+                true,
+                item.is_meaningful || !isa(block.p, FreeVar),
+            )
+        elseif !item.is_known
             new_branch.values[k] = EntryBranchItem(
                 item.value,
-                copy(item.incoming_blocks),  # TODO: update branch links in blocks?
-                copy(item.outgoing_blocks),
+                copy(item.incoming_paths),
+                # copy(item.outgoing_blocks),
+                child_outgoing_blocks(branch, new_branch, item),
                 item.is_known,
+                item.is_meaningful,
             )
         end
     end
@@ -126,9 +153,10 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
                 if k != key && haskey(new_branch.values, k) && !isknown(new_branch, k) && old_type != new_type
                     new_branch.values[k] = EntryBranchItem(
                         NoDataEntry(new_type),
-                        new_branch.values[k].incoming_blocks,
+                        new_branch.values[k].incoming_paths,
                         new_branch.values[k].outgoing_blocks,
                         new_branch.values[k].is_known,
+                        new_branch.values[k].is_meaningful,
                     )
                 end
             end

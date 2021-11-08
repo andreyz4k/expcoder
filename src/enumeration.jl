@@ -245,7 +245,7 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), Dict(), Set(), false)
+    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false)
     FreeVar(t, key), [(key, common_branch, t)]
 end
 
@@ -401,17 +401,15 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
         best_match, updates = try_run_block_with_downstream(run_context, sc, block, inputs)
         # @info updates
         if best_match == NoMatch
-            false
+            nothing
         else
-            insert_operation(sc, updates)
-            true
+            return insert_operation(sc, updates)
         end
     else
         updates = Dict(
             block.output_var[1] => (block, block.output_var[2], inputs),
         )
-        insert_operation(sc, updates)
-        true
+        return insert_operation(sc, updates)
     end
 end
 
@@ -430,15 +428,12 @@ Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
 function insert_new_block(
     run_context,
     s_ctx,
-    hits,
     p,
     input_vars,
     output_val,
     request,
     cost,
-    start_time,
-    task,
-    maximum_frontier,
+    finalizer,
 )
     arg_types = [v[3] for v in input_vars]
     if isempty(arg_types)
@@ -453,31 +448,10 @@ function insert_new_block(
     new_block = ProgramBlock(p, p_type, cost, [(v[1], v[2]) for v in input_vars], output_val)
     # @info new_block
     input_branches = Dict(key => branch for (key, branch, _) in input_vars)
-    old_target_paths = target_inputs(s_ctx)
-    if !add_new_block(run_context, s_ctx, new_block, input_branches)
+    if isnothing(add_new_block(run_context, s_ctx, new_block, input_branches))
         return
     end
-    get_matches(run_context, s_ctx)
-    new_target_paths = target_inputs(s_ctx)
-    target_paths_diff = filter(((k, v),) -> !haskey(old_target_paths, k) || old_target_paths[k] != v, new_target_paths)
-    if !isempty(target_paths_diff)
-        # @info target_paths_diff
-        for (solution, cost) in extract_solutions(s_ctx, target_paths_diff)
-            # @info solution
-            # @info cost
-            ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
-                task,
-                solution,
-            )
-            if !isnothing(ll) && !isinf(ll)
-                dt = time() - start_time
-                hits[HitResult(join(show_program(solution, false)), -cost, ll, dt)] = -cost + ll
-                while length(hits) > maximum_frontier
-                    dequeue!(hits)
-                end
-            end
-        end
-    end
+    get_matches(run_context, s_ctx, finalizer)
 end
 
 function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_frontier, verbose = true)
@@ -509,6 +483,25 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
 
     run_context["timeout_checker"] = () -> enumeration_timed_out(enumeration_timeout)
 
+    finalizer = function (solution, cost)
+        ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
+            task,
+            solution,
+        )
+        if !isnothing(ll) && !isinf(ll)
+            dt = time() - start_time
+            res = HitResult(join(show_program(solution, false)), -cost, ll, dt)
+            if haskey(hits, res)
+                # @warn "Duplicated solution $solution"
+            else
+                hits[res] = -cost + ll
+            end
+            while length(hits) > maximum_frontier
+                dequeue!(hits)
+            end
+        end
+    end
+
     while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
         (s_ctx, bp), pr = peek(pq)
         dequeue!(pq)
@@ -526,15 +519,12 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                     insert_new_block(
                         run_context,
                         s_ctx,
-                        hits,
                         p,
                         input_vars,
                         output_var,
                         request,
                         state.cost,
-                        start_time,
-                        task,
-                        maximum_frontier,
+                        finalizer,
                     )
                     total_number_of_enumerated_programs += 1
                 end
@@ -545,15 +535,12 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                 insert_new_block(
                     run_context,
                     s_ctx,
-                    hits,
                     p,
                     input_vars,
                     bp.output_var,
                     bp.request,
                     state.cost,
-                    start_time,
-                    task,
-                    maximum_frontier,
+                    finalizer,
                 )
                 total_number_of_enumerated_programs += 1
             end

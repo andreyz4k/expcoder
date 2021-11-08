@@ -92,7 +92,7 @@ Base.show(io::IO, block::ProgramBlock) = print(
     ", ",
     block.cost,
     ", ",
-    [(k, hash(br)) for (k, br) in block.input_vars],
+    ["($k, $(hash(br)))" for (k, br) in block.input_vars],
     ", (",
     block.output_var[1],
     ", ",

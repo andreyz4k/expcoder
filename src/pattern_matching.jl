@@ -1,6 +1,6 @@
 
 
-function match_with_known_field(run_context, sc::SolutionContext, unknown_key, unknown_branch)
+function match_with_known_field(run_context, sc::SolutionContext, unknown_key, unknown_branch, finalizer)
     unknown_option = unknown_branch.values[unknown_key]
     found = false
     # @info "Matching unknown $unknown_key $(hash(unknown_branch))"
@@ -23,13 +23,25 @@ function match_with_known_field(run_context, sc::SolutionContext, unknown_key, u
                 [(input_key, input_branch)],
                 (unknown_key, unknown_branch),
             )
-            found |= add_new_block(run_context, sc, new_block, Dict(input_key => input_branch))
+            new_solution_paths = add_new_block(run_context, sc, new_block, Dict(input_key => input_branch))
+            if !isnothing(new_solution_paths)
+                found = true
+                # if !isempty(new_solution_paths)
+                #     @info "match unknown"
+                #     @info new_block
+                #     @info new_solution_paths
+                # end
+                for solution_path in new_solution_paths
+                    solution, cost = extract_solution(sc, solution_path)
+                    finalizer(solution, cost)
+                end
+            end
         end
     end
     found
 end
 
-function match_with_unknown_field(run_context, sc::SolutionContext, input_key, input_branch)
+function match_with_unknown_field(run_context, sc::SolutionContext, input_key, input_branch, finalizer)
     input_option = input_branch.values[input_key]
     found = false
     # @info "Matching known $input_key $(hash(input_branch))"
@@ -52,17 +64,29 @@ function match_with_unknown_field(run_context, sc::SolutionContext, input_key, i
                 [(input_key, input_branch)],
                 (unknown_key, unknown_branch),
             )
-            found |= add_new_block(run_context, sc, new_block, Dict(input_key => input_branch))
+            new_solution_paths = add_new_block(run_context, sc, new_block, Dict(input_key => input_branch))
+            if !isnothing(new_solution_paths)
+                found = true
+                # if !isempty(new_solution_paths)
+                #     @info "match known"
+                #     @info new_block
+                #     @info new_solution_paths
+                # end
+                for solution_path in new_solution_paths
+                    solution, cost = extract_solution(sc, solution_path)
+                    finalizer(solution, cost)
+                end
+            end
         end
     end
     found
 end
 
-function get_matches(run_context, sc::SolutionContext)
-    _get_matches(run_context, sc, Set())
+function get_matches(run_context, sc::SolutionContext, finalizer)
+    _get_matches(run_context, sc, Set(), finalizer)
 end
 
-function _get_matches(run_context, sc::SolutionContext, checked_options)
+function _get_matches(run_context, sc::SolutionContext, checked_options, finalizer)
     # @info "Start matching iteration"
     # @info [(ke[1], "$(hash(ke[2]))") for ke in sc.updated_options]
     # @info [(ke[1], "$(hash(ke[2]))") for ke in checked_options]
@@ -84,10 +108,10 @@ function _get_matches(run_context, sc::SolutionContext, checked_options)
         end
         found = false
         for matcher in matchers
-            found |= matcher(run_context, sc, key, branch)
+            found |= matcher(run_context, sc, key, branch, finalizer)
         end
         if found
-            _get_matches(run_context, sc, union(checked_options, [(key, branch)]))
+            _get_matches(run_context, sc, union(checked_options, [(key, branch)]), finalizer)
             break
         end
     end

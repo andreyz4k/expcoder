@@ -347,12 +347,12 @@ function try_run_block(block::ProgramBlock, inputs)
         end
         push!(outs, out_value)
     end
-    new_branch = value_updates(block, outs)
-    return bm, new_branch
+    new_branch, updated_block = value_updates(block, outs)
+    return bm, new_branch, updated_block
 end
 
 function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
-    outs = OrderedDict()
+    outs = OrderedSet()
     # @info block
     # @info fixed_branches
     inputs = []
@@ -364,11 +364,12 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
     else
-        bm, new_branch = result
-        outs[block.output_var[1]] = block, new_branch, fixed_branches
+        bm, new_branch, next_blocks = result
+        push!(outs, (block, new_branch, fixed_branches))
         new_fixed_branches = merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
+        # @info next_blocks
         # @info new_branch.values[block.output_var[1]].outgoing_blocks
-        for b in new_branch.values[block.output_var[1]].outgoing_blocks
+        for b in next_blocks
             unknown = false
             downstream_branches = new_fixed_branches
             for (key, br) in b.input_vars
@@ -388,7 +389,13 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
                 return (NoMatch, nothing)
             else
                 bm = min(down_match, bm)
-                merge!(outs, updates)
+                for bl in updates
+                    if in(bl, outs)
+                        @warn "Duplicate block in run path: $(bl[1])"
+                        delete!(outs, bl)
+                    end
+                    push!(outs, bl)
+                end
             end
         end
         # @info "End run downstream"
@@ -403,13 +410,11 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
         if best_match == NoMatch
             nothing
         else
+            # @info [(bl, "$(hash(br))", Dict(k => "$(hash(b))" for (k, b) in inps)) for (bl, br, inps) in updates]
             return insert_operation(sc, updates)
         end
     else
-        updates = Dict(
-            block.output_var[1] => (block, block.output_var[2], inputs),
-        )
-        return insert_operation(sc, updates)
+        return insert_operation(sc, Set([(block, block.output_var[2], inputs),]))
     end
 end
 

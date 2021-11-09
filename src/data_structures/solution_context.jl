@@ -48,7 +48,8 @@ end
 
 function insert_operation(sc::SolutionContext, updates)
     new_paths = Dict()
-    for (out_key, (bl, out_branch, input_branches)) in updates
+    for (bl, out_branch, input_branches) in updates
+        out_key = bl.output_var[1]
         if bl.output_var[2] != out_branch
             if isnothing(out_branch.parent)
                 sc.var_data[out_key] = out_branch
@@ -63,7 +64,6 @@ function insert_operation(sc::SolutionContext, updates)
             end
         end
         is_new_block = false
-        original_block = bl
         if bl.output_var[2] != out_branch || any(inp_br != input_branches[k] for (k, inp_br) in bl.input_vars)
             # @info "Old block $bl"
             bl = ProgramBlock(
@@ -78,6 +78,7 @@ function insert_operation(sc::SolutionContext, updates)
             # @info "Adding block"
             # @info bl
         end
+        # @info "Inserting $bl"
         if !haskey(sc.previous_keys, out_key)
             sc.previous_keys[out_key] = Set([out_key])
         end
@@ -170,9 +171,6 @@ function insert_operation(sc::SolutionContext, updates)
             end
             item = inp_branch.values[k]
 
-            if is_new_block && in(original_block, item.outgoing_blocks)
-                delete!(item.outgoing_blocks, original_block)
-            end
             push!(item.outgoing_blocks, bl)
 
             if !haskey(sc.following_keys, k)

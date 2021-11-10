@@ -58,7 +58,7 @@ function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGra
                 end
             end
         end
-        state = EnumerationState(skeleton, context, path, ll + g.no_context.log_variable, 1)
+        state = EnumerationState(skeleton, context, path, -ll - g.no_context.log_variable, 1)
         push!(
             candidates,
             BlockPrototype(

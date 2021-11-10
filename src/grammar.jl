@@ -177,7 +177,7 @@ function unifying_expressions(
 end
 
 function following_expressions(g::Grammar, request)
-    collect(flatten(map(g.library) do (p, t, ll)
+    candidates = collect(flatten(map(g.library) do (p, t, ll)
         output = []
         for (i, a_type) in enumerate(arguments_of_type(t))
             if might_unify(a_type, request)
@@ -189,4 +189,6 @@ function following_expressions(g::Grammar, request)
         end
         output
     end))
+    z = lse([ll for (_, _, _, ll, _) in candidates])
+    return [(p, t, k, ll - z, i) for (p, t, k, ll, i) in candidates]
 end

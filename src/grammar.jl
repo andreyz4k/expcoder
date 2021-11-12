@@ -19,7 +19,7 @@ function deserialize_grammar(payload)
         source = p["expression"]
         expression = parse_program(source)
         program_type = try
-            infer_program_type(empty_context, [], expression)[2]
+            closed_inference(expression)
         catch e
             if isa(e, UnificationFailure)
                 error("Could not type $source")

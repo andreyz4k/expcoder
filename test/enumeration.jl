@@ -4,7 +4,7 @@ using Test
 using solver: load_problems, enumerate_for_task, RedisContext
 import Redis
 
-@testset "Loading task" begin
+@testset "Enumeration" begin
     payload1 = Dict(
         "DSL" => Dict{String,Any}(
             "logVariable" => 0.0,
@@ -31,6 +31,7 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
         ),
         "task" => Dict{String,Any}(
@@ -101,6 +102,7 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
         ),
         "task" => Dict{String,Any}(
@@ -167,6 +169,7 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
         ),
         "task" => Dict{String,Any}(
@@ -270,6 +273,7 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
         ),
         "task" => Dict{String,Any}(
@@ -337,6 +341,7 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
         ),
         "task" => Dict{String,Any}(
@@ -384,7 +389,7 @@ import Redis
 
     @testset "try_enumerate add-k with k=1" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
-        solutions, number_enumerated = enumerate_for_task(
+        solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
                 "program_timeout" => program_timeout,
@@ -396,12 +401,12 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated == 186
+        @test number_enumerated > 50
     end
 
     @testset "try_enumerate empty" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload2)
-        solutions, number_enumerated = enumerate_for_task(
+        solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
                 "program_timeout" => program_timeout,
@@ -413,12 +418,12 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 263
+        @test number_enumerated == 18
     end
 
     @testset "try_enumerate append-index-k with k=5" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
-        solutions, number_enumerated = enumerate_for_task(
+        solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
                 "program_timeout" => program_timeout,
@@ -430,12 +435,12 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated == 360
+        @test number_enumerated > 80
     end
 
     @testset "try_enumerate len" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
-        solutions, number_enumerated = enumerate_for_task(
+        solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
                 "program_timeout" => program_timeout,
@@ -447,12 +452,12 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 279
+        @test number_enumerated == 37
     end
 
     @testset "try_enumerate is-mod-k with k=1" begin
         task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
-        solutions, number_enumerated = enumerate_for_task(
+        solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
                 "program_timeout" => program_timeout,
@@ -464,6 +469,6 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 34
+        @test number_enumerated == 14
     end
 end

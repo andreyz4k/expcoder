@@ -35,7 +35,7 @@ function show_type(t::TypeConstructor, is_return::Bool)
             vcat(["("], show_type(t.arguments[1], false), [" -> "], show_type(t.arguments[2], true), [")"])
         end
     else
-        vcat([t.name, "("], vcat([vcat(show_type(a, true), [", "]) for a in t.arguments]...)[1:end - 1], [")"])
+        vcat([t.name, "("], vcat([vcat(show_type(a, true), [", "]) for a in t.arguments]...)[1:end-1], [")"])
     end
 end
 
@@ -181,6 +181,10 @@ might_unify(t1::TypeConstructor, t2::TypeConstructor) =
     t1.name == t2.name &&
     length(t1.arguments) == length(t2.arguments) &&
     all(might_unify(as1, as2) for (as1, as2) in zip(t1.arguments, t2.arguments))
+
+function makeTID(context::Context)
+    (TypeVariable(context.next_variable), Context(context.next_variable + 1, context.substitution))
+end
 
 function lookupTID(context::Context, j)
     @assert (j < context.next_variable)

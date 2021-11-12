@@ -5,14 +5,21 @@ struct Index <: Program
     n::Int64
 end
 
+Base.hash(p::Index, h::UInt64) = hash(p.n, h)
+Base.:(==)(p::Index, q::Index) = p.n == q.n
+
 struct Abstraction <: Program
     b::Program
 end
+Base.hash(p::Abstraction, h::UInt64) = hash(p.b, h)
+Base.:(==)(p::Abstraction, q::Abstraction) = p.b == q.b
 
 struct Apply <: Program
     f::Program
     x::Program
 end
+Base.hash(p::Apply, h::UInt64) = hash(p.f, h) + hash(p.x, h)
+Base.:(==)(p::Apply, q::Apply) = p.f == q.f && p.x == q.x
 
 struct Primitive <: Program
     t::Tp
@@ -28,22 +35,30 @@ struct Primitive <: Program
         p
     end
 end
+Base.hash(p::Primitive, h::UInt64) = hash(p.name, h)
+Base.:(==)(p::Primitive, q::Primitive) = p.name == q.name
 
 every_primitive = Dict{String,Primitive}()
 struct Invented <: Program
     t::Tp
     b::Program
 end
+Base.hash(p::Invented, h::UInt64) = hash(p.b, h)
+Base.:(==)(p::Invented, q::Invented) = p.b == q.b
 
 struct Hole <: Program
     t::Tp
     grammar::Any
 end
+Base.hash(p::Hole, h::UInt64) = hash(p.t, h) + hash(p.grammar, h)
+Base.:(==)(p::Hole, q::Hole) = p.t == q.t && p.grammar == q.grammar
 
 struct FreeVar <: Program
     t::Tp
     key::Union{String,Nothing}
 end
+Base.hash(p::FreeVar, h::UInt64) = hash(p.t, h) + hash(p.key, h)
+Base.:(==)(p::FreeVar, q::FreeVar) = p.t == q.t && p.key == q.key
 
 
 struct LetClause <: Program
@@ -51,6 +66,10 @@ struct LetClause <: Program
     v::Program
     b::Program
 end
+Base.hash(p::LetClause, h::UInt64) = hash(p.var_name, h) + hash(p.v, h) + hash(p.b, h)
+Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v && p.b == q.b
+
+struct ExceptionProgram <: Program end
 
 
 Base.show(io::IO, p::Program) = print(io, show_program(p, false)...)
@@ -69,6 +88,7 @@ show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
+show_program(p::ExceptionProgram, is_function::Bool) = ["EXCEPTION"]
 
 
 struct ProgramBlock
@@ -123,7 +143,7 @@ parse_number = token_parser(isdigit)
 parse_primitive = bind_parsers(parse_token, (name -> try
     return_parse(lookup_primitive(name))
 catch e
-    @error "Error finding type of primitive $name"
+    # @error "Error finding type of primitive $name"
     parse_failure
 end))
 
@@ -134,7 +154,12 @@ parse_variable = bind_parsers(
 
 parse_fixed_real = bind_parsers(
     constant_parser("real"),
-    (_ -> bind_parsers(parse_token, (v -> Primitive(treal, "real", parse(Float64, v)) |> return_parse))),
+    (
+        _ -> bind_parsers(
+            parse_token,
+            (v -> Primitive(treal, "real", parse(Float64, v); skip_saving = true) |> return_parse),
+        )
+    ),
 )
 
 parse_invented = bind_parsers(
@@ -222,8 +247,11 @@ parse_application = bind_parsers(
     ),
 )
 
+parse_exception = bind_parsers(constant_parser("exception"), _ -> return_parse(ExceptionProgram()))
+
 _parse_program = branch_parsers(
     parse_application,
+    parse_exception,
     parse_primitive,
     parse_variable,
     parse_invented,
@@ -242,7 +270,7 @@ function parse_program(s)
 end
 
 function infer_program_type(context, environment, p::Index)::Tuple{Context,Tp}
-    t = environment[p.n]
+    t = environment[p.n+1]
     if isnothing(t)
         throw(UnboundVariable())
     else
@@ -256,8 +284,8 @@ infer_program_type(context, environment, p::Invented)::Tuple{Context,Tp} = insta
 
 function infer_program_type(context, environment, p::Abstraction)::Tuple{Context,Tp}
     (xt, context) = makeTID(context)
-    (context, rt) = infer_program_type(context, vcat(xt, environment), p.b)
-    applyContext(context, arrow(xt, rt))
+    (context, rt) = infer_program_type(context, vcat([xt], environment), p.b)
+    apply_context(context, arrow(xt, rt))
 end
 
 function infer_program_type(context, environment, p::Apply)::Tuple{Context,Tp}
@@ -265,8 +293,12 @@ function infer_program_type(context, environment, p::Apply)::Tuple{Context,Tp}
     (context, xt) = infer_program_type(context, environment, p.x)
     (context, ft) = infer_program_type(context, environment, p.f)
     context = unify(context, ft, arrow(xt, rt))
-    applyContext(context, rt)
+    apply_context(context, rt)
 end
+
+infer_program_type(context, environment, p::FreeVar) = instantiate(p.t, context)
+
+infer_program_type(context, environment, p::ExceptionProgram) = instantiate(t0, context)
 
 closed_inference(p) = infer_program_type(empty_context, [], p)[2]
 
@@ -326,7 +358,10 @@ function analyze_evaluation(p::LetClause)
     v = analyze_evaluation(p.v)
     b = analyze_evaluation(p.b)
     (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_name => v(environment, workspace))))
+end
 
+function analyze_evaluation(p::ExceptionProgram)
+    (environment, workspace) -> error("Inapplicable program")
 end
 
 function run_analyzed_with_arguments(p, arguments, workspace)
@@ -338,3 +373,4 @@ function run_analyzed_with_arguments(p, arguments, workspace)
 end
 
 include("primitives.jl")
+include("abstractors.jl")

@@ -26,7 +26,7 @@ parse_failure(_, _) = []
 
 
 constant_parser(k::String) = (s::String, n::Int64) -> begin
-    if length(s) >= n + length(k) && s[n:n+length(k)] == k
+    if length(s) >= n + length(k) - 1 && s[n:n+length(k) - 1] == k
         [((), n + length(k))]
     else
         []

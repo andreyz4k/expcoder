@@ -138,13 +138,6 @@ function violates_symmetry(f::Primitive, a, n)
 end
 
 
-block_state_violates_symmetry(state::EnumerationState) =
-    if isa(state.skeleton, FreeVar)
-        true
-    else
-        state_violates_symmetry(state.skeleton)
-    end
-
 has_index(p::Index, i) = p.n == i
 has_index(p::Hole, i) = true
 has_index(p::Primitive, i) = false
@@ -190,7 +183,9 @@ function block_state_successors(
     else
         environment = path_environment(state.path)
         candidates = unifying_expressions(g, environment, request, context)
-        push!(candidates, (FreeVar(request, nothing), [], context, g.log_variable))
+        if !isa(state.skeleton, Hole)
+            push!(candidates, (FreeVar(request, nothing), [], context, g.log_variable))
+        end
 
         states = map(candidates) do (candidate, argument_types, context, ll)
             new_free_parameters = number_of_free_parameters(candidate)
@@ -198,30 +193,33 @@ function block_state_successors(
 
             if isempty(argument_types)
                 new_skeleton = modify_skeleton(state.skeleton, candidate, state.path)
-                return EnumerationState(
-                    new_skeleton,
-                    context,
-                    unwind_path(state.path, new_skeleton),
-                    state.cost - ll,
-                    state.free_parameters + new_free_parameters,
-                )
+                new_path = unwind_path(state.path, new_skeleton)
             else
                 application_template = candidate
                 for (a, at) in argument_requests
                     application_template = Apply(application_template, Hole(a, at))
                 end
-                return EnumerationState(
-                    modify_skeleton(state.skeleton, application_template, state.path),
-                    context,
-                    vcat(state.path, [LeftTurn() for _ = 2:length(argument_types)], [RightTurn()]),
-                    state.cost - ll,
-                    state.free_parameters + new_free_parameters,
-                )
+                new_skeleton = modify_skeleton(state.skeleton, application_template, state.path)
+                new_path = vcat(state.path, [LeftTurn() for _ = 2:length(argument_types)], [RightTurn()])
             end
+            if is_reversible(new_skeleton)
+                new_skeleton = fill_free_holes(new_skeleton)
+                new_path = []
+            end
+            return EnumerationState(
+                new_skeleton,
+                context,
+                new_path,
+                state.cost - ll,
+                state.free_parameters + new_free_parameters,
+            )
 
         end
         return filter(
-            (new_state -> !block_state_violates_symmetry(new_state) && new_state.free_parameters <= maxFreeParameters),
+            (
+                new_state ->
+                    !state_violates_symmetry(new_state.skeleton) && new_state.free_parameters <= maxFreeParameters
+            ),
             states,
         )
     end
@@ -290,6 +288,46 @@ function fix_known_free_vars(sc, p::FreeVar, context, fixed_vars)
     end
 end
 
+
+function try_get_reversed_inputs(sc, p::Program, output_var)
+    reversed_programs = get_reversed_program(p, output_var)
+    outputs = output_var[2].values[output_var[1]].value.values
+    calculated_inputs = []
+    for rev_pr in reversed_programs
+        analazed_rev_pr = analyze_evaluation(rev_pr)
+        inp_values = []
+        for target_output in outputs
+            inp_value = try_evaluate_program(analazed_rev_pr, [], Dict(output_var[1] => target_output))
+            if isnothing(inp_value)
+                return nothing
+            end
+            push!(inp_values, inp_value)
+        end
+        input_type = closed_inference(rev_pr)
+        push!(calculated_inputs, ValueEntry(input_type, inp_values))
+    end
+    inputs = []
+    branch = EntriesBranch(Dict(), nothing, Set())
+    for entry in calculated_inputs
+        key = "\$v$(create_next_var(sc))"
+        branch.values[key] = EntryBranchItem(entry, [], Set(), false, false)
+        push!(inputs, (key, branch, entry.type))
+    end
+    new_p, _ = fix_new_free_vars(p, [i[1] for i in inputs])
+    return new_p, inputs
+end
+
+fix_new_free_vars(p::FreeVar, new_names) = FreeVar(p.t, new_names[1]), view(new_names, 2:length(new_names))
+function fix_new_free_vars(p::Apply, new_names)
+    new_f, new_f_names = fix_new_free_vars(p.f, new_names)
+    new_x, new_x_names = fix_new_free_vars(p.x, new_f_names)
+    Apply(new_f, new_x), new_x_names
+end
+function fix_new_free_vars(p::Abstraction, new_names)
+    new_b, new_b_names = fix_new_free_vars(p.b, new_names)
+    Abstraction(new_b), new_b_names
+end
+fix_new_free_vars(p::Program, new_names) = p, new_names
 
 function try_evaluate_program(p, xs, workspace)
     try
@@ -414,7 +452,7 @@ function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, in
             return insert_operation(sc, updates)
         end
     else
-        return insert_operation(sc, Set([(block, block.output_var[2], inputs),]))
+        return insert_operation(sc, Set([(block, block.output_var[2], inputs)]))
     end
 end
 
@@ -430,16 +468,7 @@ end
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
 
-function insert_new_block(
-    run_context,
-    s_ctx,
-    p,
-    input_vars,
-    output_val,
-    request,
-    cost,
-    finalizer,
-)
+function insert_new_block(run_context, s_ctx, p, input_vars, output_val, request, cost, finalizer)
     arg_types = [v[3] for v in input_vars]
     if isempty(arg_types)
         p_type = return_of_type(request)
@@ -521,32 +550,28 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                     reset_updated_keys(s_ctx)
                     _, request = apply_context(context, bp.request)
                     output_var = ("\$v$(create_next_var(s_ctx))", nothing)
-                    insert_new_block(
-                        run_context,
-                        s_ctx,
-                        p,
-                        input_vars,
-                        output_var,
-                        request,
-                        state.cost,
-                        finalizer,
-                    )
+                    insert_new_block(run_context, s_ctx, p, input_vars, output_var, request, state.cost, finalizer)
                     total_number_of_enumerated_programs += 1
                 end
             else
-                p, input_vars =
-                    capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                if is_reversible(state.skeleton)
+                    abstractor_results =
+                        @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
+                            s_ctx,
+                            state.skeleton,
+                            bp.output_var,
+                        )
+                    if !isnothing(abstractor_results)
+                        p, input_vars = abstractor_results
+                    else
+                        continue
+                    end
+                else
+                    p, input_vars =
+                        capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                end
                 reset_updated_keys(s_ctx)
-                insert_new_block(
-                    run_context,
-                    s_ctx,
-                    p,
-                    input_vars,
-                    bp.output_var,
-                    bp.request,
-                    state.cost,
-                    finalizer,
-                )
+                insert_new_block(run_context, s_ctx, p, input_vars, bp.output_var, bp.request, state.cost, finalizer)
                 total_number_of_enumerated_programs += 1
             end
             # @info s_ctx

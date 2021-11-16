@@ -109,6 +109,7 @@ function unifying_expressions(
     environment,
     request,
     context,
+    abstractors_only,
 )::Vector{Tuple{Program,Vector{Tp},Context,Float64}}
     #  given a grammar environment requested type and typing context,
     #    what are all of the possible leaves that we might use?
@@ -154,6 +155,9 @@ function unifying_expressions(
 
     grammar_candidates = collect(skipmissing(map(g.library) do (p, t, ll)
         try
+            if abstractors_only && !haskey(all_abstractors, p)
+                return missing
+            end
             if !might_unify(return_of_type(t), request)
                 return missing
             else

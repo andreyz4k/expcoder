@@ -418,7 +418,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 18
+        @test number_enumerated == 20
     end
 
     @testset "try_enumerate append-index-k with k=5" begin
@@ -469,6 +469,6 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 14
+        @test number_enumerated == 16
     end
 end

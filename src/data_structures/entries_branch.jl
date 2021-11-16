@@ -3,8 +3,8 @@ using DataStructures: OrderedDict
 
 mutable struct EntryBranchItem
     value::Entry
-    incoming_paths::Vector{OrderedDict{String,ProgramBlock}}
-    outgoing_blocks::Set{ProgramBlock}
+    incoming_paths::Vector{OrderedDict{String,AbstractProgramBlock}}
+    outgoing_blocks::Set{AbstractProgramBlock}
     is_known::Bool
     is_meaningful::Bool
 end
@@ -82,6 +82,7 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
             end
         end
         new_branch = EntriesBranch(Dict(), branch, Set())
+        has_unknowns = false
         for (k, item) in branch.values
             if k == key
                 new_branch.values[k] = EntryBranchItem(
@@ -92,6 +93,7 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
                     item.is_meaningful || !isa(block.p, FreeVar),
                 )
             elseif !item.is_known
+                has_unknowns = true
                 new_branch.values[k] = EntryBranchItem(
                     item.value,
                     [],
@@ -99,6 +101,11 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
                     item.is_known,
                     item.is_meaningful,
                 )
+            end
+        end
+        if has_unknowns
+            for (k, item) in new_branch.values
+                item.outgoing_blocks = child_outgoing_blocks(branch, new_branch, branch.values[k])
             end
         end
         return new_branch, branch.values[key].outgoing_blocks

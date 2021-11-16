@@ -69,6 +69,16 @@ end
 Base.hash(p::LetClause, h::UInt64) = hash(p.var_name, h) + hash(p.v, h) + hash(p.b, h)
 Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v && p.b == q.b
 
+
+struct MultiLetClause <: Program
+    var_names::Vector{String}
+    v::Program
+    rev_v::Vector{Program}
+    b::Program
+end
+Base.hash(p::MultiLetClause, h::UInt64) = hash(p.var_names, h) + hash(p.v, h) + hash(p.b, h)
+Base.:(==)(p::MultiLetClause, q::MultiLetClause) = p.var_names == q.var_names && p.v == q.v && p.b == q.b
+
 struct ExceptionProgram <: Program end
 
 
@@ -88,10 +98,13 @@ show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
+show_program(p::MultiLetClause, is_function::Bool) =
+    vcat(["let ", join(p.var_names, ", "), " = rev("], show_program(p.v, false), [") in "], show_program(p.b, false))
 show_program(p::ExceptionProgram, is_function::Bool) = ["EXCEPTION"]
 
+abstract type AbstractProgramBlock end
 
-struct ProgramBlock
+struct ProgramBlock <: AbstractProgramBlock
     p::Program
     analized_p::Function
     type::Tp
@@ -118,6 +131,32 @@ Base.show(io::IO, block::ProgramBlock) = print(
     ", ",
     hash(block.output_var[2]),
     "))",
+)
+
+struct ReverseProgramBlock <: AbstractProgramBlock
+    p::Program
+    reverse_blocks::Vector{ProgramBlock}
+    cost::Float64
+    input_vars::Vector{Tuple{String,Any}}
+    output_vars::Vector{Tuple{String,Any}}
+end
+
+
+Base.show(io::IO, block::ReverseProgramBlock) = print(
+    io,
+    "ReverseProgramBlock(",
+    block.p,
+    ", ",
+    block.reverse_blocks,
+    ", ",
+    block.cost,
+    ", (",
+    block.input_vars[1][1],
+    ", ",
+    hash(block.input_vars[1][2]),
+    "), ",
+    ["($k, $(hash(br)))" for (k, br) in block.output_vars],
+    ")",
 )
 
 struct UnknownPrimitive <: Exception
@@ -358,6 +397,18 @@ function analyze_evaluation(p::LetClause)
     v = analyze_evaluation(p.v)
     b = analyze_evaluation(p.b)
     (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_name => v(environment, workspace))))
+end
+
+function analyze_evaluation(p::MultiLetClause)
+    rev_vs = [analyze_evaluation(v) for v in p.rev_v]
+    b = analyze_evaluation(p.b)
+    (environment, workspace) -> b(
+        environment,
+        merge(
+            workspace,
+            merge(Dict(var_name => v(environment, workspace) for (var_name, v) in zip(p.var_names, rev_vs))),
+        ),
+    )
 end
 
 function analyze_evaluation(p::ExceptionProgram)

@@ -76,7 +76,7 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) == 10
-        @test number_enumerated == 50
+        @test length(solutions) == 3
+        @test number_enumerated == 39
     end
 end

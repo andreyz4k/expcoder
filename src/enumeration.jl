@@ -178,11 +178,12 @@ function block_state_successors(
                 vcat(state.path, [ArgTurn(request.arguments[1])]),
                 state.cost,
                 state.free_parameters,
+                state.abstractors_only,
             ),
         ]
     else
         environment = path_environment(state.path)
-        candidates = unifying_expressions(g, environment, request, context)
+        candidates = unifying_expressions(g, environment, request, context, state.abstractors_only)
         if !isa(state.skeleton, Hole)
             push!(candidates, (FreeVar(request, nothing), [], context, g.log_variable))
         end
@@ -212,6 +213,7 @@ function block_state_successors(
                 new_path,
                 state.cost - ll,
                 state.free_parameters + new_free_parameters,
+                state.abstractors_only
             )
 
         end
@@ -329,6 +331,22 @@ function fix_new_free_vars(p::Abstraction, new_names)
 end
 fix_new_free_vars(p::Program, new_names) = p, new_names
 
+function create_reversed_block(sc, p::Program, input_var, cost)
+    reversed_programs = get_reversed_program(p, input_var)
+    reverse_blocks = []
+    output_vars = []
+    inp_type = input_var[2].values[input_var[1]].value.type
+    for rp in reversed_programs
+        out_type = closed_inference(rp)
+        t = arrow(inp_type, out_type)
+        out_key = "\$v$(create_next_var(sc))"
+        push!(output_vars, (out_key, nothing))
+        push!(reverse_blocks, ProgramBlock(rp, t, 0.0, [input_var], (out_key, nothing)))
+    end
+    block = ReverseProgramBlock(p, reverse_blocks, cost, [input_var], output_vars)
+    return block
+end
+
 function try_evaluate_program(p, xs, workspace)
     try
         run_analyzed_with_arguments(p, xs, workspace)
@@ -385,11 +403,41 @@ function try_run_block(block::ProgramBlock, inputs)
         end
         push!(outs, out_value)
     end
-    new_branch, updated_block = value_updates(block, outs)
-    return bm, new_branch, updated_block
+    new_branch, next_blocks = value_updates(block, outs)
+    return bm, new_branch, next_blocks
 end
 
-function try_run_block_with_downstream(run_context, sc::SolutionContext, block::ProgramBlock, fixed_branches)
+function try_run_block(block::ReverseProgramBlock, inputs)
+    bm = Strict
+    new_branches = []
+    next = Set()
+    for rev_bl in block.reverse_blocks
+        result = try_run_block(rev_bl, inputs)
+        if isnothing(result) || result[1] == NoMatch
+            return (NoMatch, nothing)
+        else
+            m, new_branch, next_blocks = result
+            bm = min(bm, m)
+            push!(new_branches, new_branch)
+            union!(next, next_blocks)
+        end
+    end
+    return bm, new_branches, next
+end
+
+function _update_fixed_branches(fixed_branches, new_branch)
+    merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
+end
+
+function _update_fixed_branches(fixed_branches, new_branches::Vector)
+    res = fixed_branches
+    for new_branch in new_branches
+        res = _update_fixed_branches(res, new_branch)
+    end
+    res
+end
+
+function try_run_block_with_downstream(run_context, sc::SolutionContext, block, fixed_branches)
     outs = OrderedSet()
     # @info block
     # @info fixed_branches
@@ -404,7 +452,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
     else
         bm, new_branch, next_blocks = result
         push!(outs, (block, new_branch, fixed_branches))
-        new_fixed_branches = merge(fixed_branches, Dict(k => new_branch for k in keys(new_branch.values)))
+        new_fixed_branches = _update_fixed_branches(fixed_branches, new_branch)
         # @info next_blocks
         # @info new_branch.values[block.output_var[1]].outgoing_blocks
         for b in next_blocks
@@ -441,7 +489,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block::
     end
 end
 
-function add_new_block(run_context, sc::SolutionContext, block::ProgramBlock, inputs)
+function add_new_block(run_context, sc::SolutionContext, block, inputs)
     if all(isknown(branch, key) for (key, branch) in inputs)
         best_match, updates = try_run_block_with_downstream(run_context, sc, block, inputs)
         # @info updates
@@ -468,21 +516,8 @@ end
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
 
-function insert_new_block(run_context, s_ctx, p, input_vars, output_val, request, cost, finalizer)
-    arg_types = [v[3] for v in input_vars]
-    if isempty(arg_types)
-        p_type = return_of_type(request)
-    else
-        p_type = arrow(arg_types..., return_of_type(request))
-    end
-
-    # @info p
-    # @info input_vars
-    # @info output_val
-    new_block = ProgramBlock(p, p_type, cost, [(v[1], v[2]) for v in input_vars], output_val)
-    # @info new_block
-    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
-    if isnothing(add_new_block(run_context, s_ctx, new_block, input_branches))
+function insert_new_block(run_context, s_ctx, new_block, input_vars, finalizer)
+    if isnothing(add_new_block(run_context, s_ctx, new_block, input_vars))
         return
     end
     get_matches(run_context, s_ctx, finalizer)
@@ -550,35 +585,57 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                     reset_updated_keys(s_ctx)
                     _, request = apply_context(context, bp.request)
                     output_var = ("\$v$(create_next_var(s_ctx))", nothing)
-                    insert_new_block(run_context, s_ctx, p, input_vars, output_var, request, state.cost, finalizer)
+
+                    arg_types = [v[3] for v in input_vars]
+                    p_type = arrow(arg_types..., return_of_type(request))
+                    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], output_var)
+                    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+
+                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
                     total_number_of_enumerated_programs += 1
                 end
             else
-                if is_reversible(state.skeleton)
-                    abstractor_results =
-                        @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
-                            s_ctx,
-                            state.skeleton,
-                            bp.output_var,
-                        )
-                    if !isnothing(abstractor_results)
-                        p, input_vars = abstractor_results
-                    else
-                        continue
-                    end
+                if bp.reverse
+                    new_block = create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
+                    input_branches = Dict(bp.output_var[1] => bp.output_var[2])
+                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
+                    total_number_of_enumerated_programs += 1
                 else
-                    p, input_vars =
-                        capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                    if is_reversible(state.skeleton)
+                        abstractor_results =
+                            @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
+                                s_ctx,
+                                state.skeleton,
+                                bp.output_var,
+                            )
+                        if !isnothing(abstractor_results)
+                            p, input_vars = abstractor_results
+                        else
+                            continue
+                        end
+                    else
+                        p, input_vars =
+                            capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                    end
+                    reset_updated_keys(s_ctx)
+                    arg_types = [v[3] for v in input_vars]
+                    if isempty(arg_types)
+                        p_type = return_of_type(bp.request)
+                    else
+                        p_type = arrow(arg_types..., return_of_type(bp.request))
+                    end
+
+                    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
+                    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
+                    total_number_of_enumerated_programs += 1
                 end
-                reset_updated_keys(s_ctx)
-                insert_new_block(run_context, s_ctx, p, input_vars, bp.output_var, bp.request, state.cost, finalizer)
-                total_number_of_enumerated_programs += 1
             end
             # @info s_ctx
         else
             for child in block_state_successors(maxFreeParameters, g, bp.state)
                 _, new_request = apply_context(child.context, bp.request)
-                pq[(s_ctx, BlockPrototype(child, new_request, bp.input_vars, bp.output_var))] = child.cost
+                pq[(s_ctx, BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.reverse))] = child.cost
             end
         end
     end

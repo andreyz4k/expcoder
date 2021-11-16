@@ -17,6 +17,9 @@ match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
         missing
     end
 
+const_options(entry::ValueEntry) =
+    [entry.values[1]]
+
 struct NoDataEntry <: Entry
     type::Tp
 end
@@ -25,3 +28,5 @@ Base.hash(v::NoDataEntry, h::UInt64) = hash(v.type, h)
 get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
 match_with_task_val(entry::NoDataEntry, other::ValueEntry, key) =
     might_unify(entry.type, other.type) ? (TypeOnly, FreeVar(other.type, key)) : missing
+
+const_options(entry::NoDataEntry) = []

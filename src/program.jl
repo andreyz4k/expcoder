@@ -61,6 +61,13 @@ Base.hash(p::FreeVar, h::UInt64) = hash(p.t, h) + hash(p.key, h)
 Base.:(==)(p::FreeVar, q::FreeVar) = p.t == q.t && p.key == q.key
 
 
+struct SetConst <: Program
+    t::Tp
+    value::Any
+end
+Base.hash(p::SetConst, h::UInt64) = hash(p.t, h) + hash(p.value, h)
+Base.:(==)(p::SetConst, q::SetConst) = p.t == q.t && p.value == q.value
+
 struct LetClause <: Program
     var_name::String
     v::Program
@@ -96,6 +103,7 @@ show_program(p::Primitive, is_function::Bool) = [p.name]
 show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key, "(", p.t, ")"]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
+show_program(p::SetConst, is_function::Bool) = vcat(["Const{", p.t, "}(", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::MultiLetClause, is_function::Bool) =
@@ -392,6 +400,8 @@ function analyze_evaluation(p::Apply)
         (environment, workspace) -> (f(environment, workspace)(x(environment, workspace)))
     end
 end
+
+analyze_evaluation(p::SetConst) = (_, _) -> p.value
 
 function analyze_evaluation(p::LetClause)
     v = analyze_evaluation(p.v)

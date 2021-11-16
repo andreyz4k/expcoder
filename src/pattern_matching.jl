@@ -82,6 +82,46 @@ function match_with_unknown_field(run_context, sc::SolutionContext, input_key, i
     found
 end
 
+function match_with_constant(run_context, sc::SolutionContext, unknown_key, unknown_branch, finalizer)
+    unknown_entry = unknown_branch.values[unknown_key].value
+    found = false
+
+    candidates = const_options(unknown_entry)
+    if isempty(candidates)
+        return false
+    end
+    matching_seq = get_matching_seq(unknown_entry)
+    for matcher in matching_seq
+        filter!(c -> matcher(c) != NoMatch, candidates)
+        if isempty(candidates)
+            return false
+        end
+    end
+    for candidate in candidates
+        new_block = ProgramBlock(
+            SetConst(unknown_entry.type, candidate),
+            unknown_entry.type,
+            0,
+            [],
+            (unknown_key, unknown_branch),
+        )
+        new_solution_paths = add_new_block(run_context, sc, new_block, Dict())
+        if !isnothing(new_solution_paths)
+            found = true
+            # if !isempty(new_solution_paths)
+            #     @info "match known"
+            #     @info new_block
+            #     @info new_solution_paths
+            # end
+            for solution_path in new_solution_paths
+                solution, cost = extract_solution(sc, solution_path)
+                finalizer(solution, cost)
+            end
+        end
+    end
+    found
+end
+
 function get_matches(run_context, sc::SolutionContext, finalizer)
     _get_matches(run_context, sc, Set(), finalizer)
 end
@@ -100,7 +140,10 @@ function _get_matches(run_context, sc::SolutionContext, checked_options, finaliz
         # @info key
         # @info branch
         if !isknown(branch, key)
-            matchers = [match_with_known_field]
+            matchers = [
+                match_with_known_field,
+                match_with_constant,
+            ]
         elseif branch.values[key].is_meaningful
             matchers = [match_with_unknown_field]
         else

@@ -176,6 +176,9 @@ function unifying_expressions(
     end))
 
     candidates = vcat(variable_candidates, grammar_candidates)
+    if isempty(candidates)
+        return []
+    end
     z = lse([ll for (_, _, _, ll) in candidates])
     return [(p, t, k, ll - z) for (p, t, k, ll) in candidates]
 end
@@ -193,6 +196,9 @@ function following_expressions(g::Grammar, request)
         end
         output
     end))
+    if isempty(candidates)
+        return []
+    end
     z = lse([ll for (_, _, _, ll, _) in candidates])
     return [(p, t, k, ll - z, i) for (p, t, k, ll, i) in candidates]
 end

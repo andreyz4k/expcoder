@@ -37,7 +37,7 @@ end
 
 isknown(branch::EntriesBranch, key) = branch.values[key].is_known
 
-function value_updates(block::ProgramBlock, new_values)
+function value_updates(sc, block::ProgramBlock, new_values)
     branch = block.output_var[2]
     key = block.output_var[1]
     if isnothing(branch)
@@ -46,13 +46,13 @@ function value_updates(block::ProgramBlock, new_values)
             error("returning polymorphic type from $block")
         end
         new_branch = EntriesBranch(
-            Dict(key => EntryBranchItem(ValueEntry(return_type, new_values), [], Set(), true, !isa(block.p, FreeVar))),
+            Dict(key => EntryBranchItem(ValueEntry(return_type, new_values, get_complexity(sc, new_values, return_type)), [], Set(), true, !isa(block.p, FreeVar))),
             nothing,
             Set(),
         )
         return new_branch, Set()
     else
-        return updated_branch(branch, key, branch.values[key].value, new_values, block)
+        return updated_branch(sc, branch, key, branch.values[key].value, new_values, block)
     end
 end
 
@@ -72,7 +72,7 @@ function child_outgoing_blocks(branch, new_branch, item)
     return result
 end
 
-function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_values, block)
+function updated_branch(sc, branch::EntriesBranch, key, entry::ValueEntry, new_values, block)
     if branch.values[key].is_known
         return branch, branch.values[key].outgoing_blocks
     else
@@ -113,7 +113,7 @@ function updated_branch(branch::EntriesBranch, key, entry::ValueEntry, new_value
 end
 
 
-function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_values, block)
+function updated_branch(sc, branch::EntriesBranch, key, entry::NoDataEntry, new_values, block)
     for child in branch.children
         if child.values[key].is_known && child.values[key].value.values == new_values
             return child, child.values[key].outgoing_blocks
@@ -125,7 +125,7 @@ function updated_branch(branch::EntriesBranch, key, entry::NoDataEntry, new_valu
         if k == key
             t = return_of_type(block.type)
             new_branch.values[k] = EntryBranchItem(
-                ValueEntry(t, new_values),
+                ValueEntry(t, new_values, get_complexity(sc, new_values, t)),
                 [],
                 Set(),
                 true,

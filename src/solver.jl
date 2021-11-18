@@ -9,6 +9,7 @@ include("grammar.jl")
 include("task.jl")
 include("load.jl")
 include("data_structures/data_structures.jl")
+include("data_complexity.jl")
 include("pattern_matching.jl")
 include("enumeration.jl")
 include("export.jl")
@@ -18,10 +19,10 @@ include("export.jl")
 function run_solving_process(run_context, message)
     @info "running processing"
     @info message
-    task, maximum_frontier, g, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(message)
+    task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(message)
     run_context["program_timeout"] = program_timeout
     run_context["timeout"] = timeout
-    solutions, number_enumerated = enumerate_for_task(run_context, g, task, maximum_frontier)
+    solutions, number_enumerated = enumerate_for_task(run_context, g, type_weights, task, maximum_frontier)
     return export_frontiers(number_enumerated, task, solutions)
 end
 

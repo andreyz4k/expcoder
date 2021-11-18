@@ -7,6 +7,7 @@ function load_problems(message)
     # catch
     #     grammar = deserialize_contextual_grammar(grammar_payload)
     # end
+    type_weights = grammar_payload["type_weights"]
     if haskey(message, "programTimeout")
         program_timeout = message["programTimeout"]
     else
@@ -37,5 +38,5 @@ function load_problems(message)
     timeout = message["timeout"]
     nCPUs = get(message, "nc", 1)
 
-    (task, maximum_frontier, grammar, max_parameters, nCPUs, timeout, verbose, program_timeout)
+    (task, maximum_frontier, grammar, type_weights, max_parameters, nCPUs, timeout, verbose, program_timeout)
 end

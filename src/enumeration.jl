@@ -211,9 +211,9 @@ function block_state_successors(
                 new_skeleton,
                 context,
                 new_path,
-                state.cost - ll,
+                state.cost + ll,
                 state.free_parameters + new_free_parameters,
-                state.abstractors_only
+                state.abstractors_only,
             )
 
         end
@@ -306,7 +306,7 @@ function try_get_reversed_inputs(sc, p::Program, output_var)
             push!(inp_values, inp_value)
         end
         input_type = closed_inference(rev_pr)
-        push!(calculated_inputs, ValueEntry(input_type, inp_values))
+        push!(calculated_inputs, ValueEntry(input_type, inp_values, get_complexity(sc, inp_values, input_type)))
     end
     inputs = []
     branch = EntriesBranch(Dict(), nothing, Set())
@@ -371,7 +371,7 @@ function try_evaluate_program(p, xs, workspace)
     end
 end
 
-function try_run_block(block::ProgramBlock, inputs)
+function try_run_block(sc::SolutionContext, block::ProgramBlock, inputs)
     input_vals = zip(inputs...)
     if !isnothing(block.output_var[2])
         expected_output = block.output_var[2].values[block.output_var[1]].value
@@ -403,16 +403,16 @@ function try_run_block(block::ProgramBlock, inputs)
         end
         push!(outs, out_value)
     end
-    new_branch, next_blocks = value_updates(block, outs)
+    new_branch, next_blocks = value_updates(sc, block, outs)
     return bm, new_branch, next_blocks
 end
 
-function try_run_block(block::ReverseProgramBlock, inputs)
+function try_run_block(sc::SolutionContext, block::ReverseProgramBlock, inputs)
     bm = Strict
     new_branches = []
     next = Set()
     for rev_bl in block.reverse_blocks
-        result = try_run_block(rev_bl, inputs)
+        result = try_run_block(sc, rev_bl, inputs)
         if isnothing(result) || result[1] == NoMatch
             return (NoMatch, nothing)
         else
@@ -445,7 +445,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block, 
     for (key, _) in block.input_vars
         push!(inputs, fixed_branches[key].values[key].value.values)
     end
-    result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(block, inputs)
+    result = @run_with_timeout run_context["timeout"] run_context["redis"] try_run_block(sc, block, inputs)
     # @info result[1]
     if isnothing(result) || result[1] == NoMatch
         return (NoMatch, nothing)
@@ -523,11 +523,12 @@ function insert_new_block(run_context, s_ctx, new_block, input_vars, finalizer)
     get_matches(run_context, s_ctx, finalizer)
 end
 
-function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_frontier, verbose = true)
+function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(run_context["timeout"])
+    run_context["timeout_checker"] = () -> enumeration_timed_out(enumeration_timeout)
 
-    start_solution_ctx = create_starting_context(task)
+    start_solution_ctx = create_starting_context(task, type_weights)
 
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
@@ -541,16 +542,14 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
 
     for (key, branch, branch_item) in iter_known_vars(start_solution_ctx)
         for candidate in get_candidates_for_known_var(key, branch, branch_item, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost
+            pq[(start_solution_ctx, candidate)] = candidate.state.cost * candidate.complexity_factor
         end
     end
     for (key, branch, branch_item) in iter_unknown_vars(start_solution_ctx)
         for candidate in get_candidates_for_unknown_var(key, branch, branch_item, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost
+            pq[(start_solution_ctx, candidate)] = candidate.state.cost * candidate.complexity_factor
         end
     end
-
-    run_context["timeout_checker"] = () -> enumeration_timed_out(enumeration_timeout)
 
     finalizer = function (solution, cost)
         ll = @run_with_timeout run_context["program_timeout"] run_context["redis"] task.log_likelihood_checker(
@@ -614,8 +613,12 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
                             continue
                         end
                     else
-                        p, input_vars =
-                            capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
+                        p, input_vars = capture_free_vars(
+                            s_ctx,
+                            state.skeleton,
+                            state.context,
+                            EntriesBranch(Dict(), nothing, Set()),
+                        )
                     end
                     reset_updated_keys(s_ctx)
                     arg_types = [v[3] for v in input_vars]
@@ -635,7 +638,10 @@ function enumerate_for_task(run_context, g::ContextualGrammar, task, maximum_fro
         else
             for child in block_state_successors(maxFreeParameters, g, bp.state)
                 _, new_request = apply_context(child.context, bp.request)
-                pq[(s_ctx, BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.reverse))] = child.cost
+                pq[(
+                    s_ctx,
+                    BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.complexity_factor, bp.reverse),
+                )] = child.cost * bp.complexity_factor
             end
         end
     end

@@ -33,6 +33,12 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
+            "type_weights" => Dict{String,Any}(
+                "list" => 1.0,
+                "int" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+            ),
         ),
         "task" => Dict{String,Any}(
             "name" => "add-k with k=1",
@@ -104,6 +110,12 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
+            "type_weights" => Dict{String,Any}(
+                "list" => 1.0,
+                "int" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+            ),
         ),
         "task" => Dict{String,Any}(
             "name" => "empty",
@@ -171,6 +183,12 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
+            "type_weights" => Dict{String,Any}(
+                "list" => 1.0,
+                "int" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+            ),
         ),
         "task" => Dict{String,Any}(
             "name" => "append-index-k with k=5",
@@ -275,6 +293,12 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
+            "type_weights" => Dict{String,Any}(
+                "list" => 1.0,
+                "int" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+            ),
         ),
         "task" => Dict{String,Any}(
             "name" => "len",
@@ -343,6 +367,12 @@ import Redis
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                 Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
             ],
+            "type_weights" => Dict{String,Any}(
+                "list" => 1.0,
+                "int" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+            ),
         ),
         "task" => Dict{String,Any}(
             "name" => "is-mod-k with k=1",
@@ -388,7 +418,7 @@ import Redis
     # end
 
     @testset "try_enumerate add-k with k=1" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload1)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -396,6 +426,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,
@@ -405,7 +436,7 @@ import Redis
     end
 
     @testset "try_enumerate empty" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload2)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload2)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -413,6 +444,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,
@@ -422,7 +454,7 @@ import Redis
     end
 
     @testset "try_enumerate append-index-k with k=5" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload3)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -430,6 +462,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,
@@ -439,7 +472,7 @@ import Redis
     end
 
     @testset "try_enumerate len" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload4)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -447,6 +480,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,
@@ -456,7 +490,7 @@ import Redis
     end
 
     @testset "try_enumerate is-mod-k with k=1" begin
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload5)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -464,6 +498,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,

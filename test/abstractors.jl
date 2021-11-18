@@ -34,6 +34,12 @@ import Redis
                     Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                     Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
                 ],
+                "type_weights" => Dict{String,Any}(
+                    "list" => 1.0,
+                    "int" => 1.0,
+                    "bool" => 1.0,
+                    "float" => 1.0,
+                ),
             ),
             "task" => Dict{String,Any}(
                 "name" => "invert repeated",
@@ -64,7 +70,7 @@ import Redis
             "verbose" => false,
             "shatter" => 10,
         )
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -72,6 +78,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,
@@ -109,6 +116,12 @@ import Redis
                     Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
                     Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
                 ],
+                "type_weights" => Dict{String,Any}(
+                    "list" => 1.0,
+                    "int" => 1.0,
+                    "bool" => 1.0,
+                    "float" => 1.0,
+                ),
             ),
             "task" => Dict{String,Any}(
                 "name" => "find const",
@@ -139,7 +152,7 @@ import Redis
             "verbose" => false,
             "shatter" => 10,
         )
-        task, maximum_frontier, g, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
         solutions, number_enumerated = @time enumerate_for_task(
             Dict(
                 "redis" => RedisContext(Redis.RedisConnection()),
@@ -147,6 +160,7 @@ import Redis
                 "timeout" => timeout,
             ),
             g,
+            type_weights,
             task,
             maximum_frontier,
             verbose,

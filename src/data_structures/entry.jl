@@ -4,6 +4,7 @@ abstract type Entry end
 struct ValueEntry <: Entry
     type::Tp
     values::Vector
+    complexity::Float64
 end
 
 Base.hash(v::ValueEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)

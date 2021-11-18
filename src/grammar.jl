@@ -180,7 +180,7 @@ function unifying_expressions(
         return []
     end
     z = lse([ll for (_, _, _, ll) in candidates])
-    return [(p, t, k, ll - z) for (p, t, k, ll) in candidates]
+    return [(p, t, k, z - ll) for (p, t, k, ll) in candidates]
 end
 
 function following_expressions(g::Grammar, request)
@@ -200,5 +200,5 @@ function following_expressions(g::Grammar, request)
         return []
     end
     z = lse([ll for (_, _, _, ll, _) in candidates])
-    return [(p, t, k, ll - z, i) for (p, t, k, ll, i) in candidates]
+    return [(p, t, k, z - ll, i) for (p, t, k, ll, i) in candidates]
 end

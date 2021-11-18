@@ -8,34 +8,48 @@ mutable struct SolutionContext
     example_count::Int64
     previous_keys::Dict{String,Set{String}}
     following_keys::Dict{String,Set{String}}
+    type_weights::Dict{String,Float64}
 end
 
-function create_starting_context(task::Task)::SolutionContext
+function create_starting_context(task::Task, type_weights)::SolutionContext
     var_data = Dict{String,EntriesBranch}()
     argument_types = arguments_of_type(task.task_type)
     input_keys = []
     previous_keys = Dict{String,Set{String}}()
     following_keys = Dict{String,Set{String}}()
+    example_count = length(task.train_outputs)
+    target_key = "out"
+    sc = SolutionContext(
+        var_data,
+        target_key,
+        0,
+        input_keys,
+        Set(),
+        example_count,
+        previous_keys,
+        following_keys,
+        type_weights,
+    )
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
-        entry = ValueEntry(t, collect(values))
-        var_data[key] = EntriesBranch(
+        values = collect(values)
+        entry = ValueEntry(t, values, get_complexity(sc, values, t))
+        sc.var_data[key] = EntriesBranch(
             Dict(key => EntryBranchItem(entry, [OrderedDict{String,ProgramBlock}()], Set(), true, true)),
             nothing,
             Set(),
         )
-        push!(input_keys, key)
-        previous_keys[key] = Set([key])
-        following_keys[key] = Set([key])
+        push!(sc.input_keys, key)
+        sc.previous_keys[key] = Set([key])
+        sc.following_keys[key] = Set([key])
     end
-    target_key = "out"
-    entry = ValueEntry(return_of_type(task.task_type), task.train_outputs)
-    var_data[target_key] =
+    return_type = return_of_type(task.task_type)
+    entry = ValueEntry(return_type, task.train_outputs, get_complexity(sc, task.train_outputs, return_type))
+    sc.var_data[target_key] =
         EntriesBranch(Dict(target_key => EntryBranchItem(entry, [], Set(), false, false)), nothing, Set())
-    previous_keys[target_key] = Set([target_key])
-    following_keys[target_key] = Set([target_key])
-    example_count = length(task.train_outputs)
-    return SolutionContext(var_data, target_key, 0, input_keys, Set(), example_count, previous_keys, following_keys)
+    sc.previous_keys[target_key] = Set([target_key])
+    sc.following_keys[target_key] = Set([target_key])
+    return sc
 end
 
 function reset_updated_keys(ctx::SolutionContext)
@@ -153,8 +167,7 @@ function get_input_paths_for_existing_block(bl, new_paths)
                 if i == l
                     inp_paths = new_paths[(ik, inp_branch)]
                 elseif i < l && haskey(new_paths, (ik, inp_branch))
-                    inp_paths =
-                        filter(!in(path, new_paths[(ik, inp_branch)]), inp_branch.values[ik].incoming_paths)
+                    inp_paths = filter(!in(path, new_paths[(ik, inp_branch)]), inp_branch.values[ik].incoming_paths)
                 else
                     inp_paths = inp_branch.values[ik].incoming_paths
                 end

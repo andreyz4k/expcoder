@@ -85,7 +85,7 @@ end
 function match_with_constant(run_context, sc::SolutionContext, unknown_key, unknown_branch, finalizer)
     unknown_entry = unknown_branch.values[unknown_key].value
     found = false
-
+    # @info "Matching constant $unknown_key $(hash(unknown_branch))"
     candidates = const_options(unknown_entry)
     if isempty(candidates)
         return false
@@ -109,7 +109,7 @@ function match_with_constant(run_context, sc::SolutionContext, unknown_key, unkn
         if !isnothing(new_solution_paths)
             found = true
             # if !isempty(new_solution_paths)
-            #     @info "match known"
+            #     @info "match constant"
             #     @info new_block
             #     @info new_solution_paths
             # end

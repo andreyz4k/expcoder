@@ -523,32 +523,131 @@ function insert_new_block(run_context, s_ctx, new_block, input_vars, finalizer)
     get_matches(run_context, s_ctx, finalizer)
 end
 
+function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp)
+    state = bp.state
+    if isnothing(bp.output_var)
+        # @info bp.input_vars
+        fixed_inputs = Dict(kv[1] => kv[2] for kv in bp.input_vars if !isnothing(kv))
+        fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context, fixed_inputs)
+        # @info fix_options
+        for (p, input_vars, context, _) in fix_options
+            reset_updated_keys(s_ctx)
+            _, request = apply_context(context, bp.request)
+            output_var = ("\$v$(create_next_var(s_ctx))", nothing)
+
+            arg_types = [v[3] for v in input_vars]
+            p_type = arrow(arg_types..., return_of_type(request))
+            new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], output_var)
+            input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+
+            insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
+            s_ctx.total_number_of_enumerated_programs += 1
+        end
+    elseif bp.reverse
+        reset_updated_keys(s_ctx)
+        new_block = create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
+        input_branches = Dict(bp.output_var[1] => bp.output_var[2])
+        insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
+        s_ctx.total_number_of_enumerated_programs += 1
+    else
+        error("Inconsistent block prototype $bp")
+    end
+end
+
+function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, pq, g)
+    state = bp.state
+    if is_reversible(state.skeleton)
+        abstractor_results =
+            @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
+                s_ctx,
+                state.skeleton,
+                bp.output_var,
+            )
+        if !isnothing(abstractor_results)
+            p, input_vars = abstractor_results
+        else
+            return
+        end
+    else
+        p, input_vars = capture_free_vars(
+            s_ctx,
+            state.skeleton,
+            state.context,
+            EntriesBranch(Dict(), nothing, Set()),
+        )
+    end
+    reset_updated_keys(s_ctx)
+    arg_types = [v[3] for v in input_vars]
+    if isempty(arg_types)
+        p_type = return_of_type(bp.request)
+    else
+        p_type = arrow(arg_types..., return_of_type(bp.request))
+    end
+
+    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
+    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
+    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
+    s_ctx.total_number_of_enumerated_programs += 1
+    for (key, branch) in s_ctx.updated_options
+        item = branch.values[key]
+        if !item.is_known && isa(item.value, ValueEntry)
+            enqueue_unknown_var(pq, key, branch, item, g)
+        end
+    end
+end
+
+function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, pq, bp, from_input)
+    if state_finished(bp.state)
+        if from_input
+            enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp)
+        else
+            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, pq, g)
+        end
+        # @info s_ctx
+    else
+        for child in block_state_successors(maxFreeParameters, g, bp.state)
+            _, new_request = apply_context(child.context, bp.request)
+            pq[
+                BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.complexity_factor, bp.reverse),
+            ] = child.cost * bp.complexity_factor
+        end
+    end
+end
+
+function enqueue_known_var(pq_input, key, branch, branch_item, g)
+    for candidate in get_candidates_for_known_var(key, branch, branch_item, g)
+        pq_input[candidate] = candidate.state.cost * candidate.complexity_factor
+    end
+end
+
+function enqueue_unknown_var(pq_output, key, branch, branch_item, g)
+    for candidate in get_candidates_for_unknown_var(key, branch, branch_item, g)
+        pq_output[candidate] = candidate.state.cost * candidate.complexity_factor
+    end
+end
+
 function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, task, maximum_frontier, verbose = true)
     #    Returns, for each task, (program,logPrior) as well as the total number of enumerated programs
     enumeration_timeout = get_enumeration_timeout(run_context["timeout"])
     run_context["timeout_checker"] = () -> enumeration_timed_out(enumeration_timeout)
 
-    start_solution_ctx = create_starting_context(task, type_weights)
+    s_ctx = create_starting_context(task, type_weights)
 
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
     hits = PriorityQueue()
 
-    total_number_of_enumerated_programs = 0
     maxFreeParameters = 2
 
-    pq = PriorityQueue()
+    pq_input = PriorityQueue()
+    pq_output = PriorityQueue()
     start_time = time()
 
-    for (key, branch, branch_item) in iter_known_vars(start_solution_ctx)
-        for candidate in get_candidates_for_known_var(key, branch, branch_item, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost * candidate.complexity_factor
-        end
+    for (key, branch, branch_item) in iter_known_vars(s_ctx)
+        enqueue_known_var(pq_input, key, branch, branch_item, g)
     end
-    for (key, branch, branch_item) in iter_unknown_vars(start_solution_ctx)
-        for candidate in get_candidates_for_unknown_var(key, branch, branch_item, g)
-            pq[(start_solution_ctx, candidate)] = candidate.state.cost * candidate.complexity_factor
-        end
+    for (key, branch, branch_item) in iter_unknown_vars(s_ctx)
+        enqueue_unknown_var(pq_output, key, branch, branch_item, g)
     end
 
     finalizer = function (solution, cost)
@@ -570,84 +669,20 @@ function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, tas
         end
     end
 
-    while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(pq) && length(hits) < maximum_frontier
-        (s_ctx, bp), pr = peek(pq)
+    from_input = true
+
+    while (!(enumeration_timed_out(enumeration_timeout))) &&
+              (!isempty(pq_input) || !isempty(pq_output)) &&
+              length(hits) < maximum_frontier
+        from_input = !from_input
+        pq = from_input ? pq_input : pq_output
+        bp, pr = peek(pq)
         dequeue!(pq)
-        if state_finished(bp.state)
-            state = bp.state
-            if isnothing(bp.output_var)
-                # @info bp.input_vars
-                fixed_inputs = Dict(kv[1] => kv[2] for kv in bp.input_vars if !isnothing(kv))
-                fix_options = fix_known_free_vars(s_ctx, state.skeleton, state.context, fixed_inputs)
-                # @info fix_options
-                for (p, input_vars, context, _) in fix_options
-                    reset_updated_keys(s_ctx)
-                    _, request = apply_context(context, bp.request)
-                    output_var = ("\$v$(create_next_var(s_ctx))", nothing)
-
-                    arg_types = [v[3] for v in input_vars]
-                    p_type = arrow(arg_types..., return_of_type(request))
-                    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], output_var)
-                    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
-
-                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
-                    total_number_of_enumerated_programs += 1
-                end
-            else
-                if bp.reverse
-                    new_block = create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
-                    input_branches = Dict(bp.output_var[1] => bp.output_var[2])
-                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
-                    total_number_of_enumerated_programs += 1
-                else
-                    if is_reversible(state.skeleton)
-                        abstractor_results =
-                            @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
-                                s_ctx,
-                                state.skeleton,
-                                bp.output_var,
-                            )
-                        if !isnothing(abstractor_results)
-                            p, input_vars = abstractor_results
-                        else
-                            continue
-                        end
-                    else
-                        p, input_vars = capture_free_vars(
-                            s_ctx,
-                            state.skeleton,
-                            state.context,
-                            EntriesBranch(Dict(), nothing, Set()),
-                        )
-                    end
-                    reset_updated_keys(s_ctx)
-                    arg_types = [v[3] for v in input_vars]
-                    if isempty(arg_types)
-                        p_type = return_of_type(bp.request)
-                    else
-                        p_type = arrow(arg_types..., return_of_type(bp.request))
-                    end
-
-                    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
-                    input_branches = Dict(key => branch for (key, branch, _) in input_vars)
-                    insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
-                    total_number_of_enumerated_programs += 1
-                end
-            end
-            # @info s_ctx
-        else
-            for child in block_state_successors(maxFreeParameters, g, bp.state)
-                _, new_request = apply_context(child.context, bp.request)
-                pq[(
-                    s_ctx,
-                    BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.complexity_factor, bp.reverse),
-                )] = child.cost * bp.complexity_factor
-            end
-        end
+        enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, pq, bp, from_input)
     end
 
     @info(collect(keys(hits)))
 
-    (collect(keys(hits)), total_number_of_enumerated_programs)
+    (collect(keys(hits)), s_ctx.total_number_of_enumerated_programs)
 
 end

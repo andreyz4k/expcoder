@@ -9,6 +9,7 @@ mutable struct SolutionContext
     previous_keys::Dict{String,Set{String}}
     following_keys::Dict{String,Set{String}}
     type_weights::Dict{String,Float64}
+    total_number_of_enumerated_programs::Int64
 end
 
 function create_starting_context(task::Task, type_weights)::SolutionContext
@@ -29,6 +30,7 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         previous_keys,
         following_keys,
         type_weights,
+        0,
     )
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
@@ -139,7 +141,7 @@ function get_input_paths_for_new_block(bl)
                 for (k, b) in inp_path
                     if haskey(path, k) && path[k] != b
                         bad_path = true
-                        @warn "Paths mismatch" path inp_path
+                        # @warn "Paths mismatch $bl" path inp_path
                         break
                     end
                 end
@@ -176,7 +178,7 @@ function get_input_paths_for_existing_block(bl, new_paths)
                     for (k, b) in inp_path
                         if haskey(path, k) && path[k] != b
                             bad_path = true
-                            @warn "Paths mismatch" path inp_path
+                            # @warn "Paths mismatch $bl" path inp_path
                             break
                         end
                     end

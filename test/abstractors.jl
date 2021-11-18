@@ -83,8 +83,8 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) == 3
-        @test number_enumerated == 39
+        @test length(solutions) == 6
+        @test number_enumerated == 43
     end
 
     @testset "Find const" begin
@@ -165,7 +165,7 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) == 1
-        @test number_enumerated == 78
+        @test length(solutions) == 5
+        @test number_enumerated == 92
     end
 end

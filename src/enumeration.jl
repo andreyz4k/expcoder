@@ -245,7 +245,7 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false)
+    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false, 0.0)
     FreeVar(t, key), [(key, common_branch, t)]
 end
 
@@ -293,7 +293,9 @@ end
 
 function try_get_reversed_inputs(sc, p::Program, output_var)
     reversed_programs = get_reversed_program(p, output_var)
-    outputs = output_var[2].values[output_var[1]].value.values
+    output_item = output_var[2].values[output_var[1]]
+    output_entry = output_item.value
+    outputs = output_entry.values
     calculated_inputs = []
     for rev_pr in reversed_programs
         analazed_rev_pr = analyze_evaluation(rev_pr)
@@ -310,9 +312,11 @@ function try_get_reversed_inputs(sc, p::Program, output_var)
     end
     inputs = []
     branch = EntriesBranch(Dict(), nothing, Set())
+    complexity_factor =
+        sum(entry.complexity for entry in calculated_inputs) / output_entry.complexity * output_item.complexity_factor
     for entry in calculated_inputs
         key = "\$v$(create_next_var(sc))"
-        branch.values[key] = EntryBranchItem(entry, [], Set(), false, false)
+        branch.values[key] = EntryBranchItem(entry, [], Set(), false, false, complexity_factor)
         push!(inputs, (key, branch, entry.type))
     end
     new_p, _ = fix_new_free_vars(p, [i[1] for i in inputs])
@@ -569,12 +573,7 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
             return
         end
     else
-        p, input_vars = capture_free_vars(
-            s_ctx,
-            state.skeleton,
-            state.context,
-            EntriesBranch(Dict(), nothing, Set()),
-        )
+        p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
     end
     reset_updated_keys(s_ctx)
     arg_types = [v[3] for v in input_vars]
@@ -588,12 +587,6 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
     input_branches = Dict(key => branch for (key, branch, _) in input_vars)
     insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
     s_ctx.total_number_of_enumerated_programs += 1
-    for (key, branch) in s_ctx.updated_options
-        item = branch.values[key]
-        if !item.is_known && isa(item.value, ValueEntry)
-            enqueue_unknown_var(pq, key, branch, item, g)
-        end
-    end
 end
 
 function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, pq, bp, from_input)
@@ -603,13 +596,21 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
         else
             enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, pq, g)
         end
-        # @info s_ctx
+        for (key, branch) in s_ctx.updated_options
+            item = branch.values[key]
+            if isa(item.value, ValueEntry) && !isnothing(item.complexity_factor)
+                if !item.is_known
+                    enqueue_unknown_var(pq, key, branch, item, g)
+                else
+                    enqueue_known_var(pq, key, branch, item, g)
+                end
+            end
+        end
     else
         for child in block_state_successors(maxFreeParameters, g, bp.state)
             _, new_request = apply_context(child.context, bp.request)
-            pq[
-                BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.complexity_factor, bp.reverse),
-            ] = child.cost * bp.complexity_factor
+            pq[BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.complexity_factor, bp.reverse)] =
+                child.cost * bp.complexity_factor
         end
     end
 end

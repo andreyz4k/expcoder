@@ -37,7 +37,16 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         values = collect(values)
         entry = ValueEntry(t, values, get_complexity(sc, values, t))
         sc.var_data[key] = EntriesBranch(
-            Dict(key => EntryBranchItem(entry, [OrderedDict{String,ProgramBlock}()], Set(), true, true)),
+            Dict(
+                key => EntryBranchItem(
+                    entry,
+                    [OrderedDict{String,ProgramBlock}()],
+                    Set(),
+                    true,
+                    true,
+                    entry.complexity,
+                ),
+            ),
             nothing,
             Set(),
         )
@@ -47,8 +56,11 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
     end
     return_type = return_of_type(task.task_type)
     entry = ValueEntry(return_type, task.train_outputs, get_complexity(sc, task.train_outputs, return_type))
-    sc.var_data[target_key] =
-        EntriesBranch(Dict(target_key => EntryBranchItem(entry, [], Set(), false, false)), nothing, Set())
+    sc.var_data[target_key] = EntriesBranch(
+        Dict(target_key => EntryBranchItem(entry, [], Set(), false, false, entry.complexity)),
+        nothing,
+        Set(),
+    )
     sc.previous_keys[target_key] = Set([target_key])
     sc.following_keys[target_key] = Set([target_key])
     return sc
@@ -244,6 +256,34 @@ function update_prev_follow_keys(sc, key, bl::ReverseProgramBlock)
     end
 end
 
+function update_complexity_factors(bl::ProgramBlock)
+    factors = [
+        inp_branch.values[ik].complexity_factor for
+        (ik, inp_branch) in bl.input_vars if !isnothing(inp_branch.values[ik].complexity_factor)
+    ]
+    if !isempty(factors)
+        complexity_factor = maximum(factors)
+    else
+        complexity_factor = nothing
+    end
+    old_factor = bl.output_var[2].values[bl.output_var[1]].complexity_factor
+    if !isnothing(complexity_factor) && (isnothing(old_factor) || complexity_factor < old_factor)
+        # @info "Updating complexity for var $((bl.output_var[1], hash(bl.output_var[2]))) $old_factor $complexity_factor $(bl.p)"
+        bl.output_var[2].values[bl.output_var[1]].complexity_factor = complexity_factor
+    end
+end
+
+function update_complexity_factors(bl::ReverseProgramBlock)
+    complexity_factor =
+        sum(br.values[k].value.complexity for (k, br) in bl.output_vars) /
+        sum(br.values[k].value.complexity for (k, br) in bl.input_vars) *
+        sum(br.values[k].complexity_factor for (k, br) in bl.input_vars)
+    for (key, branch) in bl.output_vars
+        # @info "Updating complexity for var $((key, hash(branch))) $(branch.values[key].complexity_factor) $complexity_factor $(bl.p)"
+        branch.values[key].complexity_factor = complexity_factor
+    end
+end
+
 function insert_operation(sc::SolutionContext, updates)
     new_paths = Dict()
     for (bl, out_branch, input_branches) in updates
@@ -251,6 +291,7 @@ function insert_operation(sc::SolutionContext, updates)
 
         if all(inp_branch.values[k].is_known for (k, inp_branch) in bl.input_vars)
             get_new_paths_for_block(bl, is_new_block, new_paths)
+            update_complexity_factors(bl)
         end
 
         for (k, inp_branch) in bl.input_vars

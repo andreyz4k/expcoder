@@ -39,7 +39,7 @@ initial_block_prototype(request, g::Grammar, inputs, output, complexity_factor) 
 
 
 function get_candidates_for_unknown_var(key, branch, branch_item, g)
-    [initial_block_prototype(branch_item.value.type, g.no_context, [], (key, branch), branch_item.value.complexity)]
+    [initial_block_prototype(branch_item.value.type, g.no_context, [], (key, branch), branch_item.complexity_factor)]
 end
 
 function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGrammar)
@@ -49,7 +49,7 @@ function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGra
             branch_item.value.type,
             [],
             (key, branch),
-            branch_item.value.complexity,
+            branch_item.complexity_factor,
             true,
         ),
     ]
@@ -79,7 +79,7 @@ function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGra
                 return_of_type(t),
                 [j == i ? (key, branch) : nothing for j = 1:length(arguments_of_type(t))],
                 nothing,
-                branch_item.value.complexity,
+                branch_item.complexity_factor,
                 false,
             ),
         )

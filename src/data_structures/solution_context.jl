@@ -1,4 +1,6 @@
 
+using DataStructures
+
 mutable struct SolutionContext
     var_data::Dict{String,EntriesBranch}
     target_key::String
@@ -10,6 +12,8 @@ mutable struct SolutionContext
     following_keys::Dict{String,Set{String}}
     type_weights::Dict{String,Float64}
     total_number_of_enumerated_programs::Int64
+    pq_input::PriorityQueue
+    pq_output::PriorityQueue
 end
 
 function create_starting_context(task::Task, type_weights)::SolutionContext
@@ -31,6 +35,8 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         following_keys,
         type_weights,
         0,
+        PriorityQueue(),
+        PriorityQueue(),
     )
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
         key = "\$i$i"
@@ -181,7 +187,7 @@ function get_input_paths_for_existing_block(bl, new_paths)
                 if i == l
                     inp_paths = new_paths[(ik, inp_branch)]
                 elseif i < l && haskey(new_paths, (ik, inp_branch))
-                    inp_paths = filter(!in(path, new_paths[(ik, inp_branch)]), inp_branch.values[ik].incoming_paths)
+                    inp_paths = filter(p -> !in(p, new_paths[(ik, inp_branch)]), inp_branch.values[ik].incoming_paths)
                 else
                     inp_paths = inp_branch.values[ik].incoming_paths
                 end

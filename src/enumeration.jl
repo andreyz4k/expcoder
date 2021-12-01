@@ -481,7 +481,7 @@ function try_run_block_with_downstream(run_context, sc::SolutionContext, block, 
                 bm = min(down_match, bm)
                 for bl in updates
                     if in(bl, outs)
-                        @warn "Duplicate block in run path: $(bl[1])"
+                        # @warn "Duplicate block in run path: $(bl[1])"
                         delete!(outs, bl)
                     end
                     push!(outs, bl)
@@ -558,7 +558,7 @@ function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp)
     end
 end
 
-function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, pq, g)
+function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp)
     state = bp.state
     if is_reversible(state.skeleton)
         abstractor_results =
@@ -594,15 +594,15 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
         if from_input
             enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp)
         else
-            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, pq, g)
+            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp)
         end
         for (key, branch) in s_ctx.updated_options
             item = branch.values[key]
             if isa(item.value, ValueEntry) && !isnothing(item.complexity_factor)
                 if !item.is_known
-                    enqueue_unknown_var(pq, key, branch, item, g)
+                    enqueue_unknown_var(s_ctx, key, branch, item, g)
                 else
-                    enqueue_known_var(pq, key, branch, item, g)
+                    enqueue_known_var(s_ctx, key, branch, item, g)
                 end
             end
         end
@@ -615,15 +615,15 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
     end
 end
 
-function enqueue_known_var(pq_input, key, branch, branch_item, g)
+function enqueue_known_var(sc, key, branch, branch_item, g)
     for candidate in get_candidates_for_known_var(key, branch, branch_item, g)
-        pq_input[candidate] = candidate.state.cost * candidate.complexity_factor
+        sc.pq_input[candidate] = candidate.state.cost * candidate.complexity_factor
     end
 end
 
-function enqueue_unknown_var(pq_output, key, branch, branch_item, g)
+function enqueue_unknown_var(sc, key, branch, branch_item, g)
     for candidate in get_candidates_for_unknown_var(key, branch, branch_item, g)
-        pq_output[candidate] = candidate.state.cost * candidate.complexity_factor
+        sc.pq_output[candidate] = candidate.state.cost * candidate.complexity_factor
     end
 end
 
@@ -640,15 +640,13 @@ function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, tas
 
     maxFreeParameters = 2
 
-    pq_input = PriorityQueue()
-    pq_output = PriorityQueue()
     start_time = time()
 
     for (key, branch, branch_item) in iter_known_vars(s_ctx)
-        enqueue_known_var(pq_input, key, branch, branch_item, g)
+        enqueue_known_var(s_ctx, key, branch, branch_item, g)
     end
     for (key, branch, branch_item) in iter_unknown_vars(s_ctx)
-        enqueue_unknown_var(pq_output, key, branch, branch_item, g)
+        enqueue_unknown_var(s_ctx, key, branch, branch_item, g)
     end
 
     finalizer = function (solution, cost)
@@ -673,10 +671,10 @@ function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, tas
     from_input = true
 
     while (!(enumeration_timed_out(enumeration_timeout))) &&
-              (!isempty(pq_input) || !isempty(pq_output)) &&
+              (!isempty(s_ctx.pq_input) || !isempty(s_ctx.pq_output)) &&
               length(hits) < maximum_frontier
         from_input = !from_input
-        pq = from_input ? pq_input : pq_output
+        pq = from_input ? s_ctx.pq_input : s_ctx.pq_output
         bp, pr = peek(pq)
         dequeue!(pq)
         enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, pq, bp, from_input)

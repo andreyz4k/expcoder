@@ -2,6 +2,7 @@
 block_to_let(block::ProgramBlock, output) = LetClause(block.output_var[1], block.p, output)
 block_to_let(block::ReverseProgramBlock, output) = MultiLetClause(
     [output_var[1] for output_var in block.output_vars],
+    [input_var[1] for input_var in block.input_vars],
     block.p,
     [b.p for b in block.reverse_blocks],
     output,
@@ -35,6 +36,7 @@ replace_free_var(p::LetClause, key, v) =
 
 replace_free_var(p::MultiLetClause, key, v) = MultiLetClause(
     p.var_names,
+    p.inp_var_names,
     replace_free_var(p.v, key, v),
     [replace_free_var(rp, key, v) for rp in p.rev_v],
     replace_free_var(p.b, key, v),

@@ -79,6 +79,7 @@ Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v 
 
 struct MultiLetClause <: Program
     var_names::Vector{String}
+    inp_var_names::Vector{String}
     v::Program
     rev_v::Vector{Program}
     b::Program
@@ -107,7 +108,7 @@ show_program(p::SetConst, is_function::Bool) = vcat(["Const{", p.t, "}(", p.valu
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::MultiLetClause, is_function::Bool) =
-    vcat(["let ", join(p.var_names, ", "), " = rev("], show_program(p.v, false), [") in "], show_program(p.b, false))
+    vcat(["let ", join(p.var_names, ", "), " = rev("], show_program(p.v, false), [", ", p.inp_var_names ,") in "], show_program(p.b, false))
 show_program(p::ExceptionProgram, is_function::Bool) = ["EXCEPTION"]
 
 abstract type AbstractProgramBlock end

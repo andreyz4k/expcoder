@@ -128,9 +128,9 @@ end
 
 function _get_matches(run_context, sc::SolutionContext, checked_options, finalizer)
     # @info "Start matching iteration"
-    # @info [(ke[1], "$(hash(ke[2]))") for ke in sc.updated_options]
+    # @info [(ke[1], "$(hash(ke[2]))") for ke in sc.inserted_options]
     # @info [(ke[1], "$(hash(ke[2]))") for ke in checked_options]
-    for (key, branch) in sc.updated_options
+    for (key, branch) in sc.inserted_options
         if run_context["timeout_checker"]()
             break
         end

@@ -2,6 +2,7 @@ name = "solver"
 uuid = "5b87f58b-a6cb-43fc-b459-8e7b9fbb6b24"
 authors = ["Andrey Zakharevich <andreyzakharevich@gmail.com>"]
 version = "0.1.0"
+julia_version = "1.7"
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"

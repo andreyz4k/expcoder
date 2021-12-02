@@ -7,7 +7,7 @@ mutable struct EntryBranchItem
     outgoing_blocks::Set{AbstractProgramBlock}
     is_known::Bool
     is_meaningful::Bool
-    complexity_factor::Union{Float64,Nothing}
+    min_path_cost::Union{Float64,Nothing}
 end
 
 
@@ -92,7 +92,7 @@ function updated_branch(sc, branch::EntriesBranch, key, entry::ValueEntry, new_v
             elseif !item.is_known
                 has_unknowns = true
                 new_branch.values[k] =
-                    EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.complexity_factor)
+                    EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.min_path_cost)
             end
         end
         if has_unknowns
@@ -122,7 +122,7 @@ function updated_branch(sc, branch::EntriesBranch, key, entry::NoDataEntry, new_
         elseif !item.is_known
             has_unknowns = true
             new_branch.values[k] =
-                EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.complexity_factor)
+                EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.min_path_cost)
         end
     end
     if has_unknowns

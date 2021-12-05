@@ -8,6 +8,7 @@ mutable struct EntryBranchItem
     is_known::Bool
     is_meaningful::Bool
     min_path_cost::Union{Float64,Nothing}
+    complexity_factor::Union{Float64,Nothing}
 end
 
 
@@ -48,7 +49,7 @@ function value_updates(sc, block::ProgramBlock, new_values)
         end
         entry = ValueEntry(return_type, new_values, get_complexity(sc, new_values, return_type))
         new_branch = EntriesBranch(
-            Dict(key => EntryBranchItem(entry, [], Set(), true, !isa(block.p, FreeVar), nothing)),
+            Dict(key => EntryBranchItem(entry, [], Set(), true, !isa(block.p, FreeVar), nothing, nothing)),
             nothing,
             Set(),
         )
@@ -87,12 +88,26 @@ function updated_branch(sc, branch::EntriesBranch, key, entry::ValueEntry, new_v
         has_unknowns = false
         for (k, item) in branch.values
             if k == key
-                new_branch.values[k] =
-                    EntryBranchItem(entry, [], Set(), true, item.is_meaningful || !isa(block.p, FreeVar), nothing)
+                new_branch.values[k] = EntryBranchItem(
+                    entry,
+                    [],
+                    Set(),
+                    true,
+                    item.is_meaningful || !isa(block.p, FreeVar),
+                    nothing,
+                    nothing,
+                )
             elseif !item.is_known
                 has_unknowns = true
-                new_branch.values[k] =
-                    EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.min_path_cost)
+                new_branch.values[k] = EntryBranchItem(
+                    item.value,
+                    [],
+                    Set(),
+                    item.is_known,
+                    item.is_meaningful,
+                    item.min_path_cost,
+                    item.complexity_factor,
+                )
             end
         end
         if has_unknowns
@@ -118,11 +133,18 @@ function updated_branch(sc, branch::EntriesBranch, key, entry::NoDataEntry, new_
             t = return_of_type(block.type)
             entry = ValueEntry(t, new_values, get_complexity(sc, new_values, t))
             new_branch.values[k] =
-                EntryBranchItem(entry, [], Set(), true, item.is_meaningful || !isa(block.p, FreeVar), nothing)
+                EntryBranchItem(entry, [], Set(), true, item.is_meaningful || !isa(block.p, FreeVar), nothing, nothing)
         elseif !item.is_known
             has_unknowns = true
-            new_branch.values[k] =
-                EntryBranchItem(item.value, [], Set(), item.is_known, item.is_meaningful, item.min_path_cost)
+            new_branch.values[k] = EntryBranchItem(
+                item.value,
+                [],
+                Set(),
+                item.is_known,
+                item.is_meaningful,
+                item.min_path_cost,
+                item.complexity_factor,
+            )
         end
     end
     if has_unknowns

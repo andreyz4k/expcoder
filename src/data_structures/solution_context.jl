@@ -13,7 +13,8 @@ mutable struct SolutionContext
     following_keys::Dict{String,Set{String}}
     type_weights::Dict{String,Float64}
     total_number_of_enumerated_programs::Int64
-    pq::PriorityQueue
+    pq_input::PriorityQueue
+    pq_output::PriorityQueue
     branch_queues::Dict{Tuple{String,EntriesBranch},PriorityQueue}
 end
 
@@ -38,6 +39,7 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         type_weights,
         0,
         PriorityQueue(),
+        PriorityQueue(),
         Dict(),
     )
     for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
@@ -45,7 +47,17 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         values = collect(values)
         entry = ValueEntry(t, values, get_complexity(sc, values, t))
         sc.var_data[key] = EntriesBranch(
-            Dict(key => EntryBranchItem(entry, [OrderedDict{String,ProgramBlock}()], Set(), true, true, 0.0)),
+            Dict(
+                key => EntryBranchItem(
+                    entry,
+                    [OrderedDict{String,ProgramBlock}()],
+                    Set(),
+                    true,
+                    true,
+                    0.0,
+                    entry.complexity,
+                ),
+            ),
             nothing,
             Set(),
         )
@@ -55,8 +67,11 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
     end
     return_type = return_of_type(task.task_type)
     entry = ValueEntry(return_type, task.train_outputs, get_complexity(sc, task.train_outputs, return_type))
-    sc.var_data[target_key] =
-        EntriesBranch(Dict(target_key => EntryBranchItem(entry, [], Set(), false, false, 0.0)), nothing, Set())
+    sc.var_data[target_key] = EntriesBranch(
+        Dict(target_key => EntryBranchItem(entry, [], Set(), false, false, 0.0, entry.complexity)),
+        nothing,
+        Set(),
+    )
     sc.previous_keys[target_key] = Set([target_key])
     sc.following_keys[target_key] = Set([target_key])
     return sc
@@ -126,16 +141,13 @@ function check_new_block(sc::SolutionContext, bl::ReverseProgramBlock, out_branc
         end
     end
     if is_new_block
-        cost =
-            sum(br.values[k].value.complexity for ((k, _), br) in zip(bl.output_vars, out_branches)) /
-            sum(br.values[k].value.complexity for (k, br) in bl.input_vars) * bl.cost
         bl = ReverseProgramBlock(
             bl.p,
             [
                 b.output_var[2] == br ? b : ProgramBlock(b.p, b.type, b.cost, b.input_vars, (b.output_var[1], br))
                 for (b, br) in zip(bl.reverse_blocks, out_branches)
             ],
-            cost,
+            bl.cost,
             bl.input_vars,
             [(output_var[1], out_branch) for (output_var, out_branch) in zip(bl.output_vars, out_branches)],
         )
@@ -220,7 +232,7 @@ function get_new_paths_for_block(sc, bl::ProgramBlock, is_new_block, new_paths)
     for path in new_block_paths
         path[out_key] = bl
         if check_path_cost
-            cost = sum(b.cost for b in values(path); init=0.0)
+            cost = sum(b.cost for b in values(path); init = 0.0)
             if cost < best_cost
                 best_cost = cost
             end
@@ -249,7 +261,7 @@ function get_new_paths_for_block(sc, bl::ReverseProgramBlock, is_new_block, new_
     best_cost = Inf
     if check_path_cost
         for path in input_paths
-            cost = sum(b.cost for b in values(path); init=0.0) + bl.cost
+            cost = sum(b.cost for b in values(path); init = 0.0) + bl.cost
             if cost < best_cost
                 best_cost = cost
             end
@@ -284,6 +296,36 @@ function update_prev_follow_keys(sc, key, bl::ReverseProgramBlock)
     end
 end
 
+function update_complexity_factors(bl::ProgramBlock)
+    factors = [
+        inp_branch.values[ik].complexity_factor for
+        (ik, inp_branch) in bl.input_vars if !isnothing(inp_branch.values[ik].complexity_factor)
+    ]
+    if !isempty(factors)
+        complexity_factor = maximum(factors)
+    else
+        complexity_factor = nothing
+    end
+    old_factor = bl.output_var[2].values[bl.output_var[1]].complexity_factor
+    if !isnothing(complexity_factor) && (isnothing(old_factor) || complexity_factor < old_factor)
+        # @info "Updating complexity for var $((bl.output_var[1], hash(bl.output_var[2]))) $old_factor $complexity_factor $(bl.p)"
+        bl.output_var[2].values[bl.output_var[1]].complexity_factor = complexity_factor
+    end
+end
+
+function update_complexity_factors(bl::ReverseProgramBlock)
+    complexity_factor =
+        sum(br.values[k].complexity_factor for (k, br) in bl.input_vars) -
+        sum(br.values[k].value.complexity for (k, br) in bl.input_vars) +
+        sum(br.values[k].value.complexity for (k, br) in bl.output_vars)
+
+    for (key, branch) in bl.output_vars
+        # @info "Updating complexity for var $((key, hash(branch))) $(branch.values[key].complexity_factor) $complexity_factor $(bl.p)"
+        if isnothing(branch.values[key].complexity_factor) || complexity_factor < branch.values[key].complexity_factor
+            branch.values[key].complexity_factor = complexity_factor
+        end
+    end
+end
 
 function insert_operation(sc::SolutionContext, updates)
     new_paths = Dict()
@@ -292,6 +334,7 @@ function insert_operation(sc::SolutionContext, updates)
 
         if all(inp_branch.values[k].is_known for (k, inp_branch) in bl.input_vars)
             get_new_paths_for_block(sc, bl, is_new_block, new_paths)
+            update_complexity_factors(bl)
         end
 
         for (k, inp_branch) in bl.input_vars

@@ -86,7 +86,7 @@ function enqueue_known_var(sc, key, branch, branch_item, g)
     q = get_candidates_for_known_var(key, branch, branch_item, g)
     sc.branch_queues[(key, branch)] = q
     min_cost = peek(q)[2]
-    sc.pq[(key, branch)] = branch_item.min_path_cost + min_cost
+    sc.pq_input[(key, branch)] = (branch_item.min_path_cost + min_cost) * branch_item.complexity_factor
 end
 
 function enqueue_unknown_var(sc, key, branch, branch_item, g)
@@ -94,7 +94,7 @@ function enqueue_unknown_var(sc, key, branch, branch_item, g)
     q = get_candidates_for_unknown_var(key, branch, branch_item, g)
     sc.branch_queues[(key, branch)] = q
     min_cost = peek(q)[2]
-    sc.pq[(key, branch)] = branch_item.min_path_cost + min_cost
+    sc.pq_output[(key, branch)] = (branch_item.min_path_cost + min_cost) * branch_item.complexity_factor
 end
 
 state_finished(state::EnumerationState) =

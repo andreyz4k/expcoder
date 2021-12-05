@@ -245,7 +245,7 @@ end
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
     key = "\$v$(create_next_var(sc))"
-    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false, 0.0)
+    common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false, nothing, nothing)
     FreeVar(t, key), [(key, common_branch, t)]
 end
 
@@ -312,14 +312,16 @@ function try_get_reversed_inputs(sc, p::Program, output_var, cost)
     end
     inputs = []
     branch = EntriesBranch(Dict(), nothing, Set())
-    new_cost = sum(entry.complexity for entry in calculated_inputs) / output_entry.complexity * cost
+    complexity_factor =
+        output_item.complexity_factor - output_entry.complexity + sum(entry.complexity for entry in calculated_inputs)
     for entry in calculated_inputs
         key = "\$v$(create_next_var(sc))"
-        branch.values[key] = EntryBranchItem(entry, [], Set(), false, false, output_item.min_path_cost + new_cost)
+        branch.values[key] =
+            EntryBranchItem(entry, [], Set(), false, false, output_item.min_path_cost + cost, complexity_factor)
         push!(inputs, (key, branch, entry.type))
     end
     new_p, _ = fix_new_free_vars(p, [i[1] for i in inputs])
-    return new_p, inputs, new_cost
+    return new_p, inputs
 end
 
 fix_new_free_vars(p::FreeVar, new_names) = FreeVar(p.t, new_names[1]), view(new_names, 2:length(new_names))
@@ -529,8 +531,8 @@ end
 
 function enqueue_updates(s_ctx::SolutionContext, g)
     for (key, branch) in union(s_ctx.inserted_options, s_ctx.updated_cost_options)
-        if !haskey(s_ctx.pq, (key, branch))
-            item = branch.values[key]
+        item = branch.values[key]
+        if !haskey(s_ctx.branch_queues, (key, branch))
             if isa(item.value, ValueEntry) && !isnothing(item.min_path_cost)
                 if !item.is_known
                     enqueue_unknown_var(s_ctx, key, branch, item, g)
@@ -539,9 +541,14 @@ function enqueue_updates(s_ctx::SolutionContext, g)
                 end
             end
         else
+            if item.is_known
+                pq = s_ctx.pq_input
+            else
+                pq = s_ctx.pq_output
+            end
             q = s_ctx.branch_queues[(key, branch)]
             min_cost = peek(q)[2]
-            s_ctx.pq[(key, branch)] = branch.values[key].min_path_cost + min_cost
+            pq[(key, branch)] = (item.min_path_cost + min_cost) * item.complexity_factor
         end
     end
 end
@@ -590,13 +597,12 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
                 state.cost,
             )
         if !isnothing(abstractor_results)
-            p, input_vars, cost = abstractor_results
+            p, input_vars = abstractor_results
         else
             return
         end
     else
         p, input_vars = capture_free_vars(s_ctx, state.skeleton, state.context, EntriesBranch(Dict(), nothing, Set()))
-        cost = state.cost
     end
     reset_updated_keys(s_ctx)
     arg_types = [v[3] for v in input_vars]
@@ -606,7 +612,7 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
         p_type = arrow(arg_types..., return_of_type(bp.request))
     end
 
-    new_block = ProgramBlock(p, p_type, cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
+    new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
     input_branches = Dict(key => branch for (key, branch, _) in input_vars)
     insert_new_block(run_context, s_ctx, new_block, input_branches, finalizer)
     enqueue_updates(s_ctx, g)
@@ -614,8 +620,9 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
 end
 
 function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, q, bp, k, br)
+    br_item = br.values[k]
     if state_finished(bp.state)
-        if isknown(br, k)
+        if br_item.is_known
             enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp, g)
         else
             enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g)
@@ -626,11 +633,16 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
             q[BlockPrototype(child, new_request, bp.input_vars, bp.output_var, bp.reverse)] = child.cost
         end
     end
+    if br_item.is_known
+        pq = s_ctx.pq_input
+    else
+        pq = s_ctx.pq_output
+    end
     if !isempty(q)
         min_cost = peek(q)[2]
-        s_ctx.pq[(k, br)] = br.values[k].min_path_cost + min_cost
+        pq[(k, br)] = (br_item.min_path_cost + min_cost) * br_item.complexity_factor
     else
-        delete!(s_ctx.pq, (k, br))
+        delete!(pq, (k, br))
     end
 end
 
@@ -676,8 +688,14 @@ function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, tas
         end
     end
 
-    while (!(enumeration_timed_out(enumeration_timeout))) && !isempty(s_ctx.pq) && length(hits) < maximum_frontier
-        (k, br), pr = peek(s_ctx.pq)
+    from_input = true
+
+    while (!(enumeration_timed_out(enumeration_timeout))) &&
+              (!isempty(s_ctx.pq_input) || !isempty(s_ctx.pq_output)) &&
+              length(hits) < maximum_frontier
+        from_input = !from_input
+        pq = from_input ? s_ctx.pq_input : s_ctx.pq_output
+        (k, br), pr = peek(pq)
         # @info "Pull from queue: $k, $(hash(br)), $pr"
         q = s_ctx.branch_queues[(k, br)]
         bp = dequeue!(q)

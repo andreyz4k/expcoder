@@ -1,171 +1,283 @@
 
 using Test
 
-using solver: load_problems, enumerate_for_task, RedisContext
+using solver:
+    every_primitive,
+    Apply,
+    Hole,
+    tint,
+    fill_free_holes,
+    FreeVar,
+    Abstraction,
+    tlist,
+    ttuple2,
+    Index,
+    get_reversed_program,
+    EntriesBranch,
+    EntryBranchItem,
+    ValueEntry,
+    ProgramBlock,
+    is_reversible
+using DataStructures: OrderedDict
 import Redis
 
 @testset "Abstractors" begin
-    @testset "Repeat" begin
-        payload = Dict(
-            "DSL" => Dict{String,Any}(
-                "logVariable" => 0.0,
-                "productions" => Any[
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "map"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "range"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "index"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "fold"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "length"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "if"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "+"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "-"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "empty"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "cons"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "car"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "0"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "1"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "*"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "mod"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
-                ],
-                "type_weights" => Dict{String,Any}(
-                    "list" => 1.0,
-                    "int" => 1.0,
-                    "bool" => 1.0,
-                    "float" => 1.0,
-                ),
-            ),
-            "task" => Dict{String,Any}(
-                "name" => "invert repeated",
-                "maximumFrontier" => 10,
-                "examples" => Any[
-                    Dict{String,Any}("output" => Any[4, 4, 4, 4, 4], "inputs" => Any[Any[5, 5, 5, 5]]),
-                    Dict{String,Any}("output" => Any[1, 1, 1, 1, 1, 1], "inputs" => Any[Any[6]]),
-                    Dict{String,Any}("output" => Any[3, 3], "inputs" => Any[Any[2, 2, 2]]),
-                ],
-                "test_examples" => Any[],
-                "request" => Dict{String,Any}(
-                    "arguments" => Any[
-                        Dict{String,Any}(
-                            "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
-                            "constructor" => "list",
-                        ),
-                        Dict{String,Any}(
-                            "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
-                            "constructor" => "list",
-                        ),
-                    ],
-                    "constructor" => "->",
-                ),
-            ),
-            "name" => "invert repeated",
-            "programTimeout" => 1,
-            "timeout" => 20,
-            "verbose" => false,
-            "shatter" => 10,
-        )
-        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
-        solutions, number_enumerated = @time enumerate_for_task(
-            Dict(
-                "redis" => RedisContext(Redis.RedisConnection()),
-                "program_timeout" => program_timeout,
-                "timeout" => timeout,
-            ),
-            g,
-            type_weights,
-            task,
-            maximum_frontier,
-            verbose,
-        )
-        @test length(solutions) == 6
-        @test number_enumerated == 43
+    @testset "Check reversible simple" begin
+        @test is_reversible(Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing)))
     end
 
-    @testset "Find const" begin
-        payload = Dict(
-            "DSL" => Dict{String,Any}(
-                "logVariable" => 0.0,
-                "productions" => Any[
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "map"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "range"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "index"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "fold"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "length"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "if"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "+"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "-"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "empty"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "cons"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "car"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "0"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "1"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "*"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "mod"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
-                    Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat"),
-                ],
-                "type_weights" => Dict{String,Any}(
-                    "list" => 1.0,
-                    "int" => 1.0,
-                    "bool" => 1.0,
-                    "float" => 1.0,
+    @testset "Check reverrsible map" begin
+        @test is_reversible(
+            Apply(
+                Apply(
+                    every_primitive["map"],
+                    Abstraction(Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing))),
+                ),
+                Hole(tlist(ttuple2(tint, tint)), nothing),
+            ),
+        )
+    end
+
+    @testset "Check reversible nested map" begin
+        @test is_reversible(
+            Apply(
+                Apply(
+                    every_primitive["map"],
+                    Abstraction(
+                        Apply(
+                            Apply(
+                                every_primitive["map"],
+                                Abstraction(
+                                    Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing)),
+                                ),
+                            ),
+                            Hole(tlist(tlist(tint)), nothing),
+                        ),
+                    ),
+                ),
+                Hole(tlist(ttuple2(tlist(tint), tlist(tint))), nothing),
+            ),
+        )
+    end
+
+    @testset "Fill simple holes" begin
+        skeleton = Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing))
+        @test fill_free_holes(skeleton) ==
+              Apply(Apply(every_primitive["repeat"], FreeVar(tint, nothing)), FreeVar(tint, nothing))
+    end
+
+    @testset "Fill map holes" begin
+        skeleton = Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing))),
+            ),
+            Hole(tlist(ttuple2(tint, tint)), nothing),
+        )
+        @test fill_free_holes(skeleton) == Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(
+                    Apply(
+                        Apply(every_primitive["repeat"], Apply(every_primitive["tuple2_first"], Index(0))),
+                        Apply(every_primitive["tuple2_second"], Index(0)),
+                    ),
                 ),
             ),
-            "task" => Dict{String,Any}(
-                "name" => "find const",
-                "maximumFrontier" => 10,
-                "examples" => Any[
-                    Dict{String,Any}("output" => Any[4, 4, 4, 4, 4], "inputs" => Any[Any[5, 5, 5, 5]]),
-                    Dict{String,Any}("output" => Any[1, 1, 1, 1, 1], "inputs" => Any[Any[6]]),
-                    Dict{String,Any}("output" => Any[3, 3, 3, 3, 3], "inputs" => Any[Any[2, 2, 2]]),
-                ],
-                "test_examples" => Any[],
-                "request" => Dict{String,Any}(
-                    "arguments" => Any[
-                        Dict{String,Any}(
-                            "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
-                            "constructor" => "list",
+            Apply(Apply(every_primitive["zip2"], FreeVar(tlist(tint), nothing)), FreeVar(tlist(tint), nothing)),
+        )
+    end
+
+    @testset "Fill nested map holes" begin
+        skeleton = Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(
+                    Apply(
+                        Apply(
+                            every_primitive["map"],
+                            Abstraction(
+                                Apply(Apply(every_primitive["repeat"], Hole(tint, nothing)), Hole(tint, nothing)),
+                            ),
                         ),
-                        Dict{String,Any}(
-                            "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "int")],
-                            "constructor" => "list",
-                        ),
-                    ],
-                    "constructor" => "->",
+                        Hole(tlist(tlist(tint)), nothing),
+                    ),
                 ),
             ),
-            "name" => "find const",
-            "programTimeout" => 1,
-            "timeout" => 20,
-            "verbose" => false,
-            "shatter" => 10,
+            Hole(tlist(ttuple2(tlist(tint), tlist(tint))), nothing),
         )
-        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
-        solutions, number_enumerated = @time enumerate_for_task(
-            Dict(
-                "redis" => RedisContext(Redis.RedisConnection()),
-                "program_timeout" => program_timeout,
-                "timeout" => timeout,
+        @test fill_free_holes(skeleton) == Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(
+                    Apply(
+                        Apply(
+                            every_primitive["map"],
+                            Abstraction(
+                                Apply(
+                                    Apply(every_primitive["repeat"], Apply(every_primitive["tuple2_first"], Index(0))),
+                                    Apply(every_primitive["tuple2_second"], Index(0)),
+                                ),
+                            ),
+                        ),
+                        Apply(
+                            Apply(every_primitive["zip2"], Apply(every_primitive["tuple2_first"], Index(0))),
+                            Apply(every_primitive["tuple2_second"], Index(0)),
+                        ),
+                    ),
+                ),
             ),
-            g,
-            type_weights,
-            task,
-            maximum_frontier,
-            verbose,
+            Apply(
+                Apply(every_primitive["zip2"], FreeVar(tlist(tlist(tint)), nothing)),
+                FreeVar(tlist(tlist(tint)), nothing),
+            ),
         )
-        @test length(solutions) == 5
-        @test number_enumerated == 92
+    end
+
+    @testset "Reverse simple abstractor" begin
+        forward = Apply(Apply(every_primitive["cons"], FreeVar(tint, nothing)), FreeVar(tint, nothing))
+        entry = ValueEntry(tlist(tint), [], 0.0)
+        var = (
+            "key",
+            EntriesBranch(
+                Dict(
+                    "key" => EntryBranchItem(
+                        entry,
+                        [OrderedDict{String,ProgramBlock}()],
+                        Set(),
+                        true,
+                        true,
+                        0.0,
+                        entry.complexity,
+                    ),
+                ),
+                nothing,
+                Set(),
+            ),
+        )
+
+        @test get_reversed_program(forward, var) == [
+            Apply(every_primitive["car"], FreeVar(tlist(tint), "key")),
+            Apply(every_primitive["cdr"], FreeVar(tlist(tint), "key")),
+        ]
+    end
+
+    @testset "Reverse map abstractor" begin
+        forward = Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(
+                    Apply(
+                        Apply(every_primitive["cons"], Apply(every_primitive["tuple2_first"], Index(0))),
+                        Apply(every_primitive["tuple2_second"], Index(0)),
+                    ),
+                ),
+            ),
+            Apply(Apply(every_primitive["zip2"], FreeVar(tlist(tint), nothing)), FreeVar(tlist(tint), nothing)),
+        )
+        entry = ValueEntry(tlist(tlist(tint)), [], 0.0)
+        var = (
+            "key",
+            EntriesBranch(
+                Dict(
+                    "key" => EntryBranchItem(
+                        entry,
+                        [OrderedDict{String,ProgramBlock}()],
+                        Set(),
+                        true,
+                        true,
+                        0.0,
+                        entry.complexity,
+                    ),
+                ),
+                nothing,
+                Set(),
+            ),
+        )
+
+        @test get_reversed_program(forward, var) == [
+            Apply(
+                Apply(every_primitive["map"], Abstraction(Apply(every_primitive["car"], Index(0)))),
+                FreeVar(tlist(tlist(tint)), "key"),
+            ),
+            Apply(
+                Apply(every_primitive["map"], Abstraction(Apply(every_primitive["cdr"], Index(0)))),
+                FreeVar(tlist(tlist(tint)), "key"),
+            ),
+        ]
+    end
+
+    @testset "Reverse nested map abstractor" begin
+        forward = Apply(
+            Apply(
+                every_primitive["map"],
+                Abstraction(
+                    Apply(
+                        Apply(
+                            every_primitive["map"],
+                            Abstraction(
+                                Apply(
+                                    Apply(every_primitive["cons"], Apply(every_primitive["tuple2_first"], Index(0))),
+                                    Apply(every_primitive["tuple2_second"], Index(0)),
+                                ),
+                            ),
+                        ),
+                        Apply(
+                            Apply(every_primitive["zip2"], Apply(every_primitive["tuple2_first"], Index(0))),
+                            Apply(every_primitive["tuple2_second"], Index(0)),
+                        ),
+                    ),
+                ),
+            ),
+            Apply(
+                Apply(every_primitive["zip2"], FreeVar(tlist(tlist(tint)), nothing)),
+                FreeVar(tlist(tlist(tint)), nothing),
+            ),
+        )
+        entry = ValueEntry(tlist(tlist(tlist(tint))), [], 0.0)
+        var = (
+            "key",
+            EntriesBranch(
+                Dict(
+                    "key" => EntryBranchItem(
+                        entry,
+                        [OrderedDict{String,ProgramBlock}()],
+                        Set(),
+                        true,
+                        true,
+                        0.0,
+                        entry.complexity,
+                    ),
+                ),
+                nothing,
+                Set(),
+            ),
+        )
+        @test get_reversed_program(forward, var) == [
+            Apply(
+                Apply(
+                    every_primitive["map"],
+                    Abstraction(
+                        Apply(
+                            Apply(every_primitive["map"], Abstraction(Apply(every_primitive["car"], Index(0)))),
+                            Index(0),
+                        ),
+                    ),
+                ),
+                FreeVar(tlist(tlist(tlist(tint))), "key"),
+            ),
+            Apply(
+                Apply(
+                    every_primitive["map"],
+                    Abstraction(
+                        Apply(
+                            Apply(every_primitive["map"], Abstraction(Apply(every_primitive["cdr"], Index(0)))),
+                            Index(0),
+                        ),
+                    ),
+                ),
+                FreeVar(tlist(tlist(tlist(tint))), "key"),
+            ),
+        ]
     end
 end

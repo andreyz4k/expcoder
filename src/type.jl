@@ -64,6 +64,7 @@ t2 = TypeVariable(2)
 
 
 tlist(t) = TypeConstructor("list", [t])
+ttuple2(t0, t1) = TypeConstructor("tuple2", [t0, t1])
 
 baseType(n) = TypeConstructor(n, [])
 

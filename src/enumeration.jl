@@ -203,10 +203,6 @@ function block_state_successors(
                 new_skeleton = modify_skeleton(state.skeleton, application_template, state.path)
                 new_path = vcat(state.path, [LeftTurn() for _ = 2:length(argument_types)], [RightTurn()])
             end
-            if is_reversible(new_skeleton)
-                new_skeleton = fill_free_holes(new_skeleton)
-                new_path = []
-            end
             return EnumerationState(
                 new_skeleton,
                 context,
@@ -586,9 +582,9 @@ function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp,
     end
 end
 
-function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g)
+function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g, reversible)
     state = bp.state
-    if is_reversible(state.skeleton)
+    if reversible
         abstractor_results =
             @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
                 s_ctx,
@@ -621,11 +617,23 @@ end
 
 function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, q, bp, k, br)
     br_item = br.values[k]
+    reversible = false
+    if is_reversible(bp.state.skeleton)
+        new_skeleton = fill_free_holes(bp.state.skeleton)
+        bp = BlockPrototype(
+            EnumerationState(new_skeleton, bp.state.context, [], bp.state.cost, bp.state.free_parameters, bp.state.abstractors_only),
+            bp.request,
+            bp.input_vars,
+            bp.output_var,
+            bp.reverse,
+        )
+        reversible = true
+    end
     if state_finished(bp.state)
         if br_item.is_known
             enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp, g)
         else
-            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g)
+            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g, reversible)
         end
     else
         for child in block_state_successors(maxFreeParameters, g, bp.state)

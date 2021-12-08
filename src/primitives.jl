@@ -68,6 +68,8 @@ Primitive(
 )
 Primitive("range", arrow(tint, tlist(tint)), (n -> collect(0:n-1)))
 Primitive("index", arrow(tint, tlist(t0), t0), (j -> (l -> l[j])))
+Primitive("tuple2_first", arrow(ttuple2(t0, t1), t0), (t -> t[1]))
+Primitive("tuple2_second", arrow(ttuple2(t0, t1), t1), (t -> t[2]))
 Primitive(
     "fold",
     arrow(tlist(t0), t1, arrow(t0, t1, t1), t1),
@@ -95,3 +97,4 @@ Primitive("is-prime", arrow(tint, tbool), _is_prime)
 Primitive("is-square", arrow(tint, tbool), (n -> floor(sqrt(n))^2 == n))
 
 Primitive("repeat", arrow(t0, tint, tlist(t0)), (x -> (n -> fill(x, n))))
+Primitive("zip2", arrow(tlist(t0), tlist(t1), tlist(ttuple2(t0, t1))), (a -> (b -> zip(a, b))))

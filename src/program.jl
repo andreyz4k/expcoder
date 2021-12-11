@@ -101,14 +101,18 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR(", p.t, ")"] : [p.key, "(", p.t, ")"]
+show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR"] : [p.key]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::SetConst, is_function::Bool) = vcat(["Const{", p.t, "}(", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
-show_program(p::MultiLetClause, is_function::Bool) =
-    vcat(["let ", join(p.var_names, ", "), " = rev("], show_program(p.v, false), [", ", p.inp_var_names ,") in "], show_program(p.b, false))
+show_program(p::MultiLetClause, is_function::Bool) = vcat(
+    ["let ", join(p.var_names, ", "), " = rev("],
+    show_program(p.v, false),
+    [", [", join(p.inp_var_names, ", "), "]) in "],
+    show_program(p.b, false),
+)
 show_program(p::ExceptionProgram, is_function::Bool) = ["EXCEPTION"]
 
 abstract type AbstractProgramBlock end

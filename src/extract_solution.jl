@@ -68,6 +68,8 @@ function alpha_substitution(p::LetClause, replacements, next_index)
             replacements[p.var_name] = p.v.key
         end
         return alpha_substitution(p.b, replacements, next_index)
+    elseif isa(p.b, FreeVar) && p.b.key == p.var_name
+        return alpha_substitution(p.v, replacements, next_index)
     else
         new_v, next_index = alpha_substitution(p.v, replacements, next_index)
         new_var_name = "\$v$next_index"

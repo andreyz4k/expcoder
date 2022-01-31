@@ -47,7 +47,8 @@ function value_updates(sc, block::ProgramBlock, new_values)
         if is_polymorphic(return_type)
             error("returning polymorphic type from $block")
         end
-        entry = ValueEntry(return_type, new_values, get_complexity(sc, new_values, return_type))
+        complexity_summary = get_complexity_summary(new_values, return_type)
+        entry = ValueEntry(return_type, new_values, complexity_summary, get_complexity(sc, complexity_summary))
         new_branch = EntriesBranch(
             Dict(key => EntryBranchItem(entry, [], Set(), true, !isa(block.p, FreeVar), nothing, nothing)),
             nothing,
@@ -131,7 +132,8 @@ function updated_branch(sc, branch::EntriesBranch, key, entry::NoDataEntry, new_
     for (k, item) in branch.values
         if k == key
             t = return_of_type(block.type)
-            entry = ValueEntry(t, new_values, get_complexity(sc, new_values, t))
+            complexity_summary = get_complexity_summary(new_values, t)
+            entry = ValueEntry(t, new_values, complexity_summary, get_complexity(sc, complexity_summary))
             new_branch.values[k] =
                 EntryBranchItem(entry, [], Set(), true, item.is_meaningful || !isa(block.p, FreeVar), nothing, nothing)
         elseif !item.is_known

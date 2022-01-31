@@ -1,20 +1,19 @@
 
-
-function get_complexity(sc::SolutionContext, values, t::TypeConstructor)
+using DataStructures: Accumulator
+function get_complexity_summary(values, t::TypeConstructor)
+    result = Accumulator{String,Int64}()
+    result[t.name] = length(values)
     if isempty(t.arguments)
-        return sc.type_weights[t.name] * length(values)
-    end
-    if length(t.arguments) == 1
-        if isempty(t.arguments[1].arguments)
-            return sum(
-                sc.type_weights[t.name] + sc.type_weights[t.arguments[1].name] * length(v) for v in values;
-                init = 0.0,
-            )
-        else
-            return sum(sc.type_weights[t.name] + get_complexity(sc, v, t.arguments[1]) for v in values; init = 0.0)
-        end
+        return result
+    elseif length(t.arguments) == 1
+        merge!(result, [get_complexity_summary(v, t.arguments[1]) for v in values]...)
+        return result
     else
         error("unsupported type constructor: " + t.name)
     end
-    error("unsupported type constructor: " + t.name)
+end
+
+
+function get_complexity(sc::SolutionContext, summary::Accumulator)
+    return sum(sc.type_weights[tname] * count for (tname, count) in summary; init = 0.0)
 end

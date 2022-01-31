@@ -18,7 +18,7 @@ using solver:
     ValueEntry,
     ProgramBlock,
     is_reversible
-using DataStructures: OrderedDict
+using DataStructures: OrderedDict, Accumulator
 import Redis
 
 @testset "Abstractors" begin
@@ -136,7 +136,7 @@ import Redis
 
     @testset "Reverse simple abstractor" begin
         forward = Apply(Apply(every_primitive["cons"], FreeVar(tint, nothing)), FreeVar(tint, nothing))
-        entry = ValueEntry(tlist(tint), [], 0.0)
+        entry = ValueEntry(tlist(tint), [], Accumulator{String,Int64}(), 0.0)
         var = (
             "key",
             EntriesBranch(
@@ -175,7 +175,7 @@ import Redis
             ),
             Apply(Apply(every_primitive["zip2"], FreeVar(tlist(tint), nothing)), FreeVar(tlist(tint), nothing)),
         )
-        entry = ValueEntry(tlist(tlist(tint)), [], 0.0)
+        entry = ValueEntry(tlist(tlist(tint)), [], Accumulator{String,Int64}(), 0.0)
         var = (
             "key",
             EntriesBranch(
@@ -234,7 +234,7 @@ import Redis
                 FreeVar(tlist(tlist(tint)), nothing),
             ),
         )
-        entry = ValueEntry(tlist(tlist(tlist(tint))), [], 0.0)
+        entry = ValueEntry(tlist(tlist(tlist(tint))), [], Accumulator{String,Int64}(), 0.0)
         var = (
             "key",
             EntriesBranch(

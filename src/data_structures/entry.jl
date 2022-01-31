@@ -1,9 +1,11 @@
 
 abstract type Entry end
 
+using DataStructures: Accumulator
 struct ValueEntry <: Entry
     type::Tp
     values::Vector
+    complexity_summary::Accumulator
     complexity::Float64
 end
 
@@ -18,8 +20,7 @@ match_with_task_val(entry::ValueEntry, other::ValueEntry, key) =
         missing
     end
 
-const_options(entry::ValueEntry) =
-    [entry.values[1]]
+const_options(entry::ValueEntry) = [entry.values[1]]
 
 struct NoDataEntry <: Entry
     type::Tp

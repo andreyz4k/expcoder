@@ -44,7 +44,8 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
     )
     for (key, t) in argument_types
         values = [inp[key] for inp in task.train_inputs]
-        entry = ValueEntry(t, values, get_complexity(sc, values, t))
+        complexity_summary = get_complexity_summary(values, t)
+        entry = ValueEntry(t, values, complexity_summary, get_complexity(sc, complexity_summary))
         sc.var_data[key] = EntriesBranch(
             Dict(
                 key => EntryBranchItem(
@@ -65,7 +66,8 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         sc.following_keys[key] = Set([key])
     end
     return_type = return_of_type(task.task_type)
-    entry = ValueEntry(return_type, task.train_outputs, get_complexity(sc, task.train_outputs, return_type))
+    complexity_summary = get_complexity_summary(task.train_outputs, return_type)
+    entry = ValueEntry(return_type, task.train_outputs, complexity_summary, get_complexity(sc, complexity_summary))
     sc.var_data[target_key] = EntriesBranch(
         Dict(target_key => EntryBranchItem(entry, [], Set(), false, false, 0.0, entry.complexity)),
         nothing,

@@ -304,7 +304,11 @@ function try_get_reversed_inputs(sc, p::Program, output_var, cost)
             push!(inp_values, inp_value)
         end
         input_type = closed_inference(rev_pr)
-        push!(calculated_inputs, ValueEntry(input_type, inp_values, get_complexity(sc, inp_values, input_type)))
+        complexity_summary = get_complexity_summary(inp_values, input_type)
+        push!(
+            calculated_inputs,
+            ValueEntry(input_type, inp_values, complexity_summary, get_complexity(sc, complexity_summary)),
+        )
     end
     inputs = []
     branch = EntriesBranch(Dict(), nothing, Set())
@@ -621,7 +625,14 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
     if is_reversible(bp.state.skeleton)
         new_skeleton = fill_free_holes(bp.state.skeleton)
         bp = BlockPrototype(
-            EnumerationState(new_skeleton, bp.state.context, [], bp.state.cost, bp.state.free_parameters, bp.state.abstractors_only),
+            EnumerationState(
+                new_skeleton,
+                bp.state.context,
+                [],
+                bp.state.cost,
+                bp.state.free_parameters,
+                bp.state.abstractors_only,
+            ),
             bp.request,
             bp.input_vars,
             bp.output_var,

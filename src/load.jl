@@ -2,7 +2,7 @@
 function load_problems(message)
     grammar_payload = message["DSL"]
     # try
-        g = deserialize_grammar(grammar_payload)
+        g = deserialize_grammar(grammar_payload["base_grammar"])
         grammar = make_dummy_contextual(g)
     # catch
     #     grammar = deserialize_contextual_grammar(grammar_payload)

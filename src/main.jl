@@ -58,7 +58,7 @@ function setup_worker(pid, source_path)
             task_local_storage()[:SOURCE_PATH] = source_path
             include("solver.jl")
         end
-        @fetchfrom pid solver.init_logger()
+        # @fetchfrom pid solver.init_logger()
         @spawnat pid solver.worker_loop()
     end
 end
@@ -94,7 +94,7 @@ end
 
 function main()
     @info "Starting enumeration service"
-    @everywhere solver.init_logger()
+    # @everywhere solver.init_logger()
 
     source_path = get(task_local_storage(), :SOURCE_PATH, nothing)
 

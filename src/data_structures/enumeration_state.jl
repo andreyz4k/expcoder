@@ -50,34 +50,34 @@ function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGra
     )
     q[bp] = bp.state.cost
 
-    for (p, t, context, ll, i) in following_expressions(g.no_context, branch_item.value.type)
-        skeleton = p
-        path = []
-        for (j, arg_type) in enumerate(arguments_of_type(t))
-            if j == i
-                skeleton = Apply(skeleton, FreeVar(branch_item.value.type, key))
-                if !isempty(path)
-                    path = vcat([LeftTurn()], path)
-                end
-            else
-                skeleton = Apply(skeleton, Hole(arg_type, g.contextual_library[p][j]))
-                if isempty(path)
-                    path = [RightTurn()]
-                else
-                    path = vcat([LeftTurn()], path)
-                end
-            end
-        end
-        state = EnumerationState(skeleton, context, path, ll + g.no_context.log_variable, 1, false)
-        bp = BlockPrototype(
-            state,
-            return_of_type(t),
-            [j == i ? (key, branch) : nothing for j = 1:length(arguments_of_type(t))],
-            nothing,
-            false,
-        )
-        q[bp] = bp.state.cost
-    end
+    # for (p, t, context, ll, i) in following_expressions(g.no_context, branch_item.value.type)
+    #     skeleton = p
+    #     path = []
+    #     for (j, arg_type) in enumerate(arguments_of_type(t))
+    #         if j == i
+    #             skeleton = Apply(skeleton, FreeVar(branch_item.value.type, key))
+    #             if !isempty(path)
+    #                 path = vcat([LeftTurn()], path)
+    #             end
+    #         else
+    #             skeleton = Apply(skeleton, Hole(arg_type, g.contextual_library[p][j]))
+    #             if isempty(path)
+    #                 path = [RightTurn()]
+    #             else
+    #                 path = vcat([LeftTurn()], path)
+    #             end
+    #         end
+    #     end
+    #     state = EnumerationState(skeleton, context, path, ll + g.no_context.log_variable, 1, false)
+    #     bp = BlockPrototype(
+    #         state,
+    #         return_of_type(t),
+    #         [j == i ? (key, branch) : nothing for j = 1:length(arguments_of_type(t))],
+    #         nothing,
+    #         false,
+    #     )
+    #     q[bp] = bp.state.cost
+    # end
     q
 end
 

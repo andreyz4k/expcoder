@@ -12,15 +12,31 @@ struct TypeConstructor <: Tp
     is_poly::Bool
 end
 
+struct TypeNamedArgsConstructor <: Tp
+    name::String
+    arguments::Dict{String,Tp}
+    output::Tp
+    is_poly::Bool
+end
+
 is_polymorphic(::TypeVariable) = true
 is_polymorphic(tc::TypeConstructor) = tc.is_poly
+is_polymorphic(tc::TypeNamedArgsConstructor) = tc.is_poly
 
 TypeConstructor(name, arguments) = TypeConstructor(name, arguments, any(is_polymorphic(a) for a in arguments))
+TypeNamedArgsConstructor(name, arguments, output) = TypeNamedArgsConstructor(
+    name,
+    arguments,
+    output,
+    any(is_polymorphic(a) for a in values(arguments)) || is_polymorphic(output),
+)
 
 ARROW = "->"
 
 Base.:(==)(a::TypeVariable, b::TypeVariable) = a.id == b.id
 Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.arguments == b.arguments
+Base.:(==)(a::TypeNamedArgsConstructor, b::TypeNamedArgsConstructor) =
+    a.name == b.name && a.arguments == b.arguments && a.output == b.output
 
 Base.show(io::IO, t::Tp) = print(io, show_type(t, true)...)
 
@@ -36,6 +52,21 @@ function show_type(t::TypeConstructor, is_return::Bool)
         end
     else
         vcat([t.name, "("], vcat([vcat(show_type(a, true), [", "]) for a in t.arguments]...)[1:end-1], [")"])
+    end
+end
+function show_type(t::TypeNamedArgsConstructor, is_return::Bool)
+    if isempty(t.arguments)
+        vcat([t.name, "("], show_type(t.output, true), [")"])
+    elseif t.name == ARROW
+        args = vcat([vcat([k, ":"], show_type(a, false), [" -> "]) for (k, a) in t.arguments]...)[1:end-1]
+        if is_return
+            vcat(args, [" -> "], show_type(t.output, true))
+        else
+            vcat(["("], args, [" -> "], show_type(t.output, true), [")"])
+        end
+    else
+        args = vcat([vcat([k, ":"], show_type(a, true), [", "]) for (k, a) in t.arguments]...)[1:end-1]
+        vcat([t.name, "("], args, [")"])
     end
 end
 
@@ -56,6 +87,7 @@ arrow(arguments...) =
     end
 
 isarrow(t::TypeConstructor) = t.name == ARROW
+isarrow(t::TypeNamedArgsConstructor) = t.name == ARROW
 isarrow(::TypeVariable) = false
 
 t0 = TypeVariable(0)
@@ -97,15 +129,38 @@ function instantiate(t::TypeConstructor, context, bindings = nothing)
     end
     new_arguments = []
     for x in t.arguments
-        (context, x) = instantiate(x, context, bindings)
-        push!(new_arguments, x)
+        (context, new_x) = instantiate(x, context, bindings)
+        push!(new_arguments, new_x)
     end
     return (context, TypeConstructor(t.name, new_arguments))
+end
+
+function instantiate(t::TypeNamedArgsConstructor, context, bindings = nothing)
+    if !t.is_poly
+        return context, t
+    end
+    if isnothing(bindings)
+        bindings = Dict()
+    end
+    new_arguments = Dict()
+    for (k, x) in t.arguments
+        (context, new_x) = instantiate(x, context, bindings)
+        new_arguments[k] = new_x
+    end
+    (context, new_output) = instantiate(t.output, context, bindings)
+    return (context, TypeNamedArgsConstructor(t.name, new_arguments, new_output))
 end
 
 arguments_of_type(t::TypeConstructor) =
     if t.name == ARROW
         return vcat([t.arguments[1]], arguments_of_type(t.arguments[2]))
+    else
+        return []
+    end
+
+arguments_of_type(t::TypeNamedArgsConstructor) =
+    if t.name == ARROW
+        return vcat(collect(t.arguments), arguments_of_type(t.output))
     else
         return []
     end
@@ -119,6 +174,13 @@ return_of_type(t::TypeConstructor) =
         t
     end
 
+return_of_type(t::TypeNamedArgsConstructor) =
+    if t.name == ARROW
+        return_of_type(t.output)
+    else
+        t
+    end
+
 return_of_type(t::TypeVariable) = t
 
 occurs(i::Int64, t::TypeVariable) = t.id == i
@@ -127,6 +189,12 @@ occurs(i::Int64, t::TypeConstructor) =
         false
     else
         any(occurs(i, ta) for ta in t.arguments)
+    end
+occurs(i::Int64, t::TypeNamedArgsConstructor) =
+    if !is_polymorphic(t)
+        false
+    else
+        any(occurs(i, ta) for ta in t.arguments) || occurs(i, t.output)
     end
 
 struct UnificationFailure <: Exception end
@@ -161,6 +229,20 @@ _unify(context, t1::TypeConstructor, t2::TypeConstructor) =
         throw(UnificationFailure())
     end
 
+_unify(context, t1::TypeNamedArgsConstructor, t2::TypeNamedArgsConstructor) =
+    if t1.name == t2.name
+        for (k, x1) in t1.arguments
+            context = unify(context, x1, t2.arguments[k])
+        end
+        context = unify(context, t1.output, t2.output)
+        context
+    else
+        throw(UnificationFailure())
+    end
+
+_unify(context, ::TypeNamedArgsConstructor, ::TypeConstructor) = throw(UnificationFailure())
+_unify(context, ::TypeConstructor, ::TypeNamedArgsConstructor) = throw(UnificationFailure())
+
 function unify(context, t1, t2)
     (context, t1) = apply_context(context, t1)
     (context, t2) = apply_context(context, t2)
@@ -182,6 +264,13 @@ might_unify(t1::TypeConstructor, t2::TypeConstructor) =
     t1.name == t2.name &&
     length(t1.arguments) == length(t2.arguments) &&
     all(might_unify(as1, as2) for (as1, as2) in zip(t1.arguments, t2.arguments))
+might_unify(t1::TypeNamedArgsConstructor, t2::TypeNamedArgsConstructor) =
+    t1.name == t2.name &&
+    keys(t1.arguments) == keys(t2.arguments) &&
+    all(might_unify(as1, t2.arguments[k]) for (k, as1) in t1.arguments) &&
+    might_unify(t1.output, t2.output)
+might_unify(::TypeNamedArgsConstructor, ::TypeConstructor) = false
+might_unify(::TypeConstructor, ::TypeNamedArgsConstructor) = false
 
 function makeTID(context::Context)
     (TypeVariable(context.next_variable), Context(context.next_variable + 1, context.substitution))
@@ -221,13 +310,29 @@ function apply_context(context, t::TypeConstructor)
     (context, TypeConstructor(t.name, new_argtypes))
 end
 
+function apply_context(context, t::TypeNamedArgsConstructor)
+    if !is_polymorphic(t)
+        (context, t)
+    end
+    new_argtypes = Dict()
+    for (k, x) in t.arguments
+        context, xt = apply_context(context, x)
+        new_argtypes[k] = xt
+    end
+    context, ot = apply_context(context, t.output)
+    (context, TypeNamedArgsConstructor(t.name, new_argtypes, ot))
+end
 
 function deserialize_type(message)
-    try
-        name = message["constructor"]
-        arguments = map(deserialize_type, message["arguments"])
-        TypeConstructor(name, arguments)
-    catch
-        TypeVariable(message["index"])
+    if haskey(message, "index")
+        return TypeVariable(message["index"])
+    elseif haskey(message, "output")
+        return TypeNamedArgsConstructor(
+            message["constructor"],
+            Dict(key => deserialize_type(value) for (key, value) in message["arguments"]),
+            deserialize_type(message["output"]),
+        )
+    else
+        return TypeConstructor(message["constructor"], map(deserialize_type, message["arguments"]))
     end
 end

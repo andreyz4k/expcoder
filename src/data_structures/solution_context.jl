@@ -42,9 +42,8 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         PriorityQueue(),
         Dict(),
     )
-    for (i, (t, values)) in enumerate(zip(argument_types, zip(task.train_inputs...)))
-        key = "\$i$i"
-        values = collect(values)
+    for (key, t) in argument_types
+        values = [inp[key] for inp in task.train_inputs]
         entry = ValueEntry(t, values, get_complexity(sc, values, t))
         sc.var_data[key] = EntriesBranch(
             Dict(

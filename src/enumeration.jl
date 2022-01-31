@@ -532,7 +532,7 @@ function enqueue_updates(s_ctx::SolutionContext, g)
             if isa(item.value, ValueEntry) && !isnothing(item.min_path_cost)
                 if !item.is_known
                     enqueue_unknown_var(s_ctx, key, branch, item, g)
-                else
+                elseif item.is_meaningful
                     enqueue_known_var(s_ctx, key, branch, item, g)
                 end
             end
@@ -703,6 +703,9 @@ function enumerate_for_task(run_context, g::ContextualGrammar, type_weights, tas
               length(hits) < maximum_frontier
         from_input = !from_input
         pq = from_input ? s_ctx.pq_input : s_ctx.pq_output
+        if isempty(pq)
+            continue
+        end
         (k, br), pr = peek(pq)
         # @info "Pull from queue: $k, $(hash(br)), $pr"
         q = s_ctx.branch_queues[(k, br)]

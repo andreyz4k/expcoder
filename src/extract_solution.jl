@@ -20,10 +20,10 @@ function extract_solution(sc::SolutionContext, solution_path::OrderedDict)
     output = alpha_substitution(output, Dict(), 1)[1]
     # @info output
     # output = beta_reduction(output)
-    output = replace_inputs(output, sc.input_keys, 0)
-    for _ in sc.input_keys
-        output = Abstraction(output)
-    end
+    # output = replace_inputs(output, sc.input_keys, 0)
+    # for _ in sc.input_keys
+    #     output = Abstraction(output)
+    # end
     # @info output
     return (output, cost)
 end

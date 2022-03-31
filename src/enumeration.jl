@@ -240,7 +240,7 @@ end
 
 function capture_free_vars(sc::SolutionContext, p::FreeVar, context, common_branch)
     _, t = apply_context(context, p.t)
-    key = "\$v$(create_next_var(sc))"
+    key = "v$(create_next_var(sc))"
     common_branch.values[key] = EntryBranchItem(NoDataEntry(t), [], Set(), false, false, nothing, nothing)
     FreeVar(t, key), [(key, common_branch, t)]
 end
@@ -315,7 +315,7 @@ function try_get_reversed_inputs(sc, p::Program, output_var, cost)
     complexity_factor =
         output_item.complexity_factor - output_entry.complexity + sum(entry.complexity for entry in calculated_inputs)
     for entry in calculated_inputs
-        key = "\$v$(create_next_var(sc))"
+        key = "v$(create_next_var(sc))"
         branch.values[key] =
             EntryBranchItem(entry, [], Set(), false, false, output_item.min_path_cost + cost, complexity_factor)
         push!(inputs, (key, branch, entry.type))
@@ -344,11 +344,12 @@ function create_reversed_block(sc, p::Program, input_var, cost)
     for rp in reversed_programs
         out_type = closed_inference(rp)
         t = arrow(inp_type, out_type)
-        out_key = "\$v$(create_next_var(sc))"
+        out_key = "v$(create_next_var(sc))"
         push!(output_vars, (out_key, nothing))
         push!(reverse_blocks, ProgramBlock(rp, t, 0.0, [input_var], (out_key, nothing)))
     end
-    block = ReverseProgramBlock(p, reverse_blocks, cost, [input_var], output_vars)
+    new_p, _ = fix_new_free_vars(p, [i[1] for i in output_vars])
+    block = ReverseProgramBlock(new_p, reverse_blocks, cost, [input_var], output_vars)
     return block
 end
 
@@ -563,7 +564,7 @@ function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp,
         for (p, input_vars, context, _) in fix_options
             reset_updated_keys(s_ctx)
             _, request = apply_context(context, bp.request)
-            output_var = ("\$v$(create_next_var(s_ctx))", nothing)
+            output_var = ("v$(create_next_var(s_ctx))", nothing)
 
             arg_types = [v[3] for v in input_vars]
             p_type = arrow(arg_types..., return_of_type(request))

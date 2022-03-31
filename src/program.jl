@@ -79,7 +79,7 @@ Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v 
 
 struct MultiLetClause <: Program
     var_names::Vector{String}
-    inp_var_names::Vector{String}
+    inp_var_name::String
     v::Program
     rev_v::Vector{Program}
     b::Program
@@ -101,16 +101,16 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR"] : [p.key]
+show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR"] : ["\$", p.key]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::SetConst, is_function::Bool) = vcat(["Const{", p.t, "}(", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
-    vcat(["let ", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
+    vcat(["let \$", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::MultiLetClause, is_function::Bool) = vcat(
-    ["let ", join(p.var_names, ", "), " = rev("],
+    ["let ", join(["\$" * v for v in p.var_names], ", "), " = rev(\$", p.inp_var_name, " = "],
     show_program(p.v, false),
-    [", [", join(p.inp_var_names, ", "), "]) in "],
+    [") in "],
     show_program(p.b, false),
 )
 show_program(p::ExceptionProgram, is_function::Bool) = ["EXCEPTION"]

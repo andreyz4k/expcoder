@@ -2,12 +2,12 @@
 function load_problems(message)
     grammar_payload = message["DSL"]
     # try
-        g = deserialize_grammar(grammar_payload["base_grammar"])
+        g = deserialize_grammar(grammar_payload)
         grammar = make_dummy_contextual(g)
     # catch
     #     grammar = deserialize_contextual_grammar(grammar_payload)
     # end
-    type_weights = grammar_payload["type_weights"]
+    type_weights = message["type_weights"]
     if haskey(message, "programTimeout")
         program_timeout = message["programTimeout"]
     else

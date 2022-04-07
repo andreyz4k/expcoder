@@ -1,6 +1,6 @@
 
 block_to_let(block::ProgramBlock, output) = LetClause(block.output_var[1], block.p, output)
-block_to_let(block::ReverseProgramBlock, output) = MultiLetClause(
+block_to_let(block::ReverseProgramBlock, output) = LetRevClause(
     [output_var[1] for output_var in block.output_vars],
     block.input_vars[1][1],
     block.p,
@@ -42,7 +42,7 @@ function alpha_substitution(p::LetClause, replacements, next_index)
     end
 end
 
-function alpha_substitution(p::MultiLetClause, replacements, next_index)
+function alpha_substitution(p::LetRevClause, replacements, next_index)
     new_var_names = []
     for name in p.var_names
         new_name = "v$next_index"
@@ -58,7 +58,7 @@ function alpha_substitution(p::MultiLetClause, replacements, next_index)
         push!(new_rev_v, new_rv)
     end
     new_b, next_index = alpha_substitution(p.b, replacements, next_index)
-    return MultiLetClause(new_var_names, new_inp_var_name, new_v, new_rev_v, new_b), next_index
+    return LetRevClause(new_var_names, new_inp_var_name, new_v, new_rev_v, new_b), next_index
 end
 
 function alpha_substitution(p::FreeVar, replacements, next_index)

@@ -77,15 +77,15 @@ Base.hash(p::LetClause, h::UInt64) = hash(p.var_name, h) + hash(p.v, h) + hash(p
 Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v && p.b == q.b
 
 
-struct MultiLetClause <: Program
+struct LetRevClause <: Program
     var_names::Vector{String}
     inp_var_name::String
     v::Program
     rev_v::Vector{Program}
     b::Program
 end
-Base.hash(p::MultiLetClause, h::UInt64) = hash(p.var_names, h) + hash(p.v, h) + hash(p.b, h)
-Base.:(==)(p::MultiLetClause, q::MultiLetClause) = p.var_names == q.var_names && p.v == q.v && p.b == q.b
+Base.hash(p::LetRevClause, h::UInt64) = hash(p.var_names, h) + hash(p.v, h) + hash(p.b, h)
+Base.:(==)(p::LetRevClause, q::LetRevClause) = p.var_names == q.var_names && p.v == q.v && p.b == q.b
 
 struct ExceptionProgram <: Program end
 
@@ -104,10 +104,10 @@ show_program(p::Primitive, is_function::Bool) = [p.name]
 show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR"] : ["\$", p.key]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
-show_program(p::SetConst, is_function::Bool) = vcat(["Const{", p.t, "}(", p.value, ")"])
+show_program(p::SetConst, is_function::Bool) = vcat(["Const(", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let \$", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
-show_program(p::MultiLetClause, is_function::Bool) = vcat(
+show_program(p::LetRevClause, is_function::Bool) = vcat(
     ["let ", join(["\$" * v for v in p.var_names], ", "), " = rev(\$", p.inp_var_name, " = "],
     show_program(p.v, false),
     [") in "],
@@ -414,7 +414,7 @@ function analyze_evaluation(p::LetClause)
     (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_name => v(environment, workspace))))
 end
 
-function analyze_evaluation(p::MultiLetClause)
+function analyze_evaluation(p::LetRevClause)
     rev_vs = [analyze_evaluation(v) for v in p.rev_v]
     b = analyze_evaluation(p.b)
     (environment, workspace) -> b(

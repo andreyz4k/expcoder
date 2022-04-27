@@ -488,7 +488,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 0
-        @test number_enumerated > 80
+        @test number_enumerated > 50
     end
 
     @testset "try_enumerate len" begin
@@ -505,8 +505,8 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) == 6
-        @test number_enumerated >= 605
+        @test length(solutions) >= 5
+        @test number_enumerated >= 500
     end
 
     @testset "try_enumerate is-mod-k with k=1" begin

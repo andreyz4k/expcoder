@@ -84,8 +84,9 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) >= 2
-        @test number_enumerated >= 10
+        @test length(solutions) >= 1
+        @test number_enumerated >= 1
+        @test number_enumerated < 1000
     end
 
     @testset "Find const" begin
@@ -167,8 +168,9 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) >= 3
-        @test number_enumerated >= 50
+        @test length(solutions) >= 1
+        @test number_enumerated >= 10
+        @test number_enumerated <= 1000
     end
 
 end

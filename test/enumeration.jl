@@ -470,7 +470,7 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 21
+        @test number_enumerated == 419
     end
 
     @testset "try_enumerate append-index-k with k=5" begin
@@ -505,8 +505,8 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) == 10
-        @test number_enumerated == 61
+        @test length(solutions) == 6
+        @test number_enumerated >= 605
     end
 
     @testset "try_enumerate is-mod-k with k=1" begin
@@ -524,6 +524,6 @@ import Redis
             verbose,
         )
         @test length(solutions) == 10
-        @test number_enumerated == 18
+        @test number_enumerated == 190
     end
 end

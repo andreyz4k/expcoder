@@ -13,11 +13,12 @@ using solver:
     ttuple2,
     Index,
     get_reversed_program,
-    EntriesBranch,
-    EntryBranchItem,
+    EntryBranch,
+    EntriesStorage,
     ValueEntry,
     ProgramBlock,
-    is_reversible
+    is_reversible,
+    add_entry
 using DataStructures: OrderedDict, Accumulator
 import Redis
 
@@ -137,23 +138,22 @@ import Redis
     @testset "Reverse simple abstractor" begin
         forward = Apply(Apply(every_primitive["cons"], FreeVar(tint, nothing)), FreeVar(tint, nothing))
         entry = ValueEntry(tlist(tint), [], Accumulator{String,Int64}(), 0.0)
-        var = (
+        storage = EntriesStorage()
+        entry_index = add_entry(storage, entry)
+
+        var = EntryBranch(
+            entry_index,
             "key",
-            EntriesBranch(
-                Dict(
-                    "key" => EntryBranchItem(
-                        entry,
-                        [OrderedDict{String,ProgramBlock}()],
-                        Set(),
-                        true,
-                        true,
-                        0.0,
-                        entry.complexity,
-                    ),
-                ),
-                nothing,
-                Set(),
-            ),
+            entry.type,
+            Set(),
+            Set(),
+            Set(),
+            [OrderedDict{String,ProgramBlock}()],
+            Set(),
+            true,
+            true,
+            0.0,
+            entry.complexity,
         )
 
         @test get_reversed_program(forward, var) == [
@@ -176,23 +176,22 @@ import Redis
             Apply(Apply(every_primitive["zip2"], FreeVar(tlist(tint), nothing)), FreeVar(tlist(tint), nothing)),
         )
         entry = ValueEntry(tlist(tlist(tint)), [], Accumulator{String,Int64}(), 0.0)
-        var = (
+        storage = EntriesStorage()
+        entry_index = add_entry(storage, entry)
+
+        var = EntryBranch(
+            entry_index,
             "key",
-            EntriesBranch(
-                Dict(
-                    "key" => EntryBranchItem(
-                        entry,
-                        [OrderedDict{String,ProgramBlock}()],
-                        Set(),
-                        true,
-                        true,
-                        0.0,
-                        entry.complexity,
-                    ),
-                ),
-                nothing,
-                Set(),
-            ),
+            entry.type,
+            Set(),
+            Set(),
+            Set(),
+            [OrderedDict{String,ProgramBlock}()],
+            Set(),
+            true,
+            true,
+            0.0,
+            entry.complexity,
         )
 
         @test get_reversed_program(forward, var) == [
@@ -235,23 +234,22 @@ import Redis
             ),
         )
         entry = ValueEntry(tlist(tlist(tlist(tint))), [], Accumulator{String,Int64}(), 0.0)
-        var = (
+        storage = EntriesStorage()
+        entry_index = add_entry(storage, entry)
+
+        var = EntryBranch(
+            entry_index,
             "key",
-            EntriesBranch(
-                Dict(
-                    "key" => EntryBranchItem(
-                        entry,
-                        [OrderedDict{String,ProgramBlock}()],
-                        Set(),
-                        true,
-                        true,
-                        0.0,
-                        entry.complexity,
-                    ),
-                ),
-                nothing,
-                Set(),
-            ),
+            entry.type,
+            Set(),
+            Set(),
+            Set(),
+            [OrderedDict{String,ProgramBlock}()],
+            Set(),
+            true,
+            true,
+            0.0,
+            entry.complexity,
         )
         @test get_reversed_program(forward, var) == [
             Apply(

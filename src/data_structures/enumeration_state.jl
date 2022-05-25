@@ -21,80 +21,124 @@ end
 struct BlockPrototype
     state::EnumerationState
     request::Tp
-    input_vars::Vector{Union{Tuple{String,EntriesBranch},Nothing}}
-    output_var::Union{Tuple{String,EntriesBranch},Nothing}
+    input_vars::Vector{Union{Tuple{String,EntryBranch},Nothing}}
+    output_var::Union{Tuple{String,EntryBranch},Nothing}
     reverse::Bool
 end
 
 
-initial_block_prototype(request, g::Grammar, inputs, output) =
-    BlockPrototype(EnumerationState(Hole(request, g), empty_context, [], 0.0, 0, false), request, inputs, output, false)
-
-
-function get_candidates_for_unknown_var(key, branch, branch_item, g)
-    q = PriorityQueue()
-    bp = initial_block_prototype(branch_item.value.type, g.no_context, [], (key, branch))
-    q[bp] = bp.state.cost
-    q
-end
-
-function get_candidates_for_known_var(key, branch, branch_item, g::ContextualGrammar)
-    q = PriorityQueue()
-
-    bp = BlockPrototype(
-        EnumerationState(Hole(branch_item.value.type, g.no_context), empty_context, [], 0.0, 0, true),
-        branch_item.value.type,
-        [],
-        (key, branch),
-        true,
+function block_prototype(pr, inputs, output_branch, output_type)
+    BlockPrototype(
+        EnumerationState(pr, empty_context, [], 0.0, 0, false),
+        output_type,
+        inputs,
+        (output_branch.key, output_branch),
+        false,
     )
-    q[bp] = bp.state.cost
-
-    # for (p, t, context, ll, i) in following_expressions(g.no_context, branch_item.value.type)
-    #     skeleton = p
-    #     path = []
-    #     for (j, arg_type) in enumerate(arguments_of_type(t))
-    #         if j == i
-    #             skeleton = Apply(skeleton, FreeVar(branch_item.value.type, key))
-    #             if !isempty(path)
-    #                 path = vcat([LeftTurn()], path)
-    #             end
-    #         else
-    #             skeleton = Apply(skeleton, Hole(arg_type, g.contextual_library[p][j]))
-    #             if isempty(path)
-    #                 path = [RightTurn()]
-    #             else
-    #                 path = vcat([LeftTurn()], path)
-    #             end
-    #         end
-    #     end
-    #     state = EnumerationState(skeleton, context, path, ll + g.no_context.log_variable, 1, false)
-    #     bp = BlockPrototype(
-    #         state,
-    #         return_of_type(t),
-    #         [j == i ? (key, branch) : nothing for j = 1:length(arguments_of_type(t))],
-    #         nothing,
-    #         false,
-    #     )
-    #     q[bp] = bp.state.cost
-    # end
-    q
 end
 
-function enqueue_known_var(sc, key, branch, branch_item, g)
-    # @info "Enqueue known $key $(hash(branch))"
-    q = get_candidates_for_known_var(key, branch, branch_item, g)
-    sc.branch_queues[(key, branch)] = q
-    min_cost = peek(q)[2]
-    sc.pq_input[(key, branch)] = (branch_item.min_path_cost + min_cost) * branch_item.complexity_factor
+function get_const_options(unknown_entry)
+    candidates = const_options(unknown_entry)
+    if isempty(candidates)
+        return []
+    end
+    matching_seq = get_matching_seq(unknown_entry)
+    for matcher in matching_seq
+        filter!(c -> matcher(c) != NoMatch, candidates)
+        if isempty(candidates)
+            return []
+        end
+    end
+    return [SetConst(unknown_entry.type, candidate) for candidate in candidates]
+
 end
 
-function enqueue_unknown_var(sc, key, branch, branch_item, g)
-    # @info "Enqueue unknown $key $(hash(branch))"
-    q = get_candidates_for_unknown_var(key, branch, branch_item, g)
-    sc.branch_queues[(key, branch)] = q
-    min_cost = peek(q)[2]
-    sc.pq_output[(key, branch)] = (branch_item.min_path_cost + min_cost) * branch_item.complexity_factor
+function get_candidates_for_unknown_var(sc, branch::EntryBranch, g)::Vector{BlockPrototype}
+    entry = get_entry(sc.entries_storage, branch.value_index)
+    prototypes = []
+    if !isa(entry, NoDataEntry)
+        push!(prototypes, block_prototype(Hole(branch.type, g.no_context), [], branch, branch.type))
+    end
+    for (pr, inputs, out_type) in matching_with_unknown_candidates(sc, entry, branch.key)
+        push!(prototypes, block_prototype(pr, inputs, branch, out_type))
+    end
+    for pr in get_const_options(entry)
+        push!(prototypes, block_prototype(pr, [], branch, entry.type))
+    end
+    prototypes
+end
+
+function get_candidates_for_known_var(sc, branch, g::ContextualGrammar)
+    prototypes = []
+    entry = get_entry(sc.entries_storage, branch.value_index)
+    if !isnothing(branch.min_path_cost)
+        push!(
+            prototypes,
+            BlockPrototype(
+                EnumerationState(Hole(branch.type, g.no_context), empty_context, [], 0.0, 0, true),
+                branch.type,
+                [],
+                (branch.key, branch),
+                true,
+            ),
+        )
+    end
+    for (pr, output, out_type) in matching_with_known_candidates(sc, entry, branch)
+        push!(prototypes, block_prototype(pr, [(branch.key, branch)], output, out_type))
+    end
+    prototypes
+end
+
+function enqueue_known_var(sc, branch::EntryBranch, g)
+    if !branch.is_meaningful
+        return
+    end
+    prototypes = get_candidates_for_known_var(sc, branch, g)
+    q = PriorityQueue()
+    for bp in prototypes
+        # @info "enqueueing $bp"
+        if all(br -> br[2].is_known, bp.input_vars) && !isnothing(branch.min_path_cost)
+            q[bp] = bp.state.cost
+        else
+            out_branch = bp.output_var[2]
+            out_q = sc.branch_queues[out_branch]
+            out_q[bp] = bp.state.cost
+            min_cost = peek(out_q)[2]
+            sc.pq_output[out_branch] = (out_branch.min_path_cost + min_cost) * out_branch.complexity_factor
+        end
+    end
+    if !isempty(q)
+        sc.branch_queues[branch] = q
+        min_cost = peek(q)[2]
+        sc.pq_input[branch] = (branch.min_path_cost + min_cost) * branch.complexity_factor
+    end
+end
+
+function enqueue_unknown_var(sc, branch, g)
+    prototypes = get_candidates_for_unknown_var(sc, branch, g)
+    q = PriorityQueue()
+    for bp in prototypes
+        # @info "enqueueing $bp"
+        if !isempty(bp.input_vars) &&
+           all(br -> br[2].is_known, bp.input_vars) &&
+           !isnothing(bp.input_vars[1][2].min_path_cost)
+            inp_branch = bp.input_vars[1][2]
+            if !haskey(sc.branch_queues, inp_branch)
+                sc.branch_queues[inp_branch] = PriorityQueue()
+            end
+            in_q = sc.branch_queues[inp_branch]
+            in_q[bp] = bp.state.cost
+            min_cost = peek(in_q)[2]
+            sc.pq_input[inp_branch] = (inp_branch.min_path_cost + min_cost) * inp_branch.complexity_factor
+        else
+            q[bp] = bp.state.cost
+        end
+    end
+    if !isempty(q)
+        sc.branch_queues[branch] = q
+        min_cost = peek(q)[2]
+        sc.pq_output[branch] = (branch.min_path_cost + min_cost) * branch.complexity_factor
+    end
 end
 
 state_finished(state::EnumerationState) =

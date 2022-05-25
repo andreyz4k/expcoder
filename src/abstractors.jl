@@ -116,9 +116,8 @@ function _fill_free_holes(p::Abstraction)
     Abstraction(new_b), replacements, filled_types
 end
 
-function get_reversed_program(p::Program, output_var)
-    output_type = output_var[2].values[output_var[1]].value.type
-    [Apply(pr, FreeVar(output_type, output_var[1])) for pr in _get_reversed_program(p)]
+function get_reversed_program(p::Program, output_branch)
+    [Apply(pr, FreeVar(output_branch.type, output_branch.key)) for pr in _get_reversed_program(p)]
 end
 
 function _get_reversed_program(p::Primitive)

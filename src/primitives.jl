@@ -84,7 +84,7 @@ Primitive("-", arrow(tint, tint, tint), (a -> (b -> a - b)))
 Primitive("empty", tlist(t0), [])
 Primitive("cons", arrow(t0, tlist(t0), tlist(t0)), (x -> (y -> vcat([x], y))))
 Primitive("car", arrow(tlist(t0), t0), first)
-Primitive("cdr", arrow(tlist(t0), tlist(t0)), (l -> l[2:end]))
+Primitive("cdr", arrow(tlist(t0), tlist(t0)), (l -> isempty(l) ? error("Empty list") : l[2:end]))
 Primitive("empty?", arrow(tlist(t0), tbool), isempty)
 
 [Primitive(string(j), tint, j) for j = 0:1]

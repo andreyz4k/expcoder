@@ -146,6 +146,16 @@ Base.show(io::IO, block::ProgramBlock) = print(
     "))",
 )
 
+Base.:(==)(block::ProgramBlock, other::ProgramBlock) =
+    block.p == other.p &&
+    block.type == other.type &&
+    block.cost == other.cost &&
+    block.input_vars == other.input_vars &&
+    block.output_var == other.output_var
+
+Base.hash(block::ProgramBlock, h::UInt64) =
+    hash(block.p, h) + hash(block.type, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_var, h)
+
 struct ReverseProgramBlock <: AbstractProgramBlock
     p::Program
     reverse_blocks::Vector{ProgramBlock}
@@ -171,6 +181,16 @@ Base.show(io::IO, block::ReverseProgramBlock) = print(
     ["($k, $(hash(br)))" for (k, br) in block.output_vars],
     ")",
 )
+
+Base.:(==)(block::ReverseProgramBlock, other::ReverseProgramBlock) =
+    block.p == other.p &&
+    block.reverse_blocks == other.reverse_blocks &&
+    block.cost == other.cost &&
+    block.input_vars == other.input_vars &&
+    block.output_vars == other.output_vars
+
+Base.hash(block::ReverseProgramBlock, h::UInt64) =
+    hash(block.p, h) + hash(block.reverse_blocks, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_vars, h)
 
 struct UnknownPrimitive <: Exception
     name::String

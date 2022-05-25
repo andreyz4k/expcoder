@@ -38,6 +38,10 @@ Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.argum
 Base.:(==)(a::TypeNamedArgsConstructor, b::TypeNamedArgsConstructor) =
     a.name == b.name && a.arguments == b.arguments && a.output == b.output
 
+Base.hash(a::TypeVariable, h::Core.UInt64) = a.id + h
+Base.hash(a::TypeConstructor, h::Core.UInt64) = hash(a.name, h) + hash(a.arguments, h)
+Base.hash(a::TypeNamedArgsConstructor, h::Core.UInt64) = hash(a.name, h) + hash(a.arguments, h) + hash(a.output, h)
+
 Base.show(io::IO, t::Tp) = print(io, show_type(t, true)...)
 
 show_type(t::TypeVariable, is_return::Bool) = ["t", t.id]
@@ -271,6 +275,21 @@ might_unify(t1::TypeNamedArgsConstructor, t2::TypeNamedArgsConstructor) =
     might_unify(t1.output, t2.output)
 might_unify(::TypeNamedArgsConstructor, ::TypeConstructor) = false
 might_unify(::TypeConstructor, ::TypeNamedArgsConstructor) = false
+
+is_subtype(parent::TypeVariable, child) = true
+is_subtype(parent::TypeVariable, child::TypeVariable) = true
+is_subtype(parent, child::TypeVariable) = false
+is_subtype(parent::TypeConstructor, child::TypeConstructor) =
+    parent.name == child.name &&
+    length(parent.arguments) == length(child.arguments) &&
+    all(is_subtype(as1, as2) for (as1, as2) in zip(parent.arguments, child.arguments))
+is_subtype(parent::TypeNamedArgsConstructor, child::TypeNamedArgsConstructor) =
+    parent.name == child.name &&
+    keys(parent.arguments) == keys(child.arguments) &&
+    all(is_subtype(as1, t2.arguments[k]) for (k, as1) in parent.arguments) &&
+    is_subtype(parent.output, child.output)
+is_subtype(::TypeNamedArgsConstructor, ::TypeConstructor) = false
+is_subtype(::TypeConstructor, ::TypeNamedArgsConstructor) = false
 
 function makeTID(context::Context)
     (TypeVariable(context.next_variable), Context(context.next_variable + 1, context.substitution))

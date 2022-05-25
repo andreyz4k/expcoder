@@ -466,7 +466,7 @@ function _downstream_branch_options(sc, block, fixed_branches, active_constraint
                 options = Set(i for i in options if in(i, matching_branches))
             end
             if isempty(options)
-                return Set()
+                return false, Set()
             end
         end
     end

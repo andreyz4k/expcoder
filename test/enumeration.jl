@@ -469,8 +469,8 @@ import Redis
             maximum_frontier,
             verbose,
         )
-        @test length(solutions) >= 9
-        @test number_enumerated >= 800
+        @test length(solutions) >= 8
+        @test number_enumerated >= 600
         @test number_enumerated < 1000
     end
 

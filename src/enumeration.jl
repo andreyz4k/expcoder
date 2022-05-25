@@ -615,10 +615,10 @@ function enqueue_updates(s_ctx::SolutionContext, g)
     assert_context_consistency(s_ctx)
 end
 
-function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp, g)
+function enumeration_iteration_finished_input(run_context, s_ctx, bp)
     state = bp.state
     if bp.reverse
-        new_block = create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
+        new_block = @run_with_timeout run_context["program_timeout"] run_context["redis"] create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
         if isnothing(new_block)
             return
         end
@@ -629,18 +629,10 @@ function enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp,
         new_block = ProgramBlock(state.skeleton, p_type, state.cost, bp.input_vars, bp.output_var)
         input_branches = Dict(key => branch for (key, branch) in bp.input_vars)
     end
-    new_solution_paths = add_new_block(run_context, s_ctx, new_block, input_branches)
-    if !isnothing(new_solution_paths)
-        for solution_path in new_solution_paths
-            solution, cost = extract_solution(s_ctx, solution_path)
-            finalizer(solution, cost)
-        end
-    end
-    enqueue_updates(s_ctx, g)
-    s_ctx.total_number_of_enumerated_programs += 1
+    return new_block, input_branches
 end
 
-function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp::BlockPrototype, g, reversible)
+function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockPrototype, reversible)
     state = bp.state
     if reversible
         abstractor_results =
@@ -671,18 +663,9 @@ function enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp
     else
         p_type = arrow(arg_types..., return_of_type(bp.request))
     end
-
     new_block = ProgramBlock(p, p_type, state.cost, [(v[1], v[2]) for v in input_vars], bp.output_var)
     input_branches = Dict(key => branch for (key, branch, _) in input_vars)
-    new_solution_paths = add_new_block(run_context, s_ctx, new_block, input_branches)
-    if !isnothing(new_solution_paths)
-        for solution_path in new_solution_paths
-            solution, cost = extract_solution(s_ctx, solution_path)
-            finalizer(solution, cost)
-        end
-    end
-    enqueue_updates(s_ctx, g)
-    s_ctx.total_number_of_enumerated_programs += 1
+    return new_block, input_branches
 end
 
 function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, q, bp, br::EntryBranch)
@@ -707,9 +690,21 @@ function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters,
     end
     if state_finished(bp.state)
         if br.is_known
-            enumeration_iteration_finished_input(run_context, s_ctx, finalizer, bp, g)
+            new_block_result = enumeration_iteration_finished_input(run_context, s_ctx, bp)
         else
-            enumeration_iteration_finished_output(run_context, s_ctx, finalizer, bp, g, reversible)
+            new_block_result = enumeration_iteration_finished_output(run_context, s_ctx, bp, reversible)
+        end
+        if !isnothing(new_block_result)
+            new_block, input_branches = new_block_result
+            new_solution_paths = add_new_block(run_context, s_ctx, new_block, input_branches)
+            if !isnothing(new_solution_paths)
+                for solution_path in new_solution_paths
+                    solution, cost = extract_solution(s_ctx, solution_path)
+                    finalizer(solution, cost)
+                end
+            end
+            enqueue_updates(s_ctx, g)
+            s_ctx.total_number_of_enumerated_programs += 1
         end
     else
         for child in block_state_successors(maxFreeParameters, g, bp.state)

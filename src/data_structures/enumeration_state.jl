@@ -94,13 +94,20 @@ function enqueue_known_var(sc, branch::EntryBranch, g)
         return
     end
     prototypes = get_candidates_for_known_var(sc, branch, g)
-    q = PriorityQueue()
+    if haskey(sc.branch_queues, branch)
+        q = sc.branch_queues[branch]
+    else
+        q = PriorityQueue()
+    end
     for bp in prototypes
         # @info "enqueueing $bp"
         if all(br -> br[2].is_known, bp.input_vars) && !isnothing(branch.min_path_cost)
             q[bp] = bp.state.cost
         else
             out_branch = bp.output_var[2]
+            if !haskey(sc.branch_queues, out_branch)
+                sc.branch_queues[out_branch] = PriorityQueue()
+            end
             out_q = sc.branch_queues[out_branch]
             out_q[bp] = bp.state.cost
             min_cost = peek(out_q)[2]
@@ -116,7 +123,11 @@ end
 
 function enqueue_unknown_var(sc, branch, g)
     prototypes = get_candidates_for_unknown_var(sc, branch, g)
-    q = PriorityQueue()
+    if haskey(sc.branch_queues, branch)
+        q = sc.branch_queues[branch]
+    else
+        q = PriorityQueue()
+    end
     for bp in prototypes
         # @info "enqueueing $bp"
         if !isempty(bp.input_vars) &&

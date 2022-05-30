@@ -81,7 +81,7 @@ struct LetRevClause <: Program
     var_names::Vector{String}
     inp_var_name::String
     v::Program
-    rev_v::Vector{Program}
+    rev_v::Any
     b::Program
 end
 Base.hash(p::LetRevClause, h::UInt64) = hash(p.var_names, h) + hash(p.v, h) + hash(p.b, h)
@@ -158,7 +158,7 @@ Base.hash(block::ProgramBlock, h::UInt64) =
 
 struct ReverseProgramBlock <: AbstractProgramBlock
     p::Program
-    reverse_blocks::Vector{ProgramBlock}
+    reverse_program::Any
     cost::Float64
     input_vars::Vector{Tuple{String,Any}}
     output_vars::Vector{Tuple{String,Any}}
@@ -169,8 +169,6 @@ Base.show(io::IO, block::ReverseProgramBlock) = print(
     io,
     "ReverseProgramBlock(",
     block.p,
-    ", ",
-    block.reverse_blocks,
     ", ",
     block.cost,
     ", (",
@@ -184,13 +182,12 @@ Base.show(io::IO, block::ReverseProgramBlock) = print(
 
 Base.:(==)(block::ReverseProgramBlock, other::ReverseProgramBlock) =
     block.p == other.p &&
-    block.reverse_blocks == other.reverse_blocks &&
     block.cost == other.cost &&
     block.input_vars == other.input_vars &&
     block.output_vars == other.output_vars
 
 Base.hash(block::ReverseProgramBlock, h::UInt64) =
-    hash(block.p, h) + hash(block.reverse_blocks, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_vars, h)
+    hash(block.p, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_vars, h)
 
 struct UnknownPrimitive <: Exception
     name::String
@@ -435,15 +432,17 @@ function analyze_evaluation(p::LetClause)
 end
 
 function analyze_evaluation(p::LetRevClause)
-    rev_vs = [analyze_evaluation(v) for v in p.rev_v]
     b = analyze_evaluation(p.b)
-    (environment, workspace) -> b(
-        environment,
-        merge(
-            workspace,
-            merge(Dict(var_name => v(environment, workspace) for (var_name, v) in zip(p.var_names, rev_vs))),
-        ),
-    )
+    (environment, workspace) -> begin
+        vals = p.rev_v(workspace[p.inp_var_name])
+        b(
+            environment,
+            merge(
+                workspace,
+                Dict(var_name => val for (var_name, val) in zip(p.var_names, vals)),
+            ),
+        )
+    end
 end
 
 function analyze_evaluation(p::ExceptionProgram)

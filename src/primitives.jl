@@ -83,7 +83,7 @@ Primitive("+", arrow(tint, tint, tint), (a -> (b -> a + b)))
 Primitive("-", arrow(tint, tint, tint), (a -> (b -> a - b)))
 Primitive("empty", tlist(t0), [])
 Primitive("cons", arrow(t0, tlist(t0), tlist(t0)), (x -> (y -> vcat([x], y))))
-Primitive("car", arrow(tlist(t0), t0), first)
+Primitive("car", arrow(tlist(t0), t0), (l -> l[1]))
 Primitive("cdr", arrow(tlist(t0), tlist(t0)), (l -> isempty(l) ? error("Empty list") : l[2:end]))
 Primitive("empty?", arrow(tlist(t0), tbool), isempty)
 
@@ -98,3 +98,5 @@ Primitive("is-square", arrow(tint, tbool), (n -> floor(sqrt(n))^2 == n))
 
 Primitive("repeat", arrow(t0, tint, tlist(t0)), (x -> (n -> fill(x, n))))
 Primitive("zip2", arrow(tlist(t0), tlist(t1), tlist(ttuple2(t0, t1))), (a -> (b -> zip(a, b))))
+
+Primitive("concat", arrow(tlist(t0), tlist(t0), tlist(t0)), (a -> (b -> vcat(a, b))))

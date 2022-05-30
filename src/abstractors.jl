@@ -1,19 +1,27 @@
 
 all_abstractors = Dict{Program,Dict{String,Any}}()
 
+function reverse_repeat(value)
+    if any(v != value[1] for v in value)
+        error("Elements are not equal")
+    end
+    return value[1], length(value)
+end
 
 all_abstractors[every_primitive["repeat"]] = Dict(
-    "reversed" =>
-        _ ->
-            _ -> [
-                parse_program("(lambda (fold \$0 (car \$0) (lambda (lambda (if (eq? \$0 \$1) \$0 exception)))))"),
-                every_primitive["length"],
-            ],
+    "reversed" => _ -> _ -> reverse_repeat,
     "replacements" => [:default, :default],
 )
 
+function reverse_cons(value)
+    if isempty(value)
+        error("List is empty")
+    end
+    return value[1], value[2:end]
+end
+
 all_abstractors[every_primitive["cons"]] = Dict(
-    "reversed" => _ -> _ -> [every_primitive["car"], every_primitive["cdr"]],
+    "reversed" => _ -> _ -> reverse_cons,
     "replacements" => [:default, :default],
 )
 
@@ -33,6 +41,8 @@ function is_reversible(p::Apply)
     end
     false
 end
+
+is_reversible(p::Invented) = is_reversible(p.p)
 
 function is_reversible(p::Program)
     false
@@ -76,10 +86,13 @@ function zip_free_vars(filled_hole, filled_types)
     end
 end
 
-reverse_map(map_f) =
-    [Apply(every_primitive["map"], Abstraction(Apply(f, Index(0)))) for f in _get_reversed_program(map_f)]
-
-
+function reverse_map(map_f)
+    rev_inner = get_reversed_program(map_f)
+    function rev_map(value)
+        processed_values = map(rev_inner, value)
+        return zip(processed_values...)
+    end
+end
 all_abstractors[every_primitive["map"]] = Dict(
     "reversed" => map_f -> _ -> reverse_map(map_f),
     "replacements" => [map_function_replacement, zip_free_vars],
@@ -116,17 +129,13 @@ function _fill_free_holes(p::Abstraction)
     Abstraction(new_b), replacements, filled_types
 end
 
-function get_reversed_program(p::Program, output_branch)
-    [Apply(pr, FreeVar(output_branch.type, output_branch.key)) for pr in _get_reversed_program(p)]
-end
-
-function _get_reversed_program(p::Primitive)
+function get_reversed_program(p::Primitive)
     return all_abstractors[p]["reversed"]
 end
 
-function _get_reversed_program(p::Apply)
-    reversed_fs = _get_reversed_program(p.f)
+function get_reversed_program(p::Apply)
+    reversed_fs = get_reversed_program(p.f)
     return reversed_fs(p.x)
 end
 
-_get_reversed_program(p::Abstraction) = _get_reversed_program(p.b)
+get_reversed_program(p::Abstraction) = get_reversed_program(p.b)

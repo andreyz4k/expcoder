@@ -630,6 +630,6 @@ import Redis
         )
         @test length(solutions) >= 1
         @test number_enumerated >= 100
-        @test number_enumerated <= 1000
+        @test number_enumerated <= 2000
     end
 end

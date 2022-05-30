@@ -225,57 +225,54 @@ function block_state_successors(
 end
 
 
-capture_free_vars(sc::SolutionContext, p::Program, context, min_path_cost, complexity_factor) = p, []
+capture_free_vars(sc::SolutionContext, p::Program, context) = p, []
 
-function capture_free_vars(sc::SolutionContext, p::Apply, context, min_path_cost, complexity_factor)
-    new_f, new_keys_f = capture_free_vars(sc, p.f, context, min_path_cost, complexity_factor)
-    new_x, new_keys_x = capture_free_vars(sc, p.x, context, min_path_cost, complexity_factor)
+function capture_free_vars(sc::SolutionContext, p::Apply, context)
+    new_f, new_keys_f = capture_free_vars(sc, p.f, context)
+    new_x, new_keys_x = capture_free_vars(sc, p.x, context)
     Apply(new_f, new_x), vcat(new_keys_f, new_keys_x)
 end
 
-function capture_free_vars(sc::SolutionContext, p::Abstraction, context, min_path_cost, complexity_factor)
-    new_b, new_keys = capture_free_vars(sc, p.b, context, min_path_cost, complexity_factor)
+function capture_free_vars(sc::SolutionContext, p::Abstraction, context)
+    new_b, new_keys = capture_free_vars(sc, p.b, context)
     Abstraction(new_b), new_keys
 end
 
-function capture_free_vars(sc::SolutionContext, p::FreeVar, context, min_path_cost, complexity_factor)
+function capture_free_vars(sc::SolutionContext, p::FreeVar, context)
     _, t = apply_context(context, p.t)
     key = "v$(create_next_var(sc))"
-    entry = NoDataEntry(t)
-    entry_index = add_entry(sc.entries_storage, entry)
-    new_branch =
-        EntryBranch(entry_index, key, t, Set(), Set(), Set(), [], Set(), false, false, min_path_cost, complexity_factor)
-    FreeVar(t, key), [(key, new_branch, t)]
+    FreeVar(t, key), [(key, t)]
 end
 
 
-function try_get_reversed_inputs(sc, p::Program, output_var::EntryBranch, cost)
-    reversed_programs = get_reversed_program(p, output_var)
-    output_entry = get_entry(sc.entries_storage, output_var.value_index)
-    outputs = output_entry.values
-    calculated_inputs = []
-    for rev_pr in reversed_programs
-        analazed_rev_pr = analyze_evaluation(rev_pr)
-        inp_values = []
-        for target_output in outputs
-            inp_value = try_evaluate_program(analazed_rev_pr, [], Dict(output_var.key => target_output))
-            if isnothing(inp_value)
-                return nothing
-            end
-            push!(inp_values, inp_value)
+function try_get_reversed_values(sc, p::Program, context, abstract_var::EntryBranch, cost, is_known)
+    reverse_program = get_reversed_program(p)
+    abs_entry = get_entry(sc.entries_storage, abstract_var.value_index)
+
+    calculated_values = []
+    for value in abs_entry.values
+        calculated_value = try_run_function(reverse_program, [value])
+        if isnothing(calculated_value)
+            return nothing
         end
-        input_type = closed_inference(rev_pr)
-        complexity_summary = get_complexity_summary(inp_values, input_type)
-        push!(
-            calculated_inputs,
-            ValueEntry(input_type, inp_values, complexity_summary, get_complexity(sc, complexity_summary)),
-        )
+        push!(calculated_values, calculated_value)
     end
-    inputs = []
+
+    new_p, new_vars = capture_free_vars(sc, p, context)
+
+    new_entries = []
+    for ((key, t), values) in zip(new_vars, zip(calculated_values...))
+        values = collect(values)
+        complexity_summary = get_complexity_summary(values, t)
+        new_entry = ValueEntry(t, values, complexity_summary, get_complexity(sc, complexity_summary))
+        push!(new_entries, (key, new_entry))
+    end
+
     complexity_factor =
-        output_var.complexity_factor - output_entry.complexity + sum(entry.complexity for entry in calculated_inputs)
-    for entry in calculated_inputs
-        key = "v$(create_next_var(sc))"
+        abstract_var.complexity_factor - abs_entry.complexity + sum(entry.complexity for (_, entry) in new_entries)
+
+    new_branches = []
+    for (key, entry) in new_entries
         entry_index = add_entry(sc.entries_storage, entry)
         branch = EntryBranch(
             entry_index,
@@ -286,84 +283,39 @@ function try_get_reversed_inputs(sc, p::Program, output_var::EntryBranch, cost)
             Set(),
             [],
             Set(),
-            false,
-            false,
-            output_var.min_path_cost + cost,
+            is_known,
+            is_known,
+            abstract_var.min_path_cost + cost,
             complexity_factor,
         )
-        push!(inputs, (key, branch, entry.type))
+        push!(new_branches, (key, branch, entry.type))
     end
-    new_p, _ = fix_new_free_vars(p, [i[1] for i in inputs])
-    return new_p, inputs
+
+    return new_p, reverse_program, new_branches
 end
 
-fix_new_free_vars(p::FreeVar, new_names) = FreeVar(p.t, new_names[1]), view(new_names, 2:length(new_names))
-function fix_new_free_vars(p::Apply, new_names)
-    new_f, new_f_names = fix_new_free_vars(p.f, new_names)
-    new_x, new_x_names = fix_new_free_vars(p.x, new_f_names)
-    Apply(new_f, new_x), new_x_names
-end
-function fix_new_free_vars(p::Abstraction, new_names)
-    new_b, new_b_names = fix_new_free_vars(p.b, new_names)
-    Abstraction(new_b), new_b_names
-end
-fix_new_free_vars(p::Program, new_names) = p, new_names
 
-function create_reversed_block(sc, p::Program, input_var::Tuple{String,EntryBranch}, cost)
-    reversed_programs = get_reversed_program(p, input_var[2])
-    reverse_blocks = []
-    input_entry = get_entry(sc.entries_storage, input_var[2].value_index)
-    inputs = input_entry.values
-    calculated_outputs = []
-    for rev_pr in reversed_programs
-        analazed_rev_pr = analyze_evaluation(rev_pr)
-        out_values = []
-        for target_input in inputs
-            out_value = try_evaluate_program(analazed_rev_pr, [], Dict(input_var[1] => target_input))
-            if isnothing(out_value)
-                return nothing
-            end
-            push!(out_values, out_value)
-        end
-        out_type = closed_inference(rev_pr)
-        complexity_summary = get_complexity_summary(out_values, out_type)
-        push!(
-            calculated_outputs,
-            ValueEntry(out_type, out_values, complexity_summary, get_complexity(sc, complexity_summary)),
-        )
+function try_get_reversed_inputs(sc, p::Program, context, output_var::EntryBranch, cost)
+    reverse_results = try_get_reversed_values(sc, p, context, output_var, cost, false)
+    if !isnothing(reverse_results)
+        new_p, _, inputs = reverse_results
+        return new_p, inputs
     end
-    output_vars = []
-    complexity_factor =
-        input_var[2].complexity_factor - input_entry.complexity + sum(entry.complexity for entry in calculated_outputs)
-    for (entry, rev_pr) in zip(calculated_outputs, reversed_programs)
-        t = arrow(input_var[2].type, entry.type)
-        out_key = "v$(create_next_var(sc))"
-        entry_index = add_entry(sc.entries_storage, entry)
-        branch = EntryBranch(
-            entry_index,
-            out_key,
-            entry.type,
-            Set(),
-            Set(),
-            Set(),
-            [],
-            Set(),
-            true,
-            true,
-            input_var[2].min_path_cost + cost,
-            complexity_factor,
-        )
-        push!(output_vars, (out_key, branch))
-        push!(reverse_blocks, ProgramBlock(rev_pr, t, 0.0, [input_var], (out_key, branch)))
-    end
-    new_p, _ = fix_new_free_vars(p, [i[1] for i in output_vars])
-    block = ReverseProgramBlock(new_p, reverse_blocks, cost, [input_var], output_vars)
-    return block
 end
 
-function try_evaluate_program(p, xs, workspace)
+function create_reversed_block(sc, p::Program, context, input_var::Tuple{String,EntryBranch}, cost)
+    reverse_results = try_get_reversed_values(sc, p, context, input_var[2], cost, true)
+
+    if !isnothing(reverse_results)
+        new_p, reverse_program, output_vars = reverse_results
+        block = ReverseProgramBlock(new_p, reverse_program, cost, [input_var], [(k, br) for (k, br, _) in output_vars])
+        return block
+    end
+end
+
+function try_run_function(f, xs)
     try
-        run_analyzed_with_arguments(p, xs, workspace)
+        f(xs...)
     catch e
         #  We have to be a bit careful with exceptions if the
         #     synthesized program generated an exception, then we just
@@ -383,6 +335,10 @@ function try_evaluate_program(p, xs, workspace)
             return nothing
         end
     end
+end
+
+function try_evaluate_program(p, xs, workspace)
+    try_run_function(run_analyzed_with_arguments, [p, xs, workspace])
 end
 
 function try_run_block(sc::SolutionContext, block::ProgramBlock, inputs)
@@ -423,20 +379,43 @@ end
 
 function try_run_block(sc::SolutionContext, block::ReverseProgramBlock, inputs)
     bm = Strict
-    out_new_branches = []
-    next = Set()
-    for rev_bl in block.reverse_blocks
-        result = try_run_block(sc, rev_bl, inputs)
-        if isnothing(result) || result[1] == NoMatch
-            return (NoMatch, nothing)
-        else
-            m, new_branches, next_blocks = result
-            bm = min(bm, m)
-            append!(out_new_branches, new_branches)
-            union!(next, next_blocks)
-        end
+    out_matchers = []
+
+    for (k, out_branch) in block.output_vars
+        expected_output = get_entry(sc.entries_storage, out_branch.value_index)
+        out_matcher = get_matching_seq(expected_output)
+        push!(out_matchers, out_matcher)
     end
-    return bm, out_new_branches, next
+
+    outs = []
+    input_vals = zip(inputs...)
+
+    for (xs, matchers) in zip(input_vals, zip(out_matchers...))
+        out_values = try
+            try_run_function(block.reverse_program, xs)
+        catch e
+            @error xs
+            @error block.p
+            rethrow()
+        end
+        if isnothing(out_values)
+            # @error block.p
+            # @error Dict(k => v for (k, v) in zip(block.inputs, xs))
+            return NoMatch, []
+        end
+        for (out_value, matcher) in zip(out_values, matchers)
+            m = matcher(out_value)
+            if m == NoMatch
+                return NoMatch, []
+            else
+                bm = min(bm, m)
+            end
+        end
+        push!(outs, out_values)
+    end
+    new_branches, next_blocks = value_updates(sc, block, outs)
+
+    return bm, new_branches, next_blocks
 end
 
 
@@ -485,17 +464,14 @@ function _downstream_branch_options(sc, block, fixed_branches, active_constraint
             end
         else
             tail_have_unknowns, tail_results = _downstream_branch_options(
-                    sc,
-                    block,
-                    merge(fixed_branches, Dict(key => option)),
-                    union(active_constraints, option.constraints),
-                    unfixed_keys[2:end],
-                )
-            have_unknowns |= tail_have_unknowns
-            results = union(
-                results,
-                tail_results
+                sc,
+                block,
+                merge(fixed_branches, Dict(key => option)),
+                union(active_constraints, option.constraints),
+                unfixed_keys[2:end],
             )
+            have_unknowns |= tail_have_unknowns
+            results = union(results, tail_results)
         end
     end
     have_unknowns, results
@@ -618,7 +594,13 @@ end
 function enumeration_iteration_finished_input(run_context, s_ctx, bp)
     state = bp.state
     if bp.reverse
-        new_block = @run_with_timeout run_context["program_timeout"] run_context["redis"] create_reversed_block(s_ctx, state.skeleton, bp.output_var, state.cost)
+        new_block = @run_with_timeout run_context["program_timeout"] run_context["redis"] create_reversed_block(
+            s_ctx,
+            state.skeleton,
+            state.context,
+            bp.output_var,
+            state.cost,
+        )
         if isnothing(new_block)
             return
         end
@@ -639,6 +621,7 @@ function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockProt
             @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
                 s_ctx,
                 state.skeleton,
+                state.context,
                 bp.output_var[2],
                 state.cost,
             )
@@ -648,13 +631,29 @@ function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockProt
             return
         end
     else
-        p, input_vars = capture_free_vars(
-            s_ctx,
-            state.skeleton,
-            state.context,
-            bp.output_var[2].min_path_cost + state.cost,
-            bp.output_var[2].complexity_factor,
-        )
+        p, new_vars = capture_free_vars(s_ctx, state.skeleton, state.context)
+        input_vars = []
+        min_path_cost = bp.output_var[2].min_path_cost + state.cost
+        complexity_factor = bp.output_var[2].complexity_factor
+        for (key, t) in new_vars
+            entry = NoDataEntry(t)
+            entry_index = add_entry(s_ctx.entries_storage, entry)
+            new_branch = EntryBranch(
+                entry_index,
+                key,
+                t,
+                Set(),
+                Set(),
+                Set(),
+                [],
+                Set(),
+                false,
+                false,
+                min_path_cost,
+                complexity_factor,
+            )
+            push!(input_vars, (key, new_branch, t))
+        end
         create_type_constraint(input_vars, state.context)
     end
     arg_types = [v[3] for v in input_vars]

@@ -4,7 +4,7 @@ block_to_let(block::ReverseProgramBlock, output) = LetRevClause(
     [output_var[1] for output_var in block.output_vars],
     block.input_vars[1][1],
     block.p,
-    [b.p for b in block.reverse_blocks],
+    block.reverse_program,
     output,
 )
 
@@ -52,13 +52,8 @@ function alpha_substitution(p::LetRevClause, replacements, next_index)
     end
     new_v, next_index = alpha_substitution(p.v, replacements, next_index)
     new_inp_var_name = haskey(replacements, p.inp_var_name) ? replacements[p.inp_var_name] : p.inp_var_name
-    new_rev_v = []
-    for v in p.rev_v
-        new_rv, next_index = alpha_substitution(v, replacements, next_index)
-        push!(new_rev_v, new_rv)
-    end
     new_b, next_index = alpha_substitution(p.b, replacements, next_index)
-    return LetRevClause(new_var_names, new_inp_var_name, new_v, new_rev_v, new_b), next_index
+    return LetRevClause(new_var_names, new_inp_var_name, new_v, p.rev_v, new_b), next_index
 end
 
 function alpha_substitution(p::FreeVar, replacements, next_index)

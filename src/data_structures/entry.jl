@@ -67,16 +67,6 @@ end
 
 const_options(entry::NoDataEntry) = []
 
-struct EitherEntry <: Entry
-    type::Tp
-    values::Vector
-    complexity_summary::Accumulator
-    complexity::Float64
-end
-
-Base.hash(v::EitherEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)
-Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type == v2.type && v1.values == v2.values
-
 
 function matching_with_known_candidates(sc, entry::ValueEntry, known_branch)
     results = []
@@ -100,3 +90,18 @@ function matching_with_known_candidates(sc, entry::ValueEntry, known_branch)
     end
     results
 end
+
+struct EitherOption
+    value
+    option_hash::UInt64
+end
+
+struct EitherEntry <: Entry
+    type::Tp
+    values::Vector{Vector{EitherOption}}
+    complexity_summary::Accumulator
+    complexity::Float64
+end
+
+Base.hash(v::EitherEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)
+Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type == v2.type && v1.values == v2.values

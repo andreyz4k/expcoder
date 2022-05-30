@@ -13,12 +13,9 @@ using solver:
     ttuple2,
     Index,
     get_reversed_program,
-    EntryBranch,
-    EntriesStorage,
-    ValueEntry,
-    ProgramBlock,
     is_reversible,
-    add_entry
+    reverse_cons,
+    reverse_map
 using DataStructures: OrderedDict, Accumulator
 import Redis
 
@@ -137,29 +134,8 @@ import Redis
 
     @testset "Reverse simple abstractor" begin
         forward = Apply(Apply(every_primitive["cons"], FreeVar(tint, nothing)), FreeVar(tint, nothing))
-        entry = ValueEntry(tlist(tint), [], Accumulator{String,Int64}(), 0.0)
-        storage = EntriesStorage()
-        entry_index = add_entry(storage, entry)
 
-        var = EntryBranch(
-            entry_index,
-            "key",
-            entry.type,
-            Set(),
-            Set(),
-            Set(),
-            [OrderedDict{String,ProgramBlock}()],
-            Set(),
-            true,
-            true,
-            0.0,
-            entry.complexity,
-        )
-
-        @test get_reversed_program(forward, var) == [
-            Apply(every_primitive["car"], FreeVar(tlist(tint), "key")),
-            Apply(every_primitive["cdr"], FreeVar(tlist(tint), "key")),
-        ]
+        @test get_reversed_program(forward) == reverse_cons
     end
 
     @testset "Reverse map abstractor" begin
@@ -175,35 +151,13 @@ import Redis
             ),
             Apply(Apply(every_primitive["zip2"], FreeVar(tlist(tint), nothing)), FreeVar(tlist(tint), nothing)),
         )
-        entry = ValueEntry(tlist(tlist(tint)), [], Accumulator{String,Int64}(), 0.0)
-        storage = EntriesStorage()
-        entry_index = add_entry(storage, entry)
 
-        var = EntryBranch(
-            entry_index,
-            "key",
-            entry.type,
-            Set(),
-            Set(),
-            Set(),
-            [OrderedDict{String,ProgramBlock}()],
-            Set(),
-            true,
-            true,
-            0.0,
-            entry.complexity,
-        )
-
-        @test get_reversed_program(forward, var) == [
+        @test get_reversed_program(forward) == reverse_map(Abstraction(
             Apply(
-                Apply(every_primitive["map"], Abstraction(Apply(every_primitive["car"], Index(0)))),
-                FreeVar(tlist(tlist(tint)), "key"),
+                Apply(every_primitive["cons"], Apply(every_primitive["tuple2_first"], Index(0))),
+                Apply(every_primitive["tuple2_second"], Index(0)),
             ),
-            Apply(
-                Apply(every_primitive["map"], Abstraction(Apply(every_primitive["cdr"], Index(0)))),
-                FreeVar(tlist(tlist(tint)), "key"),
-            ),
-        ]
+        ))
     end
 
     @testset "Reverse nested map abstractor" begin
@@ -233,49 +187,23 @@ import Redis
                 FreeVar(tlist(tlist(tint)), nothing),
             ),
         )
-        entry = ValueEntry(tlist(tlist(tlist(tint))), [], Accumulator{String,Int64}(), 0.0)
-        storage = EntriesStorage()
-        entry_index = add_entry(storage, entry)
 
-        var = EntryBranch(
-            entry_index,
-            "key",
-            entry.type,
-            Set(),
-            Set(),
-            Set(),
-            [OrderedDict{String,ProgramBlock}()],
-            Set(),
-            true,
-            true,
-            0.0,
-            entry.complexity,
-        )
-        @test get_reversed_program(forward, var) == [
+        @test get_reversed_program(forward) == reverse_map(Abstraction(
             Apply(
                 Apply(
                     every_primitive["map"],
                     Abstraction(
                         Apply(
-                            Apply(every_primitive["map"], Abstraction(Apply(every_primitive["car"], Index(0)))),
-                            Index(0),
+                            Apply(every_primitive["cons"], Apply(every_primitive["tuple2_first"], Index(0))),
+                            Apply(every_primitive["tuple2_second"], Index(0)),
                         ),
                     ),
                 ),
-                FreeVar(tlist(tlist(tlist(tint))), "key"),
-            ),
-            Apply(
                 Apply(
-                    every_primitive["map"],
-                    Abstraction(
-                        Apply(
-                            Apply(every_primitive["map"], Abstraction(Apply(every_primitive["cdr"], Index(0)))),
-                            Index(0),
-                        ),
-                    ),
+                    Apply(every_primitive["zip2"], Apply(every_primitive["tuple2_first"], Index(0))),
+                    Apply(every_primitive["tuple2_second"], Index(0)),
                 ),
-                FreeVar(tlist(tlist(tlist(tint))), "key"),
             ),
-        ]
+        ))
     end
 end

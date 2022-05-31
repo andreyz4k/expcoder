@@ -246,7 +246,7 @@ end
 
 
 function try_get_reversed_values(sc, p::Program, context, abstract_var::EntryBranch, cost, is_known)
-    reverse_program = get_reversed_program(p)
+    p, reverse_program = get_reversed_filled_program(p)
     abs_entry = get_entry(sc.entries_storage, abstract_var.value_index)
 
     calculated_values = []
@@ -614,9 +614,9 @@ function enumeration_iteration_finished_input(run_context, s_ctx, bp)
     return new_block, input_branches
 end
 
-function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockPrototype, reversible)
+function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockPrototype)
     state = bp.state
-    if reversible
+    if is_reversible(state.skeleton)
         abstractor_results =
             @run_with_timeout run_context["program_timeout"] run_context["redis"] try_get_reversed_inputs(
                 s_ctx,
@@ -668,30 +668,11 @@ function enumeration_iteration_finished_output(run_context, s_ctx, bp::BlockProt
 end
 
 function enumeration_iteration(run_context, s_ctx, finalizer, maxFreeParameters, g, q, bp, br::EntryBranch)
-    reversible = false
-    if is_reversible(bp.state.skeleton)
-        new_skeleton = fill_free_holes(bp.state.skeleton)
-        bp = BlockPrototype(
-            EnumerationState(
-                new_skeleton,
-                bp.state.context,
-                [],
-                bp.state.cost,
-                bp.state.free_parameters,
-                bp.state.abstractors_only,
-            ),
-            bp.request,
-            bp.input_vars,
-            bp.output_var,
-            bp.reverse,
-        )
-        reversible = true
-    end
-    if state_finished(bp.state)
+    if is_reversible(bp.state.skeleton) || state_finished(bp.state)
         if br.is_known
             new_block_result = enumeration_iteration_finished_input(run_context, s_ctx, bp)
         else
-            new_block_result = enumeration_iteration_finished_output(run_context, s_ctx, bp, reversible)
+            new_block_result = enumeration_iteration_finished_output(run_context, s_ctx, bp)
         end
         if !isnothing(new_block_result)
             new_block, input_branches = new_block_result

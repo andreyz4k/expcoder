@@ -516,6 +516,158 @@ import Redis
         "shatter" => 10,
     )
 
+    payload7 = Dict{String,Any}(
+        "DSL" => Dict{String,Any}(
+            "logVariable" => 0.0,
+            "productions" => Any[
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "map"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "range"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "index"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "fold"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "length"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "if"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "+"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "-"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cons"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "car"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "0"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "1"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "*"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "mod"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime"),
+                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square"),
+            ],
+        ),
+        "type_weights" => Dict{String,Any}("int" => 1.0, "list" => 1.0, "bool" => 1.0, "float" => 1.0),
+        "task" => Dict{String,Any}(
+            "name" => "remove empty lists",
+            "maximumFrontier" => 10,
+            "examples" => Any[
+                Dict{String,Any}(
+                    "output" => Any[Any[false, false, false], Any[false], Any[true], Any[true]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false, false, false], Any[false], Any[true], Any[true]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false, true, false], Any[true, false, false], Any[true, false]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false, true, false], Any[], Any[true, false, false], Any[true, false]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false], Any[true, true, true], Any[true]],
+                    "inputs" => Dict{String,Any}("inp0" => Any[Any[false], Any[], Any[true, true, true], Any[true]]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true, false], Any[true, false], Any[true, true, false]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[], Any[true, false], Any[true, false], Any[true, true, false]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false], Any[false, false], Any[true, true, true]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false], Any[], Any[false, false], Any[true, true, true]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false, true, true], Any[false, true], Any[true, false]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false, true, true], Any[], Any[false, true], Any[true, false]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[
+                        Any[false, false, false],
+                        Any[false, true, true],
+                        Any[false, false, true],
+                        Any[false, true],
+                    ],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[
+                            Any[false, false, false],
+                            Any[false, true, true],
+                            Any[false, false, true],
+                            Any[false, true],
+                        ],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true, true], Any[true], Any[true, true]],
+                    "inputs" => Dict{String,Any}("inp0" => Any[Any[true, true], Any[true], Any[true, true], Any[]]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true, true], Any[true, false], Any[false]],
+                    "inputs" => Dict{String,Any}("inp0" => Any[Any[], Any[true, true], Any[true, false], Any[false]]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true], Any[true, true, false], Any[false, true]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[true], Any[], Any[true, true, false], Any[false, true]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true, true, true], Any[true, false]],
+                    "inputs" => Dict{String,Any}("inp0" => Any[Any[true, true, true], Any[], Any[true, false], Any[]]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[true, true, false], Any[false], Any[false, true, false]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[], Any[true, true, false], Any[false], Any[false, true, false]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false], Any[true, false, true], Any[false, true, false], Any[false]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false], Any[true, false, true], Any[false, true, false], Any[false]],
+                    ),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false, false], Any[false], Any[false]],
+                    "inputs" => Dict{String,Any}("inp0" => Any[Any[false, false], Any[false], Any[], Any[false]]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[Any[false, false, true], Any[true, true], Any[true], Any[false, true, true]],
+                    "inputs" => Dict{String,Any}(
+                        "inp0" => Any[Any[false, false, true], Any[true, true], Any[true], Any[false, true, true]],
+                    ),
+                ),
+            ],
+            "test_examples" => Any[],
+            "request" => Dict{String,Any}(
+                "arguments" => Dict{String,Any}(
+                    "inp0" => Dict{String,Any}(
+                        "arguments" => Any[Dict{String,Any}(
+                            "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "bool")],
+                            "constructor" => "list",
+                        )],
+                        "constructor" => "list",
+                    ),
+                ),
+                "output" => Dict{String,Any}(
+                    "arguments" => Any[Dict{String,Any}(
+                        "arguments" => Any[Dict{String,Any}("arguments" => Any[], "constructor" => "bool")],
+                        "constructor" => "list",
+                    )],
+                    "constructor" => "list",
+                ),
+                "constructor" => "->",
+            ),
+        ),
+        "name" => "remove empty lists",
+        "programTimeout" => 1.0,
+        "timeout" => 20,
+        "verbose" => false,
+        "shatter" => 10,
+    )
+
     # @testset "full loading" begin
     #     task, maximum_frontier, g, _mfp, _nc, timeout, _verbose, program_timeout = load_problems(payload1)
     # end
@@ -629,6 +781,25 @@ import Redis
             verbose,
         )
         @test length(solutions) >= 1
+        @test number_enumerated >= 100
+        @test number_enumerated <= 2000
+    end
+
+    @testset "remove empty lists" begin
+        task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload7)
+        solutions, number_enumerated = @time enumerate_for_task(
+            Dict(
+                "redis" => RedisContext(Redis.RedisConnection()),
+                "program_timeout" => program_timeout,
+                "timeout" => timeout,
+            ),
+            g,
+            type_weights,
+            task,
+            maximum_frontier,
+            verbose,
+        )
+        @test length(solutions) == 0
         @test number_enumerated >= 100
         @test number_enumerated <= 2000
     end

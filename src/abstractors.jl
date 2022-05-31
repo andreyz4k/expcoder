@@ -1,29 +1,38 @@
 
-all_abstractors = Dict{Program,Dict{String,Any}}()
+all_abstractors = Dict{Program,Any}()
 
-function reverse_repeat(value)
+function generic_reverse(prim, rev_function)
+    function _generic_reverse(a, b)
+        fill_a, rev_a, filled_types_a = _get_reversed_filled_program(a)
+        fill_b, rev_b, filled_types_b = _get_reversed_filled_program(b)
+        function _reverse_function(value)
+            r_a, r_b = rev_function(value)
+            return rev_a(r_a)..., rev_b(r_b)...
+        end
+        return Apply(Apply(prim, fill_a), fill_b), _reverse_function, vcat(filled_types_a, filled_types_b)
+    end
+    return _generic_reverse
+end
+
+function _reverse_repeat(value)
     if any(v != value[1] for v in value)
         error("Elements are not equal")
     end
     return value[1], length(value)
 end
+reverse_repeat = generic_reverse(every_primitive["repeat"], _reverse_repeat)
 
-all_abstractors[every_primitive["repeat"]] = Dict(
-    "reversed" => _ -> _ -> reverse_repeat,
-    "replacements" => [:default, :default],
-)
+all_abstractors[every_primitive["repeat"]] = a -> b -> reverse_repeat(a, b)
 
-function reverse_cons(value)
+function _reverse_cons(value)
     if isempty(value)
         error("List is empty")
     end
     return value[1], value[2:end]
 end
+reverse_cons = generic_reverse(every_primitive["cons"], _reverse_cons)
 
-all_abstractors[every_primitive["cons"]] = Dict(
-    "reversed" => _ -> _ -> reverse_cons,
-    "replacements" => [:default, :default],
-)
+all_abstractors[every_primitive["cons"]] = a -> b -> reverse_cons(a, b)
 
 
 function is_reversible(p::Primitive)
@@ -86,56 +95,46 @@ function zip_free_vars(filled_hole, filled_types)
     end
 end
 
-function reverse_map(map_f)
-    rev_inner = get_reversed_program(map_f)
-    function rev_map(value)
-        processed_values = map(rev_inner, value)
-        return zip(processed_values...)
+function reverse_map(f, x)
+    fill_f, rev_f, filled_types_f = _get_reversed_filled_program(f)
+    fill_x, rev_x, filled_types_x = _get_reversed_filled_program(x)
+    function _reverse_map(value)
+        results = tuple([[] for _ in filled_types_f]...)
+        for values in map(rev_f, value)
+            for (i, v) in enumerate(values)
+                push!(results[i], v)
+            end
+        end
+        return results
     end
-end
-all_abstractors[every_primitive["map"]] = Dict(
-    "reversed" => map_f -> _ -> reverse_map(map_f),
-    "replacements" => [map_function_replacement, zip_free_vars],
-)
-
-
-function fill_free_holes(p::Program)
-    res, _, _ = _fill_free_holes(p)
-    res
+    new_f, _ = map_function_replacement(fill_f, filled_types_f)
+    filled_types = vcat(filled_types_f, filled_types_x)
+    new_x, filled_types = zip_free_vars(fill_x, filled_types)
+    return Apply(Apply(every_primitive["map"], new_f), new_x), _reverse_map, filled_types
 end
 
-function _fill_free_holes(p::Apply)
-    new_f, replacements, filled_types = _fill_free_holes(p.f)
-    x_replacement = replacements[1]
-    new_x, replacements_x, filled_types_x = _fill_free_holes(p.x)
-    filled_types = vcat(filled_types, filled_types_x)
-    if x_replacement != :default
-        new_x, filled_types = x_replacement(new_x, filled_types)
-    end
-    Apply(new_f, new_x), view(replacements, 2:length(replacements)), filled_types
+all_abstractors[every_primitive["map"]] = map_f -> x -> reverse_map(map_f, x)
+
+function _get_reversed_filled_program(p::Primitive)
+    return all_abstractors[p]
 end
 
-function _fill_free_holes(p::Hole)
-    FreeVar(p.t, nothing), [], [p.t]
+noop(a) = (a,)
+function _get_reversed_filled_program(p::Hole)
+    return FreeVar(p.t, nothing), noop, [p.t]
 end
 
-function _fill_free_holes(p::Primitive)
-    replacements = all_abstractors[p]["replacements"]
-    p, replacements, []
+function _get_reversed_filled_program(p::Apply)
+    reversed_f = _get_reversed_filled_program(p.f)
+    return reversed_f(p.x)
 end
 
-function _fill_free_holes(p::Abstraction)
-    new_b, replacements, filled_types = _fill_free_holes(p.b)
-    Abstraction(new_b), replacements, filled_types
+function _get_reversed_filled_program(p::Abstraction)
+    fill_f, rev_f, filled_types = _get_reversed_filled_program(p.b)
+    return Abstraction(fill_f), rev_f, filled_types
 end
 
-function get_reversed_program(p::Primitive)
-    return all_abstractors[p]["reversed"]
+function get_reversed_filled_program(p::Program)
+    fill_p, rev_p, _ = _get_reversed_filled_program(p)
+    return fill_p, rev_p
 end
-
-function get_reversed_program(p::Apply)
-    reversed_fs = get_reversed_program(p.f)
-    return reversed_fs(p.x)
-end
-
-get_reversed_program(p::Abstraction) = get_reversed_program(p.b)

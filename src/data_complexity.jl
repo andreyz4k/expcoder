@@ -1,5 +1,4 @@
 
-using DataStructures: Accumulator
 function get_complexity_summary(values, t::TypeConstructor)
     result = Accumulator{String,Int64}()
     result[t.name] = length(values)
@@ -13,7 +12,18 @@ function get_complexity_summary(values, t::TypeConstructor)
     end
 end
 
-
+function get_complexity_summary(values::EitherOptions, t::TypeConstructor)
+    result = Accumulator{String,Int64}()
+    for (h, option) in values.options
+        op_summary = get_complexity_summary(option, t)
+        for (k, v) in op_summary
+            if !haskey(result, k) || result[k] < v
+                result[k] = v
+            end
+        end
+    end
+    return result
+end
 function get_complexity(sc::SolutionContext, summary::Accumulator)
     return sum(sc.type_weights[tname] * count for (tname, count) in summary; init = 0.0)
 end

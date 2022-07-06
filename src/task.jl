@@ -14,10 +14,10 @@ end
 
 
 function supervised_task_checker(task::Task, p::Program)
-    p = analyze_evaluation(p)
+    p_analized = analyze_evaluation(p)
     if all(
         try
-            run_analyzed_with_arguments(p, [], xs) == y
+            run_analyzed_with_arguments(p_analized, [], xs) == y
         catch e
             if isa(e, UnknownPrimitive)
                 error("Unknown primitive: $(e.name)")

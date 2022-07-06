@@ -124,10 +124,11 @@ struct ProgramBlock <: AbstractProgramBlock
     cost::Float64
     input_vars::Vector{Tuple{String,Any}}
     output_var::Tuple{String,Any}
+    is_reversible::Bool
 end
 
-ProgramBlock(p::Program, type::Tp, cost, input_vars, output_var) =
-    ProgramBlock(p, analyze_evaluation(p), type, cost, input_vars, output_var)
+ProgramBlock(p::Program, type::Tp, cost, input_vars, output_var, is_reversible) =
+    ProgramBlock(p, analyze_evaluation(p), type, cost, input_vars, output_var, is_reversible)
 
 Base.show(io::IO, block::ProgramBlock) = print(
     io,

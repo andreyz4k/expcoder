@@ -61,10 +61,16 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
             Set(),
             [OrderedDict{String,ProgramBlock}()],
             Set(),
+            Set(),
             true,
             true,
             0.0,
             entry.complexity,
+            entry.complexity,
+            0.0,
+            entry.complexity,
+            entry.complexity,
+            Set(),
         )
         push!(sc.input_keys, key)
         push!(sc.known_branches[t], sc.var_data[key])
@@ -84,10 +90,16 @@ function create_starting_context(task::Task, type_weights)::SolutionContext
         Set(),
         [],
         Set(),
+        Set(),
         false,
         false,
         0.0,
         entry.complexity,
+        entry.complexity,
+        0.0,
+        entry.complexity,
+        entry.complexity,
+        Set(),
     )
     push!(sc.unknown_branches[return_type], sc.var_data[target_key])
     sc.previous_keys[target_key] = Set([target_key])
@@ -142,6 +154,9 @@ function check_insert_new_branch(sc::SolutionContext, branch::EntryBranch)
         push!(sc.inserted_options, branch)
     end
     for constraint in branch.constraints
+        if !haskey(constraint.branches, branch.key)
+            constraint.branches[branch.key] = branch
+        end
         for (_, br) in constraint.branches
             if !in(constraint, br.constraints)
                 push!(br.constraints, constraint)
@@ -292,43 +307,327 @@ function update_prev_follow_keys(sc, key, bl::ReverseProgramBlock)
     end
 end
 
-function update_complexity_factors(sc, bl::ProgramBlock, input_branches, output_branches)
-    factors = [
-        input_branches[in_key].complexity_factor for
-        (in_key, _) in bl.input_vars if !isnothing(input_branches[in_key].complexity_factor)
-    ]
-    if !isempty(factors)
-        complexity_factor = maximum(factors)
-    else
-        complexity_factor = nothing
-    end
-    output_var = first(br for br in output_branches if br.key == bl.output_var[1])
-    old_factor = output_var.complexity_factor
-    if !isnothing(complexity_factor) && (isnothing(old_factor) || complexity_factor < old_factor)
-        output_var.complexity_factor = complexity_factor
+function check_incoming_blocks(bl::ProgramBlock, new_branches)
+    for branch in new_branches
+        if branch.key == bl.output_var[1]
+            push!(branch.incoming_blocks, bl)
+        end
     end
 end
 
-function update_complexity_factors(sc, bl::ReverseProgramBlock, input_branches, output_branches)
-    complexity_factor =
-        sum(input_branches[k].complexity_factor for (k, _) in bl.input_vars) -
-        sum(get_entry(sc.entries_storage, input_branches[k].value_index).complexity for (k, _) in bl.input_vars) + sum(
-            get_entry(sc.entries_storage, first(br for br in output_branches if br.key == k).value_index).complexity for
-            (k, _) in bl.output_vars
+function check_incoming_blocks(bl::ReverseProgramBlock, new_branches)
+    out_keys = Set(key for (key, _) in bl.output_vars)
+    for branch in new_branches
+        if in(branch.key, out_keys)
+            push!(branch.incoming_blocks, bl)
+        end
+    end
+end
+
+function _push_factor_diff_to_input(sc, branch::EntryBranch)
+    inp_branches = Set()
+    for br in get_all_children(branch)
+        if !br.is_known
+            if !isnothing(br.complexity)
+                new_factor =
+                    br.complexity +
+                    br.added_upstream_complexity +
+                    sum(b.unmatched_complexity for b in br.related_complexity_branches; init = 0.0)
+                if new_factor < br.complexity_factor
+                    br.complexity_factor = new_factor
+                    push!(sc.updated_cost_options, br)
+                    for inp_block in br.incoming_blocks
+                        union!(inp_branches, (b for (_, b) in inp_block.input_vars))
+                    end
+                end
+            else
+                for out_block in br.outgoing_blocks
+                    out_branch = out_block.output_var[2]
+                    if out_branch.complexity_factor < br.complexity_factor
+                        br.complexity_factor = out_branch.complexity_factor
+                        push!(sc.updated_cost_options, br)
+                    end
+                end
+            end
+        end
+    end
+    for br in inp_branches
+        _push_factor_diff_to_input(sc, br)
+    end
+end
+
+function _push_best_complexity_to_output(
+    sc,
+    branch::EntryBranch,
+    fixed_branches,
+    active_constraints,
+    best_complexity,
+    unmatched_complexity,
+)
+    if branch.best_complexity > best_complexity || branch.unmatched_complexity > unmatched_complexity
+        branch.best_complexity = min(branch.best_complexity, best_complexity)
+        branch.unmatched_complexity = min(branch.unmatched_complexity, unmatched_complexity)
+        for out_block in branch.outgoing_blocks
+            new_branches = copy(fixed_branches)
+            new_constraints = active_constraints
+            in_complexity = 0.0
+            un_complexity = 0.0
+            for (in_key, in_root_branch) in out_block.input_vars
+                if haskey(new_branches, in_key)
+                    in_branch = new_branches[in_key]
+                else
+                    in_branch = get_branch_with_constraints(sc, in_key, new_constraints, in_root_branch)
+                end
+                in_complexity += in_branch.best_complexity
+                un_complexity += in_branch.unmatched_complexity
+                new_branches[in_key] = in_branch
+                if all(!constraints_key(constraint, in_key) for constraint in new_constraints)
+                    new_constraints = union(new_constraints, in_branch.constraints)
+                end
+            end
+            out_branch =
+                get_branch_with_constraints(sc, out_block.output_var[1], new_constraints, out_block.output_var[2])
+            if all(!constraints_key(constraint, out_branch.key) for constraint in new_constraints)
+                new_constraints = union(new_constraints, out_branch.constraints)
+            end
+            new_branches[out_block.output_var[1]] = out_branch
+            _push_best_complexity_to_output(sc, out_branch, new_branches, new_constraints, in_complexity, un_complexity)
+        end
+    end
+end
+
+function _push_unmatched_complexity_to_input(branch::EntryBranch, fixed_branches, unmatched_complexity)
+    if branch.unmatched_complexity > unmatched_complexity
+        branch.unmatched_complexity = unmatched_complexity
+        for in_block in branch.incoming_blocks
+            if isa(in_block, ReverseProgramBlock)
+                un_complexity = sum(
+                    (haskey(fixed_branches, k) ? fixed_branches[k].unmatched_complexity : b.unmatched_complexity)
+                    for (k, b) in in_block.output_vars
+                )
+            else
+                k = in_block.output_var[1]
+                un_complexity =
+                    haskey(fixed_branches, k) ? fixed_branches[k].unmatched_complexity :
+                    in_block.output_var[2].unmatched_complexity
+            end
+            for (in_key, in_branch) in in_block.input_vars
+                if haskey(fixed_branches, in_key)
+                    in_branch = fixed_branches[in_key]
+                end
+                _push_unmatched_complexity_to_input(in_branch, fixed_branches, un_complexity)
+            end
+        end
+    end
+end
+
+function update_complexity_factors(sc, bl::ProgramBlock, input_branches, output_branches, new_paths, active_constraints)
+    out_branch = first(br for br in output_branches if br.key == bl.output_var[1])
+    if !isempty(bl.input_vars) && all(!input_branches[in_key].is_known for (in_key, _) in bl.input_vars)
+        if any(isnothing(input_branches[in_key].complexity) for (in_key, _) in bl.input_vars)
+            return Set()
+        end
+        in_complexity = sum(input_branches[in_key].complexity for (in_key, _) in bl.input_vars)
+
+        _push_best_complexity_to_output(
+            sc,
+            out_branch,
+            input_branches,
+            active_constraints,
+            in_complexity,
+            in_complexity,
+        )
+        return out_branch.related_complexity_branches
+    elseif all(input_branches[inp_branch_key].is_known for (inp_branch_key, _) in bl.input_vars)
+        # @info out_branch
+        if isempty(bl.input_vars)
+            parents = out_branch.parents
+            if isempty(parents)
+                error("No parents for branch $out_branch")
+            end
+            parent_complexities = Set()
+            best_parent = nothing
+            for parent in parents
+                if !isnothing(parent.complexity)
+                    push!(parent_complexities, parent.complexity)
+                end
+                if isnothing(best_parent) || parent.complexity_factor > best_parent.complexity_factor
+                    best_parent = parent
+                end
+            end
+            if isnothing(out_branch.complexity_factor) || best_parent.complexity_factor < out_branch.complexity_factor
+                out_branch.complexity_factor = best_parent.complexity_factor
+                out_branch.added_upstream_complexity = out_branch.complexity_factor - out_branch.complexity
+                # out_branch.related_complexity_branches = best_parent.related_complexity_branches
+                push!(sc.updated_cost_options, out_branch)
+            end
+            # if !isempty(parent_complexities) && new_complexity < maximum(parent_complexities)
+            #     _push_factor_diff_to_output(sc, out_branch, maximum(parent_complexities) - new_complexity)
+            # end
+        else
+            related_branches = Set()
+            in_complexity = 0.0
+            added_upstream_complexity = 0.0
+            for (inp_branch_key, _) in bl.input_vars
+                inp_branch = input_branches[inp_branch_key]
+                # @info inp_branch
+
+                in_complexity += inp_branch.complexity
+                added_upstream_complexity += inp_branch.added_upstream_complexity
+                union!(related_branches, inp_branch.related_complexity_branches)
+            end
+
+            for path in new_paths[out_branch]
+                filtered_related_branches = Set(b for b in related_branches if !haskey(path, b.key))
+                if isa(bl.p, FreeVar) || bl.is_reversible
+                    new_added_complexity = added_upstream_complexity
+                else
+                    new_added_complexity = added_upstream_complexity + max(out_branch.complexity - in_complexity, 0.0)
+                end
+                new_complexity_factor =
+                    out_branch.complexity +
+                    new_added_complexity +
+                    sum(
+                        (b.is_known == out_branch.is_known ? b.best_complexity : b.complexity) for
+                        b in filtered_related_branches;
+                        init = 0.0,
+                    )
+                if isnothing(out_branch.complexity_factor) || new_complexity_factor < out_branch.complexity_factor
+                    out_branch.complexity_factor = new_complexity_factor
+                    out_branch.added_upstream_complexity = new_added_complexity
+                    out_branch.related_complexity_branches = filtered_related_branches
+                    push!(sc.updated_cost_options, out_branch)
+                end
+            end
+        end
+        # @info out_branch
+
+        for parent in out_branch.parents
+            if !isnothing(parent.complexity)
+                _push_best_complexity_to_output(
+                    sc,
+                    parent,
+                    input_branches,
+                    active_constraints,
+                    parent.best_complexity,
+                    0.0,
+                )
+                for (inp_branch_key, _) in bl.input_vars
+                    inp_branch = input_branches[inp_branch_key]
+                    _push_unmatched_complexity_to_input(inp_branch, input_branches, 0.0)
+                end
+            end
+        end
+
+        return union(
+            Set(b for b in output_branches if b.key != out_branch.key),
+            out_branch.related_complexity_branches,
+            [p.related_complexity_branches for p in out_branch.parents]...,
         )
 
-    for (key, _) in bl.output_vars
-        branch = first(br for br in output_branches if br.key == key)
-        if isnothing(branch.complexity_factor) || complexity_factor < branch.complexity_factor
-            branch.complexity_factor = complexity_factor
+        # for output_branch in output_branches
+        #     if output_branch.key == out_branch.key
+        #         continue
+        #     end
+        #     # @info output_branch
+        #     if !output_branch.is_known
+        #         if !isnothing(output_branch.complexity)
+        #             new_factor =
+        #                 output_branch.complexity +
+        #                 output_branch.added_upstream_complexity +
+        #                 sum(
+        #                     (b.is_known == output_branch.is_known ? b.best_complexity : b.complexity) for
+        #                     b in output_branch.related_complexity_branches;
+        #                     init = 0.0,
+        #                 )
+        #             if new_factor != output_branch.complexity_factor
+        #                 output_branch.complexity_factor = new_factor
+        #                 push!(sc.updated_cost_options, output_branch)
+        #             end
+        #             # elseif !isempty(output_branch.related_complexity_branches)
+        #             #     error("Not implemented")
+        #         end
+        #     else
+        #         error("Not implemented")
+        #     end
+        #     # @info output_branch
+        # end
+    else
+        error("Not implemented")
+    end
+end
+
+function _push_factor_diff_reverse_to_output(sc, branch::EntryBranch)
+    out_branches = Set()
+    # TODO: trace correct children branches
+    new_factor =
+        branch.complexity +
+        branch.added_upstream_complexity +
+        sum(
+            (b.is_known == branch.is_known ? b.best_complexity : b.complexity) for
+            b in branch.related_complexity_branches;
+            init = 0.0,
+        )
+    if branch.complexity_factor > new_factor
+        branch.complexity_factor = new_factor
+        push!(sc.updated_cost_options, branch)
+        for out_block in branch.outgoing_blocks
+            if isa(out_block, ReverseProgramBlock)
+                union!(out_branches, (b for (_, b) in out_block.output_vars))
+            else
+                push!(out_branches, out_block.output_var[2])
+            end
         end
+    end
+
+    for br in out_branches
+        _push_factor_diff_reverse_to_output(sc, br)
+    end
+end
+
+function _push_factor_diff_reverse_to_input(sc, branch::EntryBranch, best_complexity, unmatched_complexity)
+    if branch.best_complexity > best_complexity || branch.unmatched_complexity > unmatched_complexity
+        branch.best_complexity = min(branch.best_complexity, best_complexity)
+        branch.unmatched_complexity = min(branch.unmatched_complexity, unmatched_complexity)
+        for in_block in branch.incoming_blocks
+            if !isa(in_block, ReverseProgramBlock)
+                continue
+            end
+            out_complexity = sum(b.best_complexity for (_, b) in in_block.output_vars)
+            un_complexity = sum(b.unmatched_complexity for (_, b) in in_block.output_vars)
+            _push_factor_diff_reverse_to_input(sc, in_block.input_vars[1][2], out_complexity, un_complexity)
+        end
+    end
+end
+
+function update_complexity_factors(
+    sc,
+    bl::ReverseProgramBlock,
+    input_branches,
+    output_branches,
+    new_paths,
+    active_constraints,
+)
+    out_keys = Set(key for (key, _) in bl.output_vars)
+    in_branch = input_branches[bl.input_vars[1][1]]
+    out_complexity = sum(branch.complexity for branch in output_branches if in(branch.key, out_keys))
+    _push_factor_diff_reverse_to_input(sc, in_branch, out_complexity, out_complexity)
+    return in_branch.related_complexity_branches
+    # _push_factor_diff_reverse_to_output(sc, rel_branch)
+end
+
+function update_related_branch(sc, branch)
+    if branch.is_known
+        _push_factor_diff_reverse_to_output(sc, branch)
+    else
+        _push_factor_diff_to_input(sc, branch)
     end
 end
 
 function insert_operation(sc::SolutionContext, updates)
     new_paths = Dict()
-    for (bl, new_branches, input_branches) in updates
-        # @info "Inserting $bl"
+    related_branches_to_update = Set()
+    for (bl, new_branches, input_branches, active_constraints) in updates
         # @info new_branches
         # @info input_branches
         is_new_block = false
@@ -343,11 +642,21 @@ function insert_operation(sc::SolutionContext, updates)
             end
             update_prev_follow_keys(sc, inp_branch_key, bl)
         end
+        check_incoming_blocks(bl, new_branches)
 
         if all(input_branches[inp_branch_key].is_known for (inp_branch_key, _) in bl.input_vars)
             get_new_paths_for_block(sc, bl, is_new_block, new_paths, new_branches, input_branches)
-            update_complexity_factors(sc, bl, input_branches, new_branches)
         end
+        # @info "Is new block $is_new_block"
+        if is_new_block
+            union!(
+                related_branches_to_update,
+                update_complexity_factors(sc, bl, input_branches, new_branches, new_paths, active_constraints),
+            )
+        end
+    end
+    for related_branch in related_branches_to_update
+        update_related_branch(sc, related_branch)
     end
     new_full_paths = []
     for br in get_known_children(sc.var_data[sc.target_key])

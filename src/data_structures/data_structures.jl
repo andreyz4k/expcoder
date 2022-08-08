@@ -1,6 +1,11 @@
 
+include("indexed_storage.jl")
+include("graph_storage.jl")
+include("vector_storage.jl")
+include("count_storage.jl")
+include("paths_storage.jl")
+include("type_storage.jl")
 include("entry.jl")
-include("entries_storage.jl")
 include("entries_branch.jl")
 include("constraints.jl")
 include("enumeration_state.jl")

@@ -55,10 +55,10 @@ Base.:(==)(p::Hole, q::Hole) = p.t == q.t && p.grammar == q.grammar
 
 struct FreeVar <: Program
     t::Tp
-    key::Union{String,Nothing}
+    var_id::Union{Int,Nothing,String}
 end
-Base.hash(p::FreeVar, h::UInt64) = hash(p.t, h) + hash(p.key, h)
-Base.:(==)(p::FreeVar, q::FreeVar) = p.t == q.t && p.key == q.key
+Base.hash(p::FreeVar, h::UInt64) = hash(p.t, h) + hash(p.var_id, h)
+Base.:(==)(p::FreeVar, q::FreeVar) = p.t == q.t && p.var_id == q.var_id
 
 
 struct SetConst <: Program
@@ -69,23 +69,23 @@ Base.hash(p::SetConst, h::UInt64) = hash(p.t, h) + hash(p.value, h)
 Base.:(==)(p::SetConst, q::SetConst) = p.t == q.t && p.value == q.value
 
 struct LetClause <: Program
-    var_name::String
+    var_id::Int
     v::Program
     b::Program
 end
-Base.hash(p::LetClause, h::UInt64) = hash(p.var_name, h) + hash(p.v, h) + hash(p.b, h)
-Base.:(==)(p::LetClause, q::LetClause) = p.var_name == q.var_name && p.v == q.v && p.b == q.b
+Base.hash(p::LetClause, h::UInt64) = hash(p.var_id, h) + hash(p.v, h) + hash(p.b, h)
+Base.:(==)(p::LetClause, q::LetClause) = p.var_id == q.var_id && p.v == q.v && p.b == q.b
 
 
 struct LetRevClause <: Program
-    var_names::Vector{String}
-    inp_var_name::String
+    var_ids::Vector{Int}
+    inp_var_id::Union{Int,String}
     v::Program
     rev_v::Any
     b::Program
 end
-Base.hash(p::LetRevClause, h::UInt64) = hash(p.var_names, h) + hash(p.v, h) + hash(p.b, h)
-Base.:(==)(p::LetRevClause, q::LetRevClause) = p.var_names == q.var_names && p.v == q.v && p.b == q.b
+Base.hash(p::LetRevClause, h::UInt64) = hash(p.var_ids, h) + hash(p.v, h) + hash(p.b, h)
+Base.:(==)(p::LetRevClause, q::LetRevClause) = p.var_ids == q.var_ids && p.v == q.v && p.b == q.b
 
 struct ExceptionProgram <: Program end
 
@@ -101,14 +101,21 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) = isnothing(p.key) ? ["FREE_VAR"] : ["\$", p.key]
+show_program(p::FreeVar, is_function::Bool) =
+    isnothing(p.var_id) ? ["FREE_VAR"] : ["\$", (isa(p.var_id, Int) ? "v" : ""), "$(p.var_id)"]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::SetConst, is_function::Bool) = vcat(["Const(", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
-    vcat(["let \$", p.var_name, " = "], show_program(p.v, false), [" in "], show_program(p.b, false))
+    vcat(["let \$v$(p.var_id) = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::LetRevClause, is_function::Bool) = vcat(
-    ["let ", join(["\$" * v for v in p.var_names], ", "), " = rev(\$", p.inp_var_name, " = "],
+    [
+        "let ",
+        join(["\$v$v" for v in p.var_ids], ", "),
+        " = rev(\$",
+        (isa(p.inp_var_id, Int) ? "v" : ""),
+        "$(p.inp_var_id) = ",
+    ],
     show_program(p.v, false),
     [") in "],
     show_program(p.b, false),
@@ -122,8 +129,8 @@ struct ProgramBlock <: AbstractProgramBlock
     analized_p::Function
     type::Tp
     cost::Float64
-    input_vars::Vector{Tuple{String,Any}}
-    output_var::Tuple{String,Any}
+    input_vars::Dict{Int,Int}
+    output_var::Tuple{Int,Int}
     is_reversible::Bool
 end
 
@@ -139,12 +146,10 @@ Base.show(io::IO, block::ProgramBlock) = print(
     ", ",
     block.cost,
     ", ",
-    ["($k, $(hash(br)))" for (k, br) in block.input_vars],
-    ", (",
-    block.output_var[1],
+    block.input_vars,
     ", ",
-    hash(block.output_var[2]),
-    "))",
+    block.output_var,
+    ")",
 )
 
 Base.:(==)(block::ProgramBlock, other::ProgramBlock) =
@@ -155,31 +160,19 @@ Base.:(==)(block::ProgramBlock, other::ProgramBlock) =
     block.output_var == other.output_var
 
 Base.hash(block::ProgramBlock, h::UInt64) =
-    hash(block.p, h) + hash(block.type, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_var, h)
+    hash(block.p, hash(block.type, hash(block.cost, hash(block.input_vars, hash(block.output_var, h)))))
 
 struct ReverseProgramBlock <: AbstractProgramBlock
     p::Program
     reverse_program::Any
     cost::Float64
-    input_vars::Vector{Tuple{String,Any}}
-    output_vars::Vector{Tuple{String,Any}}
+    input_vars::Dict{Int,Int}
+    output_vars::Vector{Tuple{Int,Int}}
 end
 
 
-Base.show(io::IO, block::ReverseProgramBlock) = print(
-    io,
-    "ReverseProgramBlock(",
-    block.p,
-    ", ",
-    block.cost,
-    ", (",
-    block.input_vars[1][1],
-    ", ",
-    hash(block.input_vars[1][2]),
-    "), ",
-    ["($k, $(hash(br)))" for (k, br) in block.output_vars],
-    ")",
-)
+Base.show(io::IO, block::ReverseProgramBlock) =
+    print(io, "ReverseProgramBlock(", block.p, ", ", block.cost, ", ", block.input_vars, ", ", block.output_vars, ")")
 
 Base.:(==)(block::ReverseProgramBlock, other::ReverseProgramBlock) =
     block.p == other.p &&
@@ -188,7 +181,7 @@ Base.:(==)(block::ReverseProgramBlock, other::ReverseProgramBlock) =
     block.output_vars == other.output_vars
 
 Base.hash(block::ReverseProgramBlock, h::UInt64) =
-    hash(block.p, h) + hash(block.cost, h) + hash(block.input_vars, h) + hash(block.output_vars, h)
+    hash(block.p, hash(block.cost, hash(block.input_vars, hash(block.output_vars, h))))
 
 struct UnknownPrimitive <: Exception
     name::String
@@ -401,7 +394,7 @@ end
 
 analyze_evaluation(p::Index) = (environment, workspace) -> environment[p.n+1]
 
-analyze_evaluation(p::FreeVar) = (environment, workspace) -> workspace[p.key]
+analyze_evaluation(p::FreeVar) = (environment, workspace) -> workspace[p.var_id]
 
 analyze_evaluation(p::Primitive) = (_, _) -> p.code
 
@@ -429,20 +422,14 @@ analyze_evaluation(p::SetConst) = (_, _) -> p.value
 function analyze_evaluation(p::LetClause)
     v = analyze_evaluation(p.v)
     b = analyze_evaluation(p.b)
-    (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_name => v(environment, workspace))))
+    (environment, workspace) -> b(environment, merge(workspace, Dict(p.var_id => v(environment, workspace))))
 end
 
 function analyze_evaluation(p::LetRevClause)
     b = analyze_evaluation(p.b)
     (environment, workspace) -> begin
-        vals = p.rev_v(workspace[p.inp_var_name])
-        b(
-            environment,
-            merge(
-                workspace,
-                Dict(var_name => val for (var_name, val) in zip(p.var_names, vals)),
-            ),
-        )
+        vals = p.rev_v(workspace[p.inp_var_id])
+        b(environment, merge(workspace, Dict(var_id => val for (var_id, val) in zip(p.var_ids, vals))))
     end
 end
 

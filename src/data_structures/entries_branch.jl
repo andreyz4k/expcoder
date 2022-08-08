@@ -1,100 +1,22 @@
 
-using DataStructures: OrderedDict
 
-
-mutable struct EntryBranch
-    value_index::Int
-    key::String
-    type::Tp
-    parents::Set{EntryBranch}
-    children::Set{EntryBranch}
-    constraints::Set  # Each constraint represents a distinct solution branch
-    incoming_paths::Vector{OrderedDict{String,AbstractProgramBlock}}
-    incoming_blocks::Set{AbstractProgramBlock}
-    outgoing_blocks::Set{AbstractProgramBlock}
-    is_known::Bool
-    is_meaningful::Bool
-    min_path_cost::Union{Float64,Nothing}
-    complexity_factor::Union{Float64,Nothing}
-    complexity::Union{Float64,Nothing}
-    added_upstream_complexity::Union{Float64,Nothing}
-    best_complexity::Union{Float64,Nothing}
-    unmatched_complexity::Union{Float64,Nothing}
-    related_complexity_branches::Set{EntryBranch}
+function get_all_children(sc, branch_id::Integer)
+    union(
+        [branch_id],
+        [get_all_children(sc, child_id) for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]]...,
+    )
 end
 
-Base.show(io::IO, branch::EntryBranch) = print(
-    io,
-    "EntryBranch(",
-    hash(branch),
-    ", ",
-    branch.value_index,
-    ", ",
-    branch.key,
-    ", ",
-    branch.type,
-    ", ",
-    ["($(br.key), $(hash(br)))" for br in branch.parents],
-    ", ",
-    ["($(br.key), $(hash(br)))" for br in branch.children],
-    ", ",
-    branch.constraints,
-    ", ",
-    branch.incoming_paths,
-    ", ",
-    branch.incoming_blocks,
-    ", ",
-    branch.outgoing_blocks,
-    ", ",
-    branch.related_complexity_branches,
-    ", ",
-    branch.is_known,
-    ", ",
-    branch.is_meaningful,
-    ", ",
-    branch.min_path_cost,
-    ", ",
-    branch.complexity_factor,
-    ", ",
-    branch.complexity,
-    ", ",
-    branch.added_upstream_complexity,
-    ", ",
-    branch.best_complexity,
-    ", ",
-    branch.unmatched_complexity,
-    ")",
-)
-
-Base.:(==)(a::EntryBranch, b::EntryBranch) =
-    a.value_index == b.value_index &&
-    a.key == b.key &&
-    a.type == b.type &&
-    a.parents == b.parents &&
-    a.children == b.children &&
-    a.constraints == b.constraints &&
-    a.incoming_paths == b.incoming_paths &&
-    a.incoming_blocks == b.incoming_blocks &&
-    a.outgoing_blocks == b.outgoing_blocks &&
-    a.related_complexity_branches == b.related_complexity_branches &&
-    a.is_known == b.is_known &&
-    a.is_meaningful == b.is_meaningful &&
-    a.min_path_cost == b.min_path_cost &&
-    a.complexity_factor == b.complexity_factor &&
-    a.complexity == b.complexity &&
-    a.added_upstream_complexity == b.added_upstream_complexity &&
-    a.best_complexity == b.best_complexity &&
-    a.unmatched_complexity == b.unmatched_complexity
-
-get_all_children(branch::EntryBranch) = union([branch], [get_all_children(child) for child in branch.children]...)
-
-function get_known_children(branch::EntryBranch)
-    if branch.is_known
-        Set([branch])
-    elseif isempty(branch.children)
-        Set()
+function get_known_children(sc, branch_id)
+    if !sc.branches_is_unknown[branch_id]
+        Set([branch_id])
     else
-        union([get_known_children(b) for b in branch.children]...)
+        children = nonzeroinds(sc.branch_children[branch_id, :])[2]
+        if isempty(children)
+            Set()
+        else
+            union([get_known_children(sc, b) for b in children]...)
+        end
     end
 end
 
@@ -108,123 +30,122 @@ end
 # end
 
 
-function value_updates(sc, block::ProgramBlock, branch, new_values)
+function value_updates(sc, block::ProgramBlock, branch_id, new_values, active_constraints)
     if isnothing(block.output_var[2])
         error("Block without output variable: $block")
-        return_type = return_of_type(block.type)
-        if is_polymorphic(return_type)
-            error("returning polymorphic type from $block")
-        end
-        complexity_summary = get_complexity_summary(new_values, return_type)
-        entry = ValueEntry(return_type, new_values, complexity_summary, get_complexity(sc, complexity_summary))
-        entry_index = add_entry(sc.entries_storage, entry)
-        new_branch = EntryBranch(
-            entry_index,
-            block.output_var[1],
-            return_type,
-            Set(),
-            Set(),
-            Set(),
-            [],
-            Set([block]),
-            Set(),
-            true,
-            !isa(block.p, FreeVar),
-            nothing,
-            nothing,
-            nothing,
-            nothing,
-            nothing,
-            nothing,
-            Set(),
-        )
-        return [new_branch], Set()
     else
-        entry = get_entry(sc.entries_storage, branch.value_index)
+        entry = sc.entries[sc.branch_entries[branch_id]]
+        t_id = push!(sc.types, return_of_type(block.type))
         return updated_branches(
             sc,
             entry,
             new_values,
             block,
-            branch,
-            return_of_type(block.type),
+            branch_id,
+            t_id,
             !isa(block.p, FreeVar),
+            active_constraints,
         )
     end
 end
 
-function value_updates(sc, block::ReverseProgramBlock, branches, new_values)
-    out_new_branches = []
+function value_updates(sc, block::ReverseProgramBlock, branches, new_values, active_constraints)
+    out_branches = Dict()
     old_constraints = Set()
     new_constraints = Set()
-    out_next_blocks = Set()
-    for (br, values) in zip(branches, new_values)
+    has_new_branches = false
+    for (br_id, values) in zip(branches, new_values)
         values = collect(values)
-        entry = get_entry(sc.entries_storage, br.value_index)
-        new_branches, old_constr, new_constr, next_blocks =
-            updated_branches(sc, entry, values, block, br, br.type, true)
+        entry = sc.entries[sc.branch_entries[br_id]]
+        out_branch_id, old_constr, new_constr, has_new_brs =
+            updated_branches(sc, entry, values, block, br_id, entry.type_id, true, active_constraints)
         union!(old_constraints, old_constr)
         setdiff!(new_constraints, old_constr)
         union!(new_constraints, new_constr)
-        append!(out_new_branches, new_branches)
-        union!(out_next_blocks, next_blocks)
+        has_new_branches |= has_new_brs
+        out_branches[sc.branch_vars[br_id]] = out_branch_id
     end
-    return out_new_branches, old_constraints, new_constraints, out_next_blocks
+    return out_branches, old_constraints, new_constraints, has_new_branches
 end
 
 
-function updated_branches(sc, ::ValueEntry, new_values, block, branch, t, is_meaningful)
-    if branch.is_known
-        return [branch], Set(), Set(), branch.outgoing_blocks
+function updated_branches(sc, ::ValueEntry, new_values, block, branch_id, t_id, is_meaningful, active_constraints)
+    if !sc.branches_is_unknown[branch_id]
+        return branch_id, UInt64[], UInt64[], false
     else
-        for child in branch.children
-            if child.value_index == branch.value_index && child.is_known
-                return [child], branch.constraints, child.constraints, child.outgoing_blocks
+        parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])[2]
+        var_id = sc.branch_vars[branch_id]
+        for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+            if sc.branch_entries[child_id] == sc.branch_entries[branch_id] && !sc.branches_is_unknown[child_id]
+                if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
+                    return child_id, parent_constraints, nonzeroinds(sc.constrained_branches[child_id, :])[2], false
+                else
+                    if isempty(parent_constraints)
+                        sc.constrained_branches[child_id, active_constraints] = var_id
+                        sc.constrained_vars[var_id, active_constraints] = child_id
+                    else
+                        error("Not implemented")
+                    end
+                    return child_id, parent_constraints, UInt64[], false
+                end
             end
         end
-        new_branch = EntryBranch(
-            branch.value_index,
-            branch.key,
-            branch.type,
-            Set([branch]),
-            Set(),
-            Set(),
-            [],
-            Set([block]),
-            copy(branch.outgoing_blocks),
-            true,
-            branch.is_meaningful || is_meaningful,
-            nothing,
-            nothing,
-            branch.complexity,
-            nothing,
-            branch.complexity,
-            0.0,
-            Set(),
-        )
-        for constraint in branch.constraints
-            new_constraint = Constraint(copy(constraint.branches), copy(constraint.contexts), copy(constraint.rev_contexts))
-            new_constraint.branches[branch.key] = new_branch
-            push!(new_branch.constraints, new_constraint)
+        new_branch_id = increment!(sc.created_branches)
+        sc.branch_entries[new_branch_id] = sc.branch_entries[branch_id]
+        sc.branch_vars[new_branch_id] = var_id
+        sc.branch_types[new_branch_id, t_id] = t_id
+        if sc.branches_is_known[branch_id] || is_meaningful
+            sc.branches_is_known[new_branch_id] = true
         end
-        return [new_branch], branch.constraints, new_branch.constraints, branch.outgoing_blocks
-    end
-end
+        sc.branch_children[branch_id, new_branch_id] = 1
+        sc.branch_outgoing_blocks[new_branch_id, :] = sc.branch_outgoing_blocks[branch_id, :]
+        sc.complexities[new_branch_id] = sc.complexities[branch_id]
+        sc.best_complexities[new_branch_id] = sc.complexities[branch_id]
+        sc.unmatched_complexities[new_branch_id] = 0.0
 
+        child_constraints = UInt64[increment!(sc.constraints_count) for _ = 1:length(parent_constraints)]
 
-function find_related_branches(sc, branch::EntryBranch, new_entry, new_entry_index)
-    possible_parents = []
-    for child in branch.children
-        if child.is_known
-            if child.value_index == new_entry_index
-                return [], child
+        if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
+            if !isempty(parent_constraints)
+                constr_branches = sc.constrained_branches[:, parent_constraints]
+
+                select!(!=, constr_branches, var_id)
+                constr_branches[new_branch_id, :] = var_id
+                sc.constrained_branches[:, child_constraints] = constr_branches
+
+                constr_vars = sc.constrained_vars[:, parent_constraints]
+                constr_vars[var_id, :] = new_branch_id
+                sc.constrained_vars[:, child_constraints] = constr_vars
+
+                sc.constrained_contexts[:, child_constraints] = sc.constrained_contexts[:, parent_constraints]
             end
         else
-            child_entry = get_entry(sc.entries_storage, child.value_index)
-            if match_with_entry(child_entry, new_entry)
-                parents, possible_result = find_related_branches(sc, child, new_entry, new_entry_index)
+            if isempty(parent_constraints)
+                sc.constrained_branches[new_branch_id, active_constraints] = var_id
+                sc.constrained_vars[var_id, active_constraints] = new_branch_id
+            else
+                error("Not implemented")
+            end
+        end
+
+        return new_branch_id, parent_constraints, child_constraints, true
+    end
+end
+
+
+function find_related_branches(sc, branch_id, new_entry, new_entry_index)
+    possible_parents = UInt64[]
+    for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+        if !sc.branches_is_unknown[child_id]
+            if sc.branch_entries[child_id] == new_entry_index
+                return UInt64[], child_id
+            end
+        else
+            child_entry = sc.entries[sc.branch_entries[child_id]]
+            if match_with_entry(sc, child_entry, new_entry)
+                parents, possible_result = find_related_branches(sc, child_id, new_entry, new_entry_index)
                 if !isnothing(possible_result)
-                    return [], possible_result
+                    return UInt64[], possible_result
                 else
                     append!(possible_parents, parents)
                 end
@@ -232,88 +153,96 @@ function find_related_branches(sc, branch::EntryBranch, new_entry, new_entry_ind
         end
     end
     if isempty(possible_parents)
-        return [branch], nothing
+        return UInt64[branch_id], nothing
     else
         return possible_parents, nothing
     end
 end
 
 
-function updated_branches(sc, entry, new_values, block, branch, t, is_meaningful)
-    complexity_summary = get_complexity_summary(new_values, t)
-    new_entry = ValueEntry(t, new_values, complexity_summary, get_complexity(sc, complexity_summary))
-    new_entry_index = add_entry(sc.entries_storage, new_entry)
-    new_parents, possible_result = find_related_branches(sc, branch, new_entry, new_entry_index)
+function updated_branches(sc, entry, new_values, block, branch_id, t_id, is_meaningful, active_constraints)
+    complexity_summary = get_complexity_summary(new_values, sc.types[t_id])
+    new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+    new_entry_index = push!(sc.entries, new_entry)
+    new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)
+    parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])[2]
+    var_id = sc.branch_vars[branch_id]
     if !isnothing(possible_result)
-        return [possible_result], branch.constraints, possible_result.constraints, possible_result.outgoing_blocks
+        if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
+            return possible_result,
+            parent_constraints,
+            nonzeroinds(sc.constrained_branches[possible_result, :])[2],
+            false
+        else
+            if isempty(parent_constraints)
+                sc.constrained_branches[possible_result, active_constraints] = var_id
+                sc.constrained_vars[var_id, active_constraints] = possible_result
+            else
+                error("Not implemented")
+            end
+            return possible_result, parent_constraints, UInt64[], false
+        end
     end
 
-    new_branch = EntryBranch(
-        new_entry_index,
-        branch.key,
-        t,
-        Set(new_parents),
-        Set(),
-        Set(),
-        [],
-        Set([block]),
-        copy(branch.outgoing_blocks),
-        true,
-        branch.is_meaningful || is_meaningful,
-        nothing,
-        nothing,
-        new_entry.complexity,
-        nothing,
-        new_entry.complexity,
-        0.0,
-        Set(),
-    )
-    new_branches = [new_branch]
+    new_branch_id = increment!(sc.created_branches)
+    sc.branch_entries[new_branch_id] = new_entry_index
+    sc.branch_vars[new_branch_id] = var_id
+    sc.branch_types[new_branch_id, t_id] = t_id
+    if sc.branches_is_known[branch_id] || is_meaningful
+        sc.branches_is_known[new_branch_id] = true
+    end
+    sc.branch_children[new_parents, new_branch_id] = 1
+    sc.branch_outgoing_blocks[new_branch_id, :] = sc.branch_outgoing_blocks[branch_id, :]
+    sc.complexities[new_branch_id] = new_entry.complexity
+    sc.best_complexities[new_branch_id] = new_entry.complexity
+    sc.unmatched_complexities[new_branch_id] = 0.0
 
-    for constraint in branch.constraints
-        created_branches = tighten_constraint(sc, constraint, new_branch, new_branches)
-        append!(new_branches, created_branches)
+    if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
+        child_constraints = UInt64[
+            tighten_constraint(sc, constraint_id, new_branch_id, branch_id) for constraint_id in parent_constraints
+        ]
+    else
+        if isempty(parent_constraints)
+            sc.constrained_branches[new_branch_id, active_constraints] = var_id
+            sc.constrained_vars[var_id, active_constraints] = new_branch_id
+        else
+            error("Not implemented")
+        end
+        child_constraints = UInt64[]
     end
 
-    return new_branches, branch.constraints, new_branch.constraints, new_branch.outgoing_blocks
+    return new_branch_id, parent_constraints, child_constraints, true
 end
 
-function _is_ancestor(br_a, br_b)
+function _is_ancestor(sc, br_a, br_b)
     if br_a == br_b
         return true
     end
-    return any(_is_ancestor(parent_a, br_b) for parent_a in br_a.parents)
+    return any(_is_ancestor(sc, parent_a, br_b) for parent_a in nonzeroinds(sc.branch_children[:, br_a])[1])
 end
 
-function intersect_branches(br_a::EntryBranch, br_b::EntryBranch)
-    if _is_ancestor(br_a, br_b)
+function intersect_branches(sc, br_a, br_b)
+    if _is_ancestor(sc, br_a, br_b)
         return br_b
     end
-    if _is_ancestor(br_b, br_a)
+    if _is_ancestor(sc, br_b, br_a)
         return br_a
     end
+    error("Not implemented")
     return nothing
 end
 
-intersect_branches(br, ::Nothing) = br
-intersect_branches(::Nothing, br) = br
+function is_constrained_var(sc, var_id, constraints)
+    return nnz(sc.constrained_vars[var_id, constraints]) > 0
+end
 
-function get_branch_with_constraints(sc, key, constraints, min_root)
-    candidate = nothing
-    for constraint in constraints
-        if constraints_key(constraint, key)
-            cand = get_constrained_branch(constraint, key)
-            if isnothing(candidate)
-                candidate = cand
-            else
-                if cand != candidate
-                    error("Constraints are not compatible: $candidate, $cand")
-                end
-            end
-        end
+function get_branch_with_constraints(sc, var_id, constraints, min_root_branch_id)::Int
+    options = unique(nonzeros(sc.constrained_vars[var_id, constraints]))
+    if length(options) > 1
+        error("Constraints are not compatible: $constraints for $var_id with options $options")
     end
-    if isnothing(candidate)
-        candidate = min_root
+    if length(options) == 1
+        return first(options)
     end
-    return candidate
+    return min_root_branch_id
 end

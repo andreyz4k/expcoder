@@ -3,32 +3,36 @@ abstract type Entry end
 
 using DataStructures: Accumulator
 struct ValueEntry <: Entry
-    type::Tp
+    type_id::Int
     values::Vector
     complexity_summary::Accumulator
     complexity::Float64
 end
 
-Base.hash(v::ValueEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)
-Base.:(==)(v1::ValueEntry, v2::ValueEntry) = v1.type == v2.type && v1.values == v2.values
+Base.hash(v::ValueEntry, h::UInt64) = hash(v.type_id, hash(v.values, h))
+Base.:(==)(v1::ValueEntry, v2::ValueEntry) = v1.type_id == v2.type_id && v1.values == v2.values
 
 get_matching_seq(entry::ValueEntry) = [(rv -> rv == v ? Strict : NoMatch) for v in entry.values]
 
-match_with_entry(entry::ValueEntry, other::ValueEntry) = entry == other
+match_with_entry(sc, entry::ValueEntry, other::ValueEntry) = entry == other
 
-function matching_with_unknown_candidates(sc, entry::ValueEntry, key)
+function matching_with_unknown_candidates(sc, entry::ValueEntry, var_id)
     results = []
-    index = sc.entries_storage.val_to_ind[entry]
-    for known_branch in sc.known_branches[entry.type]
-        if !known_branch.is_meaningful || keys_in_loop(sc, known_branch.key, key)
+    index = get_index(sc.entries, entry)
+
+    branches = sc.branch_types[:, entry.type_id]
+
+    known_branches = emul(branches, sc.branches_is_known[:])
+
+    for known_branch_id in nonzeroinds(known_branches)[1]
+        known_var_id = sc.branch_vars[known_branch_id]
+        if vars_in_loop(sc, known_var_id, var_id)
             # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
             continue
         end
-        if known_branch.value_index == index
-            push!(
-                results,
-                (FreeVar(known_branch.type, known_branch.key), [(known_branch.key, known_branch)], known_branch.type),
-            )
+        if sc.branch_entries[known_branch_id] == index
+            known_type = sc.types[reduce(any, sc.branch_types[known_branch_id, :])]
+            push!(results, (FreeVar(known_type, known_var_id), Dict(known_var_id => known_branch_id), known_type))
         end
     end
     results
@@ -38,51 +42,63 @@ end
 const_options(entry::ValueEntry) = [entry.values[1]]
 
 struct NoDataEntry <: Entry
-    type::Tp
+    type_id::Int
 end
-Base.hash(v::NoDataEntry, h::UInt64) = hash(v.type, h)
-Base.:(==)(v1::NoDataEntry, v2::NoDataEntry) = v1.type == v2.type
+Base.hash(v::NoDataEntry, h::UInt64) = hash(v.type_id, h)
+Base.:(==)(v1::NoDataEntry, v2::NoDataEntry) = v1.type_id == v2.type_id
 
 get_matching_seq(entry::NoDataEntry) = Iterators.repeated(_ -> TypeOnly)
 
-match_with_entry(entry::NoDataEntry, other::ValueEntry) = might_unify(entry.type, other.type)
+match_with_entry(sc, entry::NoDataEntry, other::ValueEntry) =
+    might_unify(sc.types[entry.type_id], sc.types[other.type_id])
 
-function matching_with_unknown_candidates(sc, entry::NoDataEntry, key)
+function matching_with_unknown_candidates(sc, entry::NoDataEntry, var_id)
     results = []
-    for (tp, known_branches) in sc.known_branches
-        if might_unify(entry.type, tp)
-            for known_branch in known_branches
-                if !known_branch.is_meaningful || keys_in_loop(sc, known_branch.key, key)
-                    # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
-                    continue
-                end
-                push!(results, (FreeVar(tp, known_branch.key), [(known_branch.key, known_branch)], tp))
-            end
+    types = get_super_types(sc.types, entry.type_id)
+
+    branches = reduce(any, sc.branch_types[:, types], dims = 2)
+
+    known_branches = emul(branches', sc.branches_is_known[:]')
+
+    for (_, known_branch_id, tp_id) in zip(findnz(known_branches)...)
+        known_var_id = sc.branch_vars[known_branch_id]
+        if vars_in_loop(sc, known_var_id, var_id)
+            # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
+            continue
         end
+        tp = sc.types[tp_id]
+        push!(results, (FreeVar(tp, known_var_id), Dict(known_var_id => known_branch_id), tp))
     end
+
     results
 end
 
 const_options(entry::NoDataEntry) = []
 
 
-function matching_with_known_candidates(sc, entry::ValueEntry, known_branch)
+function matching_with_known_candidates(sc, entry::ValueEntry, known_branch_id)
     results = []
-    for (tp, unknown_branches) in sc.unknown_branches
-        if might_unify(entry.type, tp)
-            for unknown_branch in unknown_branches
-                if keys_in_loop(sc, known_branch.key, unknown_branch.key)
-                    # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
-                    continue
-                end
-                unknown_entry = get_entry(sc.entries_storage, unknown_branch.value_index)
-                if unknown_branch.value_index == known_branch.value_index ||
-                   (!isa(unknown_entry, ValueEntry) && match_with_entry(unknown_entry, entry))
-                    push!(results, (FreeVar(entry.type, known_branch.key), unknown_branch, entry.type))
-                end
-            end
+    types = get_super_types(sc.types, entry.type_id)
+    entry_type = sc.types[entry.type_id]
+    branches = reduce(any, sc.branch_types[:, types], dims = 2)
+
+    unknown_branches = emul(branches', sc.branches_is_unknown[:]')
+
+    known_var_id = sc.branch_vars[known_branch_id]
+    for unknown_branch_id in nonzeroinds(unknown_branches)[2]
+        unknown_var_id = sc.branch_vars[unknown_branch_id]
+        if vars_in_loop(sc, known_var_id, unknown_var_id)
+            # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
+            continue
+        end
+        unknown_entry_id = sc.branch_entries[unknown_branch_id]
+        unknown_entry = sc.entries[unknown_entry_id]
+        if unknown_entry_id == sc.branch_entries[known_branch_id] ||
+           (!isa(unknown_entry, ValueEntry) && match_with_entry(sc, unknown_entry, entry))
+            push!(results, (FreeVar(entry_type, known_var_id), unknown_var_id, unknown_branch_id, entry_type))
         end
     end
+
     results
 end
 
@@ -91,30 +107,34 @@ struct EitherOptions
 end
 
 struct EitherEntry <: Entry
-    type::Tp
+    type_id::Int
     values::Vector
     complexity_summary::Accumulator
     complexity::Float64
 end
 
-Base.hash(v::EitherEntry, h::UInt64) = hash(v.type, h) + hash(v.values, h)
-Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type == v2.type && v1.values == v2.values
+Base.hash(v::EitherEntry, h::UInt64) = hash(v.type_id, hash(v.values, h))
+Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type_id == v2.type_id && v1.values == v2.values
 
-function matching_with_unknown_candidates(sc, entry::EitherEntry, key)
+function matching_with_unknown_candidates(sc, entry::EitherEntry, var_id)
     results = []
-    for (tp, known_branches) in sc.known_branches
-        if might_unify(entry.type, tp)
-            for known_branch in known_branches
-                if !known_branch.is_meaningful ||
-                   keys_in_loop(sc, known_branch.key, key) ||
-                   !match_with_entry(entry, get_entry(sc.entries_storage, known_branch.value_index))
-                    # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
-                    continue
-                end
-                push!(results, (FreeVar(tp, known_branch.key), [(known_branch.key, known_branch)], tp))
-            end
+    types = get_super_types(sc.types, entry.type_id)
+
+    branches = reduce(any, sc.branch_types[:, types], dims = 2)
+
+    known_branches = emul(branches', sc.branches_is_known[:]')
+
+    for (_, known_branch_id, tp_id) in zip(findnz(known_branches)...)
+        known_var_id = sc.branch_vars[known_branch_id]
+        if vars_in_loop(sc, known_var_id, var_id) ||
+           !match_with_entry(sc, entry, sc.entries[sc.branch_entries[known_branch_id]])
+            # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
+            continue
         end
+        tp = sc.types[tp_id]
+        push!(results, (FreeVar(tp, known_var_id), Dict(known_var_id => known_branch_id), tp))
     end
+
     results
 end
 
@@ -139,7 +159,7 @@ _match_options(value) = (rv -> rv == value ? Strict : NoMatch)
 
 get_matching_seq(entry::EitherEntry) = [_match_options(value) for value in entry.values]
 
-function match_with_entry(entry::EitherEntry, other::ValueEntry)
+function match_with_entry(sc, entry::EitherEntry, other::ValueEntry)
     matchers = get_matching_seq(entry)
     return all(matcher(v) != NoMatch for (matcher, v) in zip(matchers, other.values))
 end

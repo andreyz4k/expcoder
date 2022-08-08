@@ -1,6 +1,4 @@
 
-include("../src/solver.jl")
-
 using Test
 
 using solver:
@@ -10,7 +8,6 @@ using solver:
     FreeVar,
     add_new_block,
     RedisContext,
-    EntryBranch,
     BlockPrototype,
     EnumerationState,
     enumeration_iteration_finished_output,
@@ -34,15 +31,14 @@ using solver:
     unwind_path,
     path_environment,
     apply_context,
-    get_entry,
-    Constraint,
     SetConst
 
 import Redis
 using DataStructures
+using SuiteSparseGraphBLAS
 
-function initial_state(branch, g)
-    EnumerationState(Hole(branch.type, g.no_context), empty_context, [], 0.0, 0, false)
+function initial_state(t, g)
+    EnumerationState(Hole(t, g.no_context), empty_context, [], 0.0, 0, false)
 end
 
 function next_state(state, target_candidate, cg)
@@ -97,13 +93,16 @@ function next_state(state, target_candidate, cg)
     return states[1]
 end
 
-function create_block_prototype(target_branch, steps, g)
-    state = initial_state(target_branch, g)
+function create_block_prototype(sc, target_branch_id, steps, g)
+    target_type_id = reduce(any, sc.branch_types[target_branch_id, :])
+    target_type = sc.types[target_type_id]
+    state = initial_state(target_type, g)
     for step in steps
         state = next_state(state, step, g)
     end
 
-    bp = BlockPrototype(state, target_branch.type, nothing, (target_branch.key, target_branch), false)
+    target_var_id = sc.branch_vars[target_branch_id]
+    bp = BlockPrototype(state, target_type, nothing, (target_var_id, target_branch_id), false)
     return bp
 end
 
@@ -184,40 +183,43 @@ end
         )
         task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
         sc = create_starting_context(task, type_weights)
-        inp_branch = sc.var_data["inp0"]
-        out_branch = sc.var_data["out"]
+        inp_var_id = 1
+        out_var_id = 2
+        inp_branch_id = 1
+        out_branch_id = 2
+        inp_type_id = reduce(any, sc.branch_types[inp_branch_id, :])
         new_block = ProgramBlock(
-            FreeVar(inp_branch.type, "inp0"),
-            inp_branch.type,
+            FreeVar(sc.types[inp_type_id], inp_var_id),
+            sc.types[inp_type_id],
             0.0,
-            [("inp0", inp_branch)],
-            ("out", out_branch),
+            Dict(inp_var_id => inp_branch_id),
+            (out_var_id, out_branch_id),
             false,
         )
+        new_block_id = push!(sc.blocks, new_block)
 
-        new_solution_paths = add_new_block(run_context, sc, new_block, Dict("inp0" => inp_branch))
-        @test new_solution_paths == [OrderedDict("out" => new_block)]
-        @test length(out_branch.children) == 1
-        @test first(out_branch.children) == EntryBranch(
-            1,
-            "out",
-            out_branch.type,
-            Set([out_branch]),
-            Set(),
-            Set(),
-            [OrderedDict("out" => new_block)],
-            Set([new_block]),
-            Set(),
-            true,
-            false,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set(),
-        )
+        new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
+        @test new_solution_paths == [OrderedDict(out_var_id => new_block_id)]
+
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        @test length(out_children) == 1
+        out_child_id = out_children[1]
+        @test sc.branch_entries[out_child_id] == 1
+        @test sc.branch_vars[out_child_id] == out_var_id
+        @test sc.branch_types[out_child_id, :] == sc.branch_types[out_branch_id, :]
+        @test sc.incoming_paths[out_child_id] == [OrderedDict(out_var_id => new_block_id)]
+        @test nnz(sc.branch_incoming_blocks[out_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[out_child_id, new_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[out_child_id, :]) == 0
+        @test sc.branches_is_unknown[out_child_id] == false
+        @test sc.branches_is_known[out_child_id] == false
+        @test sc.min_path_costs[out_child_id] == 0.0
+        @test sc.complexity_factors[out_child_id] == 16.0
+        @test sc.complexities[out_child_id] == 16.0
+        @test sc.added_upstream_complexities[out_child_id] == 0.0
+        @test sc.best_complexities[out_child_id] == 16.0
+        @test sc.unmatched_complexities[out_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[out_child_id, :]) == 0
     end
 
     @testset "Type only match" begin
@@ -258,70 +260,83 @@ end
         )
         task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
         sc = create_starting_context(task, type_weights)
-        inp_branch = sc.var_data["inp0"]
-        out_branch = sc.var_data["out"]
+        inp_var_id = 1
+        out_var_id = 2
+        inp_branch_id = 1
+        out_branch_id = 2
+        inp_type_id = reduce(any, sc.branch_types[inp_branch_id, :])
+        out_type_id = reduce(any, sc.branch_types[out_branch_id, :])
 
-        bp = create_block_prototype(out_branch, [every_primitive["cdr"], FreeVar(out_branch.type, nothing)], g)
+        bp = create_block_prototype(
+            sc,
+            out_branch_id,
+            [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing)],
+            g,
+        )
         new_block_result = enumeration_iteration_finished_output(run_context, sc, bp)
-        first_block, input_branches = new_block_result
-        new_solution_paths = add_new_block(run_context, sc, first_block, input_branches)
+        first_block_id, input_branches = new_block_result
+        new_solution_paths = add_new_block(run_context, sc, first_block_id, input_branches)
         @test new_solution_paths == []
 
-        connection_branch = sc.var_data["v1"]
+        connection_var_id = 3
+        connection_branch_id = 3
 
         new_block = ProgramBlock(
-            FreeVar(inp_branch.type, "inp0"),
-            inp_branch.type,
+            FreeVar(sc.types[inp_type_id], inp_var_id),
+            sc.types[inp_type_id],
             0.0,
-            [("inp0", inp_branch)],
-            ("v1", connection_branch),
+            Dict(inp_var_id => inp_branch_id),
+            (connection_var_id, connection_branch_id),
             false,
         )
+        new_block_id = push!(sc.blocks, new_block)
 
-        new_solution_paths = add_new_block(run_context, sc, new_block, Dict("inp0" => inp_branch))
-        @test new_solution_paths == [OrderedDict("out" => first_block, "v1" => new_block)]
-        @test length(connection_branch.children) == 1
-        @test first(connection_branch.children) == EntryBranch(
-            inp_branch.value_index,
-            "v1",
-            inp_branch.type,
-            Set([connection_branch]),
-            Set(),
-            Set(),
-            [OrderedDict("v1" => new_block)],
-            Set([new_block]),
-            Set([first_block]),
-            true,
-            false,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set(),
-        )
-        @test length(out_branch.children) == 1
-        @test first(out_branch.children) == EntryBranch(
-            out_branch.value_index,
-            "out",
-            out_branch.type,
-            Set([out_branch]),
-            Set(),
-            Set(),
-            [OrderedDict("out" => first_block, "v1" => new_block)],
-            Set([first_block]),
-            Set(),
-            true,
-            true,
-            2.4849066497880004,
-            13.0,
-            13.0,
-            0.0,
-            13.0,
-            0.0,
-            Set(),
-        )
+        new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
+        @test new_solution_paths == [OrderedDict(out_var_id => first_block_id, connection_var_id => new_block_id)]
+
+        conn_children = nonzeroinds(sc.branch_children[connection_branch_id, :])[2]
+        @test length(conn_children) == 1
+        conn_child_id = conn_children[1]
+
+        @test sc.branch_entries[conn_child_id] == sc.branch_entries[inp_branch_id]
+        @test sc.branch_vars[conn_child_id] == connection_var_id
+        @test sc.branch_types[conn_child_id, :] == sc.branch_types[inp_branch_id, :]
+        @test sc.incoming_paths[conn_child_id] == [OrderedDict(connection_var_id => new_block_id)]
+        @test nnz(sc.branch_incoming_blocks[conn_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[conn_child_id, new_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[conn_child_id, :]) == 1
+        @test sc.branch_outgoing_blocks[conn_child_id, first_block_id] == 1
+        @test sc.branches_is_unknown[conn_child_id] == false
+        @test sc.branches_is_known[conn_child_id] == false
+        @test sc.min_path_costs[conn_child_id] == 0.0
+        @test sc.complexity_factors[conn_child_id] == 16.0
+        @test sc.complexities[conn_child_id] == 16.0
+        @test sc.added_upstream_complexities[conn_child_id] == 0.0
+        @test sc.best_complexities[conn_child_id] == 16.0
+        @test sc.unmatched_complexities[conn_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[conn_child_id, :]) == 0
+
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        @test length(out_children) == 1
+        out_child_id = out_children[1]
+
+        @test sc.branch_entries[out_child_id] == sc.branch_entries[out_branch_id]
+        @test sc.branch_vars[out_child_id] == out_var_id
+        @test sc.branch_types[out_child_id, :] == sc.branch_types[out_branch_id, :]
+        @test sc.incoming_paths[out_child_id] ==
+              [OrderedDict(out_var_id => first_block_id, connection_var_id => new_block_id)]
+        @test nnz(sc.branch_incoming_blocks[out_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[out_child_id, first_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[out_child_id, :]) == 0
+        @test sc.branches_is_unknown[out_child_id] == false
+        @test sc.branches_is_known[out_child_id] == true
+        @test sc.min_path_costs[out_child_id] == 2.4849066497880004
+        @test sc.complexity_factors[out_child_id] == 13.0
+        @test sc.complexities[out_child_id] == 13.0
+        @test sc.added_upstream_complexities[out_child_id] == 0.0
+        @test sc.best_complexities[out_child_id] == 13.0
+        @test sc.unmatched_complexities[out_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[out_child_id, :]) == 0
     end
 
     @testset "Either match" begin
@@ -362,196 +377,254 @@ end
         )
         task, maximum_frontier, g, type_weights, _mfp, _nc, timeout, verbose, program_timeout = load_problems(payload)
         sc = create_starting_context(task, type_weights)
-        inp_branch = sc.var_data["inp0"]
-        out_branch = sc.var_data["out"]
+        inp_var_id = 1
+        out_var_id = 2
+        inp_branch_id = 1
+        out_branch_id = 2
 
-        bp = create_block_prototype(out_branch, [every_primitive["concat"]], g)
+        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], g)
         new_block_result = enumeration_iteration_finished_output(run_context, sc, bp)
-        first_block, input_branches = new_block_result
-        new_solution_paths = add_new_block(run_context, sc, first_block, input_branches)
+        first_block_id, input_branches = new_block_result
+        new_solution_paths = add_new_block(run_context, sc, first_block_id, input_branches)
         @test new_solution_paths == []
 
-        v2_branch = sc.var_data["v2"]
-        v1_branch = sc.var_data["v1"]
+        v1_var_id = 3
+        v2_var_id = 4
 
-        @test v2_branch == EntryBranch(
-            4,
-            "v2",
-            inp_branch.type,
-            Set(),
-            Set(),
-            Set([Constraint(Dict("v1" => v1_branch, "v2" => v2_branch), Dict(), Dict())]),
-            [],
-            Set(),
-            Set([first_block]),
-            false,
-            false,
-            2.4849066497880004,
-            38.0,
-            19.0,
-            0.0,
-            19.0,
-            19.0,
-            Set([v1_branch]),
-        )
-        @test v1_branch == EntryBranch(
-            3,
-            "v1",
-            inp_branch.type,
-            Set(),
-            Set(),
-            Set([Constraint(Dict("v1" => v1_branch, "v2" => v2_branch), Dict(), Dict())]),
-            [],
-            Set(),
-            Set([first_block]),
-            false,
-            false,
-            2.4849066497880004,
-            38.0,
-            19.0,
-            0.0,
-            19.0,
-            19.0,
-            Set([v2_branch]),
-        )
+        v1_branch_id = 3
+        v2_branch_id = 4
+
+        constraint_id = 1
+        @test nnz(sc.constrained_contexts[:, constraint_id]) == 0
+
+        @test sc.branch_entries[v1_branch_id] == 3
+        @test sc.branch_vars[v1_branch_id] == v1_var_id
+        @test sc.branch_types[v1_branch_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v1_branch_id, :]) == 0
+        @test nnz(sc.branch_children[:, v1_branch_id]) == 0
+        @test nnz(sc.constrained_branches[v1_branch_id, :]) == 1
+        @test sc.constrained_branches[v1_branch_id, constraint_id] == v1_var_id
+        @test nnz(sc.constrained_vars[v1_var_id, :]) == 1
+        @test sc.constrained_vars[v1_var_id, constraint_id] == v1_branch_id
+        @test sc.incoming_paths[v1_branch_id] == []
+        @test nnz(sc.branch_incoming_blocks[v1_branch_id, :]) == 0
+        @test nnz(sc.branch_outgoing_blocks[v1_branch_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v1_branch_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v1_branch_id] == true
+        @test sc.branches_is_known[v1_branch_id] == false
+        @test sc.min_path_costs[v1_branch_id] == 2.4849066497880004
+        @test sc.complexity_factors[v1_branch_id] == 38.0
+        @test sc.complexities[v1_branch_id] == 19.0
+        @test sc.added_upstream_complexities[v1_branch_id] == 0.0
+        @test sc.best_complexities[v1_branch_id] == 19.0
+        @test sc.unmatched_complexities[v1_branch_id] == 19.0
+        @test nnz(sc.related_complexity_branches[v1_branch_id, :]) == 1
+        @test sc.related_complexity_branches[v1_branch_id, v2_branch_id] == 1
+
+        @test sc.branch_entries[v2_branch_id] == 4
+        @test sc.branch_vars[v2_branch_id] == v2_var_id
+        @test sc.branch_types[v2_branch_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v2_branch_id, :]) == 0
+        @test nnz(sc.branch_children[:, v2_branch_id]) == 0
+        @test nnz(sc.constrained_branches[v2_branch_id, :]) == 1
+        @test sc.constrained_branches[v2_branch_id, constraint_id] == v2_var_id
+        @test nnz(sc.constrained_vars[v2_var_id, :]) == 1
+        @test sc.constrained_vars[v2_var_id, constraint_id] == v2_branch_id
+        @test sc.incoming_paths[v2_branch_id] == []
+        @test nnz(sc.branch_incoming_blocks[v2_branch_id, :]) == 0
+        @test nnz(sc.branch_outgoing_blocks[v2_branch_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v2_branch_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v2_branch_id] == true
+        @test sc.branches_is_known[v2_branch_id] == false
+        @test sc.min_path_costs[v2_branch_id] == 2.4849066497880004
+        @test sc.complexity_factors[v2_branch_id] == 38.0
+        @test sc.complexities[v2_branch_id] == 19.0
+        @test sc.added_upstream_complexities[v2_branch_id] == 0.0
+        @test sc.best_complexities[v2_branch_id] == 19.0
+        @test sc.unmatched_complexities[v2_branch_id] == 19.0
+        @test nnz(sc.related_complexity_branches[v2_branch_id, :]) == 1
+        @test sc.related_complexity_branches[v2_branch_id, v1_branch_id] == 1
+
+        inp_type_id = reduce(any, sc.branch_types[inp_branch_id, :])
+        inp_type = sc.types[inp_type_id]
 
         new_block = ProgramBlock(
-            FreeVar(inp_branch.type, "inp0"),
-            inp_branch.type,
+            FreeVar(inp_type, inp_var_id),
+            inp_type,
             0.0,
-            [("inp0", inp_branch)],
-            ("v2", v2_branch),
+            Dict(inp_var_id => inp_branch_id),
+            (v2_var_id, v2_branch_id),
             false,
         )
+        new_block_id = push!(sc.blocks, new_block)
 
-        new_solution_paths = add_new_block(run_context, sc, new_block, Dict("inp0" => inp_branch))
+        new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
         @test new_solution_paths == []
 
-        @test length(v2_branch.children) == 1
-        v2_known_child = first(v2_branch.children)
-        v1_unknown_child = first(v1_branch.children)
-        @info v2_known_child
-        @test v2_known_child == EntryBranch(
-            inp_branch.value_index,
-            "v2",
-            inp_branch.type,
-            Set([v2_branch]),
-            Set(),
-            Set([Constraint(Dict("v1" => v1_unknown_child, "v2" => v2_known_child), Dict(), Dict())]),
-            [OrderedDict("v2" => new_block)],
-            Set([new_block]),
-            Set([first_block]),
-            true,
-            false,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set(),
-        )
-        @test length(v1_branch.children) == 1
-        @info v1_unknown_child
-        @test v1_unknown_child == EntryBranch(
-            5,
-            "v1",
-            inp_branch.type,
-            Set([v1_branch]),
-            Set(),
-            Set([Constraint(Dict("v1" => v1_unknown_child, "v2" => v2_known_child), Dict(), Dict())]),
-            [],
-            Set(),
-            Set([first_block]),
-            false,
-            false,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set([v2_known_child]),
-        )
+        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])[2]
+        @test length(v2_children) == 1
+        v2_known_child_id = v2_children[1]
 
-        const_block = ProgramBlock(SetConst(inp_branch.type, [5]), inp_branch.type, 0.0, [], ("v1", v1_branch), false)
-        new_solution_paths = add_new_block(run_context, sc, const_block, Dict())
+        v1_children = nonzeroinds(sc.branch_children[v1_branch_id, :])[2]
+        @test length(v1_children) == 1
+        v1_unknown_child_id = v1_children[1]
 
-        @test length(v1_unknown_child.children) == 1
-        v1_known_child = first(v1_unknown_child.children)
-        v2_unknown_child = first(v2_branch.children)
-        @test v2_known_child.parents == Set([v2_unknown_child])
-        @test v2_branch.children == Set([v2_unknown_child])
-        @test v1_known_child == EntryBranch(
-            5,
-            "v1",
-            inp_branch.type,
-            Set([v1_unknown_child]),
-            Set(),
-            Set([
-                Constraint(Dict("v1" => v1_known_child, "v2" => v2_unknown_child), Dict(), Dict()),
-                Constraint(Dict("v1" => v1_known_child, "v2" => v2_known_child), Dict(), Dict()),
-            ]),
-            [OrderedDict("v1" => const_block)],
-            Set([const_block]),
-            Set([first_block]),
-            true,
-            true,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set(),
-        )
-        @test v2_unknown_child == EntryBranch(
-            inp_branch.value_index,
-            "v2",
-            inp_branch.type,
-            Set([v2_branch]),
-            Set([v2_known_child]),
-            Set([Constraint(Dict("v1" => v1_known_child, "v2" => v2_unknown_child), Dict(), Dict())]),
-            [],
-            Set(),
-            Set([first_block]),
-            false,
-            false,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set([v1_known_child]),
-        )
-        @test v2_known_child.constraints == Set([
-            Constraint(Dict("v1" => v1_unknown_child, "v2" => v2_known_child), Dict(), Dict()),
-            Constraint(Dict("v1" => v1_known_child, "v2" => v2_known_child), Dict(), Dict()),
-        ])
+        v1_u_v2_k_constraint_id = 2
+        @test nnz(sc.constrained_contexts[:, v1_u_v2_k_constraint_id]) == 0
 
-        @test new_solution_paths == [OrderedDict("out" => first_block, "v2" => new_block, "v1" => const_block)]
+        @test sc.branch_entries[v2_known_child_id] == sc.branch_entries[inp_branch_id]
+        @test sc.branch_vars[v2_known_child_id] == v2_var_id
+        @test sc.branch_types[v2_known_child_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v2_known_child_id, :]) == 0
+        @test nnz(sc.branch_children[:, v2_known_child_id]) == 1
+        @test sc.branch_children[v2_branch_id, v2_known_child_id] == 1
+        @test nnz(sc.constrained_branches[v2_known_child_id, :]) == 1
+        @test sc.constrained_branches[v2_known_child_id, v1_u_v2_k_constraint_id] == v2_var_id
+        @test nnz(sc.constrained_vars[v2_var_id, :]) == 2
+        @test sc.constrained_vars[v2_var_id, v1_u_v2_k_constraint_id] == v2_known_child_id
+        @test sc.incoming_paths[v2_known_child_id] == [OrderedDict(v2_var_id => new_block_id)]
+        @test nnz(sc.branch_incoming_blocks[v2_known_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[v2_known_child_id, new_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[v2_known_child_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v2_known_child_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v2_known_child_id] == false
+        @test sc.branches_is_known[v2_known_child_id] == false
+        @test sc.min_path_costs[v2_known_child_id] == 0.0
+        @test sc.complexity_factors[v2_known_child_id] == 16.0
+        @test sc.complexities[v2_known_child_id] == 16.0
+        @test sc.added_upstream_complexities[v2_known_child_id] == 0.0
+        @test sc.best_complexities[v2_known_child_id] == 16.0
+        @test sc.unmatched_complexities[v2_known_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[v2_known_child_id, :]) == 0
 
-        @test length(out_branch.children) == 1
-        @test first(out_branch.children) == EntryBranch(
-            out_branch.value_index,
-            "out",
-            out_branch.type,
-            Set([out_branch]),
-            Set(),
-            Set(),
-            [OrderedDict("out" => first_block, "v2" => new_block, "v1" => const_block)],
-            Set([first_block]),
-            Set(),
-            true,
-            true,
-            0.0,
-            16.0,
-            16.0,
-            0.0,
-            16.0,
-            0.0,
-            Set(),
-        )
+        @test sc.branch_entries[v1_unknown_child_id] == 5
+        @test sc.branch_vars[v1_unknown_child_id] == v1_var_id
+        @test sc.branch_types[v1_unknown_child_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v1_unknown_child_id, :]) == 0
+        @test nnz(sc.branch_children[:, v1_unknown_child_id]) == 1
+        @test sc.branch_children[v1_branch_id, v1_unknown_child_id] == 1
+        @test nnz(sc.constrained_branches[v1_unknown_child_id, :]) == 1
+        @test sc.constrained_branches[v1_unknown_child_id, v1_u_v2_k_constraint_id] == v1_var_id
+        @test nnz(sc.constrained_vars[v1_var_id, :]) == 2
+        @test sc.constrained_vars[v1_var_id, v1_u_v2_k_constraint_id] == v1_unknown_child_id
+        @test sc.incoming_paths[v1_unknown_child_id] == []
+        @test nnz(sc.branch_incoming_blocks[v1_unknown_child_id, :]) == 0
+        @test nnz(sc.branch_outgoing_blocks[v1_unknown_child_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v1_unknown_child_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v1_unknown_child_id] == true
+        @test sc.branches_is_known[v1_unknown_child_id] == false
+        @test sc.min_path_costs[v1_unknown_child_id] == 2.4849066497880004
+        @test sc.complexity_factors[v1_unknown_child_id] == 22.0
+        @test sc.complexities[v1_unknown_child_id] == 6.0
+        @test sc.added_upstream_complexities[v1_unknown_child_id] == 0.0
+        @test sc.best_complexities[v1_unknown_child_id] == 6.0
+        @test sc.unmatched_complexities[v1_unknown_child_id] == 6.0
+        @test nnz(sc.related_complexity_branches[v1_unknown_child_id, :]) == 1
+        @test sc.related_complexity_branches[v1_unknown_child_id, v2_known_child_id] == 1
+
+        const_block = ProgramBlock(SetConst(inp_type, [5]), inp_type, 0.0, Dict(), (v1_var_id, v1_branch_id), false)
+        const_block_id = push!(sc.blocks, const_block)
+        new_solution_paths = add_new_block(run_context, sc, const_block_id, Dict())
+
+        @test new_solution_paths ==
+              [OrderedDict(out_var_id => first_block_id, v2_var_id => new_block_id, v1_var_id => const_block_id)]
+
+        v1_unknown_children = nonzeroinds(sc.branch_children[v1_unknown_child_id, :])[2]
+        @test length(v1_unknown_children) == 1
+        v1_known_child_id = v1_unknown_children[1]
+
+        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])[2]
+        @test length(v2_children) == 1
+        v2_unknown_child_id = v2_children[1]
+
+        @test sc.branch_entries[v2_unknown_child_id] == sc.branch_entries[inp_branch_id]
+        @test sc.branch_vars[v2_unknown_child_id] == v2_var_id
+        @test sc.branch_types[v2_unknown_child_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v2_unknown_child_id, :]) == 1
+        @test sc.branch_children[v2_unknown_child_id, v2_known_child_id] == 1
+        @test nnz(sc.branch_children[:, v2_unknown_child_id]) == 1
+        @test sc.branch_children[v2_branch_id, v2_unknown_child_id] == 1
+        @test nnz(sc.constrained_branches[v2_unknown_child_id, :]) == 1
+
+        v1_k_v2_u_constraint_id = nonzeroinds(sc.constrained_branches[v2_unknown_child_id, :])[2][1]
+        @test nnz(sc.constrained_contexts[:, v1_k_v2_u_constraint_id]) == 0
+
+        @test sc.constrained_branches[v2_unknown_child_id, v1_k_v2_u_constraint_id] == v2_var_id
+        @test nnz(sc.constrained_vars[v2_var_id, :]) == 4
+        @test sc.constrained_vars[v2_var_id, v1_k_v2_u_constraint_id] == v2_unknown_child_id
+        @test sc.incoming_paths[v2_unknown_child_id] == []
+        @test nnz(sc.branch_incoming_blocks[v2_unknown_child_id, :]) == 0
+        @test nnz(sc.branch_outgoing_blocks[v2_unknown_child_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v2_unknown_child_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v2_unknown_child_id] == true
+        @test sc.branches_is_known[v2_unknown_child_id] == false
+        @test sc.min_path_costs[v2_unknown_child_id] == 2.4849066497880004
+        @test sc.complexity_factors[v2_unknown_child_id] == 22.0
+        @test sc.complexities[v2_unknown_child_id] == 16.0
+        @test sc.added_upstream_complexities[v2_unknown_child_id] == 0.0
+        @test sc.best_complexities[v2_unknown_child_id] == 16.0
+        @test sc.unmatched_complexities[v2_unknown_child_id] == 16.0
+        @test nnz(sc.related_complexity_branches[v2_unknown_child_id, :]) == 1
+        @test sc.related_complexity_branches[v2_unknown_child_id, v1_known_child_id] == 1
+
+        v1_k_v2_k_constraint_id = v1_k_v2_u_constraint_id == 3 ? 4 : 3
+        @test nnz(sc.constrained_contexts[:, v1_k_v2_k_constraint_id]) == 0
+
+        @test sc.branch_entries[v1_known_child_id] == 5
+        @test sc.branch_vars[v1_known_child_id] == v1_var_id
+        @test sc.branch_types[v1_known_child_id, :] == sc.branch_types[inp_branch_id, :]
+        @test nnz(sc.branch_children[v1_known_child_id, :]) == 0
+        @test nnz(sc.branch_children[:, v1_known_child_id]) == 1
+        @test sc.branch_children[v1_unknown_child_id, v1_known_child_id] == 1
+        @test nnz(sc.constrained_branches[v1_known_child_id, :]) == 2
+        @test sc.constrained_branches[v1_known_child_id, v1_k_v2_u_constraint_id] == v1_var_id
+        @test sc.constrained_branches[v1_known_child_id, v1_k_v2_k_constraint_id] == v1_var_id
+        @test nnz(sc.constrained_vars[v1_var_id, :]) == 4
+        @test sc.constrained_vars[v1_var_id, v1_k_v2_u_constraint_id] == v1_known_child_id
+        @test sc.constrained_vars[v1_var_id, v1_k_v2_k_constraint_id] == v1_known_child_id
+        @test sc.incoming_paths[v1_known_child_id] == [OrderedDict(v1_var_id => const_block_id)]
+        @test nnz(sc.branch_incoming_blocks[v1_known_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[v1_known_child_id, const_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[v1_known_child_id, :]) == 1
+        @test sc.branch_outgoing_blocks[v1_known_child_id, first_block_id] == 1
+        @test sc.branches_is_unknown[v1_known_child_id] == false
+        @test sc.branches_is_known[v1_known_child_id] == true
+        @test isnothing(sc.min_path_costs[v1_known_child_id])
+        @test sc.complexity_factors[v1_known_child_id] == 22.0
+        @test sc.complexities[v1_known_child_id] == 6.0
+        @test sc.added_upstream_complexities[v1_known_child_id] == 16.0
+        @test sc.best_complexities[v1_known_child_id] == 6.0
+        @test sc.unmatched_complexities[v1_known_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[v1_known_child_id, :]) == 0
+
+        @test nnz(sc.constrained_branches[v2_known_child_id, :]) == 2
+        @test sc.constrained_branches[v2_known_child_id, v1_k_v2_k_constraint_id] == v2_var_id
+        @test sc.constrained_vars[v2_var_id, v1_k_v2_k_constraint_id] == v2_known_child_id
+
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        @test length(out_children) == 1
+        out_child_id = out_children[1]
+
+        @test sc.branch_entries[out_child_id] == sc.branch_entries[out_branch_id]
+        @test sc.branch_vars[out_child_id] == out_var_id
+        @test sc.branch_types[out_child_id, :] == sc.branch_types[out_branch_id, :]
+        @test nnz(sc.constrained_branches[out_child_id, :]) == 1
+        @test sc.constrained_branches[out_child_id, v1_k_v2_k_constraint_id] == out_var_id
+        @test nnz(sc.constrained_vars[out_var_id, :]) == 1
+        @test sc.constrained_vars[out_var_id, v1_k_v2_k_constraint_id] == out_child_id
+        @test sc.incoming_paths[out_child_id] ==
+              [OrderedDict(out_var_id => first_block_id, v2_var_id => new_block_id, v1_var_id => const_block_id)]
+        @test nnz(sc.branch_incoming_blocks[out_child_id, :]) == 1
+        @test sc.branch_incoming_blocks[out_child_id, first_block_id] == 1
+        @test nnz(sc.branch_outgoing_blocks[out_child_id, :]) == 0
+        @test sc.branches_is_unknown[out_child_id] == false
+        @test sc.branches_is_known[out_child_id] == true
+        @test sc.min_path_costs[out_child_id] == 2.4849066497880004
+        @test sc.complexity_factors[out_child_id] == 35.0
+        @test sc.complexities[out_child_id] == 19.0
+        @test sc.added_upstream_complexities[out_child_id] == 16.0
+        @test sc.best_complexities[out_child_id] == 19.0
+        @test sc.unmatched_complexities[out_child_id] == 0.0
+        @test nnz(sc.related_complexity_branches[out_child_id, :]) == 0
     end
 end

@@ -23,6 +23,7 @@ function supervised_task_checker(task::Task, p::Program)
                 error("Unknown primitive: $(e.name)")
             else
                 @error e
+                @error p
                 false
             end
         end for (xs, y) in zip(vcat(task.train_inputs, task.test_inputs), vcat(task.train_outputs, task.test_outputs))

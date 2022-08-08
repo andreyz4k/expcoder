@@ -9,70 +9,77 @@ block_to_let(block::ReverseProgramBlock, output) = LetRevClause(
 )
 
 function extract_solution(sc::SolutionContext, solution_path::OrderedDict)
-    res = unique(collect(values(solution_path)))
-    cost = sum(block.cost for block in values(solution_path))
+    res = [sc.blocks[bl_id] for bl_id in unique(collect(values(solution_path)))]
+    # @info res
+    cost = sum(block.cost for block in res)
     output = res[end].p
     for block in view(res, length(res)-1:-1:1)
         output = block_to_let(block, output)
     end
     # @info output
     # Renaming variables for comparison between programs and remove variables copying
-    output = alpha_substitution(output, Dict(), 1)[1]
+    output = alpha_substitution(output, Dict(), 1, sc.input_keys)[1]
     # @info output
     return (output, cost)
 end
 
 
-function alpha_substitution(p::LetClause, replacements, next_index)
+function alpha_substitution(p::LetClause, replacements, next_index, input_keys)
     if isa(p.v, FreeVar)
-        if haskey(replacements, p.v.key)
-            replacements[p.var_name] = replacements[p.v.key]
+        if haskey(replacements, p.v.var_id)
+            replacements[p.var_id] = replacements[p.v.var_id]
         else
-            replacements[p.var_name] = p.v.key
+            replacements[p.var_id] = p.v.var_id
         end
-        return alpha_substitution(p.b, replacements, next_index)
-    elseif isa(p.b, FreeVar) && p.b.key == p.var_name
-        return alpha_substitution(p.v, replacements, next_index)
+        return alpha_substitution(p.b, replacements, next_index, input_keys)
+    elseif isa(p.b, FreeVar) && p.b.var_id == p.var_id
+        return alpha_substitution(p.v, replacements, next_index, input_keys)
     else
-        new_v, next_index = alpha_substitution(p.v, replacements, next_index)
-        new_var_name = "v$next_index"
-        replacements[p.var_name] = new_var_name
-        new_b, next_index = alpha_substitution(p.b, replacements, next_index + 1)
-        return LetClause(new_var_name, new_v, new_b), next_index
+        new_v, next_index = alpha_substitution(p.v, replacements, next_index, input_keys)
+        replacements[p.var_id] = next_index
+        new_b, next_index2 = alpha_substitution(p.b, replacements, next_index + 1, input_keys)
+        return LetClause(next_index, new_v, new_b), next_index2
     end
 end
 
-function alpha_substitution(p::LetRevClause, replacements, next_index)
-    new_var_names = []
-    for name in p.var_names
-        new_name = "v$next_index"
-        replacements[name] = new_name
-        push!(new_var_names, new_name)
-        next_index = next_index + 1
+function alpha_substitution(p::LetRevClause, replacements, next_index, input_keys)
+    new_var_ids = []
+    for var_id in p.var_ids
+        replacements[var_id] = next_index
+        push!(new_var_ids, next_index)
+        next_index += 1
     end
-    new_v, next_index = alpha_substitution(p.v, replacements, next_index)
-    new_inp_var_name = haskey(replacements, p.inp_var_name) ? replacements[p.inp_var_name] : p.inp_var_name
-    new_b, next_index = alpha_substitution(p.b, replacements, next_index)
-    return LetRevClause(new_var_names, new_inp_var_name, new_v, p.rev_v, new_b), next_index
+    new_v, next_index = alpha_substitution(p.v, replacements, next_index, input_keys)
+    if haskey(input_keys, p.inp_var_id)
+        new_inp_var_id = input_keys[p.inp_var_id]
+    elseif haskey(replacements, p.inp_var_id)
+        new_inp_var_id = replacements[p.inp_var_id]
+    else
+        new_inp_var_id = p.inp_var_id
+    end
+    new_b, next_index = alpha_substitution(p.b, replacements, next_index, input_keys)
+    return LetRevClause(new_var_ids, new_inp_var_id, new_v, p.rev_v, new_b), next_index
 end
 
-function alpha_substitution(p::FreeVar, replacements, next_index)
-    if haskey(replacements, p.key)
-        return FreeVar(p.t, replacements[p.key]), next_index
+function alpha_substitution(p::FreeVar, replacements, next_index, input_keys)
+    if haskey(input_keys, p.var_id)
+        return FreeVar(p.t, input_keys[p.var_id]), next_index
+    elseif haskey(replacements, p.var_id)
+        return FreeVar(p.t, replacements[p.var_id]), next_index
     else
         return p, next_index
     end
 end
 
-function alpha_substitution(p::Abstraction, replacements, next_index)
-    new_b, next_index = alpha_substitution(p.b, replacements, next_index)
+function alpha_substitution(p::Abstraction, replacements, next_index, input_keys)
+    new_b, next_index = alpha_substitution(p.b, replacements, next_index, input_keys)
     Abstraction(new_b), next_index
 end
 
-function alpha_substitution(p::Apply, replacements, next_index)
-    new_f, next_index = alpha_substitution(p.f, replacements, next_index)
-    new_x, next_index = alpha_substitution(p.x, replacements, next_index)
+function alpha_substitution(p::Apply, replacements, next_index, input_keys)
+    new_f, next_index = alpha_substitution(p.f, replacements, next_index, input_keys)
+    new_x, next_index = alpha_substitution(p.x, replacements, next_index, input_keys)
     return Apply(new_f, new_x), next_index
 end
 
-alpha_substitution(p::Program, replacements, next_index) = p, next_index
+alpha_substitution(p::Program, replacements, next_index, input_keys) = p, next_index

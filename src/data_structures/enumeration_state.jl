@@ -21,23 +21,23 @@ end
 struct BlockPrototype
     state::EnumerationState
     request::Tp
-    input_vars::Union{Vector{Tuple{String,EntryBranch}},Nothing}
-    output_var::Union{Tuple{String,EntryBranch},Nothing}
+    input_vars::Union{Dict{Int,Int},Nothing}
+    output_var::Tuple{Int,Int}
     reverse::Bool
 end
 
 
-function block_prototype(pr, inputs, output_branch, output_type)
+function block_prototype(pr, inputs, output_var_id, output_branch_id, output_type)
     BlockPrototype(
         EnumerationState(pr, empty_context, [], 0.0, 0, false),
         output_type,
         inputs,
-        (output_branch.key, output_branch),
+        (output_var_id, output_branch_id),
         false,
     )
 end
 
-function get_const_options(unknown_entry)
+function get_const_options(sc, unknown_entry)
     candidates = const_options(unknown_entry)
     if isempty(candidates)
         return []
@@ -49,106 +49,113 @@ function get_const_options(unknown_entry)
             return []
         end
     end
-    return [SetConst(unknown_entry.type, candidate) for candidate in candidates]
+    t = sc.types[unknown_entry.type_id]
+    return [SetConst(t, candidate) for candidate in candidates]
 
 end
 
-function get_candidates_for_unknown_var(sc, branch::EntryBranch, g)::Vector{BlockPrototype}
-    entry = get_entry(sc.entries_storage, branch.value_index)
+function get_candidates_for_unknown_var(sc, branch_id, g)::Vector{BlockPrototype}
+    var_id = sc.branch_vars[branch_id]
+    type_id = nonzeroinds(sc.branch_types[branch_id, :])[2][1]
+    type = sc.types[type_id]
+    entry = sc.entries[sc.branch_entries[branch_id]]
     prototypes = []
     if !isa(entry, NoDataEntry)
-        push!(prototypes, block_prototype(Hole(branch.type, g.no_context), nothing, branch, branch.type))
+        push!(prototypes, block_prototype(Hole(type, g.no_context), nothing, var_id, branch_id, type))
     end
-    for (pr, inputs, out_type) in matching_with_unknown_candidates(sc, entry, branch.key)
-        push!(prototypes, block_prototype(pr, inputs, branch, out_type))
+    for (pr, inputs, out_type) in matching_with_unknown_candidates(sc, entry, var_id)
+        push!(prototypes, block_prototype(pr, inputs, var_id, branch_id, out_type))
     end
-    for pr in get_const_options(entry)
-        push!(prototypes, block_prototype(pr, [], branch, entry.type))
+    entry_type = sc.types[entry.type_id]
+    for pr in get_const_options(sc, entry)
+        push!(prototypes, block_prototype(pr, Dict(), var_id, branch_id, entry_type))
     end
     prototypes
 end
 
-function get_candidates_for_known_var(sc, branch, g::ContextualGrammar)
+function get_candidates_for_known_var(sc, branch_id, g::ContextualGrammar)
     prototypes = []
-    entry = get_entry(sc.entries_storage, branch.value_index)
-    if !isnothing(branch.min_path_cost)
+    var_id = sc.branch_vars[branch_id]
+    if !isnothing(sc.min_path_costs[branch_id])
+        type_id = nonzeroinds(sc.branch_types[branch_id, :])[2][1]
+        type = sc.types[type_id]
         push!(
             prototypes,
             BlockPrototype(
-                EnumerationState(Hole(branch.type, g.no_context), empty_context, [], 0.0, 0, true),
-                branch.type,
+                EnumerationState(Hole(type, g.no_context), empty_context, [], 0.0, 0, true),
+                type,
                 nothing,
-                (branch.key, branch),
+                (var_id, branch_id),
                 true,
             ),
         )
     end
-    for (pr, output, out_type) in matching_with_known_candidates(sc, entry, branch)
-        push!(prototypes, block_prototype(pr, [(branch.key, branch)], output, out_type))
+    entry = sc.entries[sc.branch_entries[branch_id]]
+    for (pr, output_var_id, output_br_id, out_type) in matching_with_known_candidates(sc, entry, branch_id)
+        push!(prototypes, block_prototype(pr, Dict(var_id => branch_id), output_var_id, output_br_id, out_type))
     end
     prototypes
 end
 
-function enqueue_known_var(sc, branch::EntryBranch, g)
-    if !branch.is_meaningful
-        return
-    end
-    prototypes = get_candidates_for_known_var(sc, branch, g)
-    if haskey(sc.branch_queues, branch)
-        q = sc.branch_queues[branch]
+function enqueue_known_var(sc, branch_id, g)
+    prototypes = get_candidates_for_known_var(sc, branch_id, g)
+    if haskey(sc.branch_queues, branch_id)
+        q = sc.branch_queues[branch_id]
     else
         q = PriorityQueue()
     end
     for bp in prototypes
         # @info "enqueueing $bp"
-        if (isnothing(bp.input_vars) || all(br -> br[2].is_known, bp.input_vars)) && !isnothing(branch.min_path_cost)
+        if (isnothing(bp.input_vars) || all(br -> sc.branches_is_known[br[2]], bp.input_vars)) &&
+           !isnothing(sc.min_path_costs[branch_id])
             q[bp] = bp.state.cost
         else
-            out_branch = bp.output_var[2]
-            if !haskey(sc.branch_queues, out_branch)
-                sc.branch_queues[out_branch] = PriorityQueue()
+            out_branch_id = bp.output_var[2]
+            if !haskey(sc.branch_queues, out_branch_id)
+                sc.branch_queues[out_branch_id] = PriorityQueue()
             end
-            out_q = sc.branch_queues[out_branch]
+            out_q = sc.branch_queues[out_branch_id]
             out_q[bp] = bp.state.cost
-            min_cost = peek(out_q)[2]
-            sc.pq_output[out_branch] = (out_branch.min_path_cost + min_cost) * out_branch.complexity_factor
+            sc.pq_output[out_branch_id] = get_branch_priority(sc, out_branch_id)
+            # @info "Out branch out_branch_id priority is $(sc.pq_output[out_branch_id])"
         end
     end
     if !isempty(q)
-        sc.branch_queues[branch] = q
-        min_cost = peek(q)[2]
-        sc.pq_input[branch] = (branch.min_path_cost + min_cost) * branch.complexity_factor
+        sc.branch_queues[branch_id] = q
+        sc.pq_input[branch_id] = get_branch_priority(sc, branch_id)
+        # @info "In branch $branch_id priority is $(sc.pq_input[branch_id])"
     end
 end
 
-function enqueue_unknown_var(sc, branch, g)
-    prototypes = get_candidates_for_unknown_var(sc, branch, g)
-    if haskey(sc.branch_queues, branch)
-        q = sc.branch_queues[branch]
+function enqueue_unknown_var(sc, branch_id, g)
+    prototypes = get_candidates_for_unknown_var(sc, branch_id, g)
+    if haskey(sc.branch_queues, branch_id)
+        q = sc.branch_queues[branch_id]
     else
         q = PriorityQueue()
     end
     for bp in prototypes
         # @info "enqueueing $bp"
-        if !isnothing(bp.input_vars) && !isempty(bp.input_vars) &&
-           all(br -> br[2].is_known, bp.input_vars) &&
-           !isnothing(bp.input_vars[1][2].min_path_cost)
-            inp_branch = bp.input_vars[1][2]
-            if !haskey(sc.branch_queues, inp_branch)
-                sc.branch_queues[inp_branch] = PriorityQueue()
+        if !isnothing(bp.input_vars) &&
+           !isempty(bp.input_vars) &&
+           all(br -> sc.branches_is_known[br[2]], bp.input_vars) &&
+           !isnothing(sc.min_path_costs[first(bp.input_vars)[2]])
+            inp_branch_id = first(bp.input_vars)[2]
+            if !haskey(sc.branch_queues, inp_branch_id)
+                sc.branch_queues[inp_branch_id] = PriorityQueue()
             end
-            in_q = sc.branch_queues[inp_branch]
+            in_q = sc.branch_queues[inp_branch_id]
             in_q[bp] = bp.state.cost
-            min_cost = peek(in_q)[2]
-            sc.pq_input[inp_branch] = (inp_branch.min_path_cost + min_cost) * inp_branch.complexity_factor
+            sc.pq_input[inp_branch_id] = get_branch_priority(sc, inp_branch_id)
+            # @info "In branch $inp_branch_id priority is $(sc.pq_input[inp_branch_id])"
         else
             q[bp] = bp.state.cost
         end
     end
     if !isempty(q)
-        sc.branch_queues[branch] = q
-        min_cost = peek(q)[2]
-        sc.pq_output[branch] = (branch.min_path_cost + min_cost) * branch.complexity_factor
+        sc.branch_queues[branch_id] = q
+        sc.pq_output[branch_id] = get_branch_priority(sc, branch_id)
+        # @info "Out branch $branch_id priority is $(sc.pq_output[branch_id])"
     end
 end
 

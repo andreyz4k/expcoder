@@ -26,7 +26,9 @@ end
 
 function alpha_substitution(p::LetClause, replacements, next_index, input_keys)
     if isa(p.v, FreeVar)
-        if haskey(replacements, p.v.var_id)
+        if haskey(input_keys, p.v.var_id)
+            replacements[p.var_id] = input_keys[p.v.var_id]
+        elseif haskey(replacements, p.v.var_id)
             replacements[p.var_id] = replacements[p.v.var_id]
         else
             replacements[p.var_id] = p.v.var_id

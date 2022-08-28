@@ -24,7 +24,7 @@ function matching_with_unknown_candidates(sc, entry::ValueEntry, var_id)
 
     known_branches = emul(branches, sc.branches_is_known[:])
 
-    for known_branch_id in nonzeroinds(known_branches)[1]
+    for known_branch_id in nonzeroinds(known_branches)
         known_var_id = sc.branch_vars[known_branch_id]
         if vars_in_loop(sc, known_var_id, var_id)
             # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -58,9 +58,9 @@ function matching_with_unknown_candidates(sc, entry::NoDataEntry, var_id)
 
     branches = reduce(any, sc.branch_types[:, types], dims = 2)
 
-    known_branches = emul(branches', sc.branches_is_known[:]')
+    known_branches = emul(branches, sc.branches_is_known[:])
 
-    for (_, known_branch_id, tp_id) in zip(findnz(known_branches)...)
+    for (known_branch_id, tp_id) in zip(findnz(known_branches)...)
         known_var_id = sc.branch_vars[known_branch_id]
         if vars_in_loop(sc, known_var_id, var_id)
             # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -82,10 +82,10 @@ function matching_with_known_candidates(sc, entry::ValueEntry, known_branch_id)
     entry_type = sc.types[entry.type_id]
     branches = reduce(any, sc.branch_types[:, types], dims = 2)
 
-    unknown_branches = emul(branches', sc.branches_is_unknown[:]')
+    unknown_branches = emul(branches, sc.branches_is_unknown[:])
 
     known_var_id = sc.branch_vars[known_branch_id]
-    for unknown_branch_id in nonzeroinds(unknown_branches)[2]
+    for unknown_branch_id in nonzeroinds(unknown_branches)
         unknown_var_id = sc.branch_vars[unknown_branch_id]
         if vars_in_loop(sc, known_var_id, unknown_var_id)
             # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -122,9 +122,9 @@ function matching_with_unknown_candidates(sc, entry::EitherEntry, var_id)
 
     branches = reduce(any, sc.branch_types[:, types], dims = 2)
 
-    known_branches = emul(branches', sc.branches_is_known[:]')
+    known_branches = emul(branches, sc.branches_is_known[:])
 
-    for (_, known_branch_id, tp_id) in zip(findnz(known_branches)...)
+    for (known_branch_id, tp_id) in zip(findnz(known_branches)...)
         known_var_id = sc.branch_vars[known_branch_id]
         if vars_in_loop(sc, known_var_id, var_id) ||
            !match_with_entry(sc, entry, sc.entries[sc.branch_entries[known_branch_id]])

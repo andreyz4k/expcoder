@@ -407,7 +407,7 @@ function update_prev_follow_vars(sc, bl::ReverseProgramBlock)
 end
 
 function branch_complexity_factor(sc::SolutionContext, branch_id)
-    related_branches = nonzeroinds(sc.related_complexity_branches[branch_id, :])[2]
+    related_branches = nonzeroinds(sc.related_complexity_branches[branch_id, :])
     return _branch_complexity_factor(sc, branch_id, sc.added_upstream_complexities[branch_id], related_branches)
 end
 
@@ -425,7 +425,7 @@ function _branch_complexity_factor(sc::SolutionContext, branch_id, added_complex
     return sc.complexities[branch_id] +
            added_complexity +
            sum(sc.unmatched_complexities[br_id] for br_id in unmatched_branch_ids; init = 0.0) +
-           sum(sc.complexities[br_id] for br_id in regular_branch_ids; init = 0.0)
+           sum(sc.unmatched_complexities[br_id] for br_id in regular_branch_ids; init = 0.0)
 end
 
 function _update_complexity_factor_unknown(sc::SolutionContext, branch_id)
@@ -435,7 +435,7 @@ function _update_complexity_factor_unknown(sc::SolutionContext, branch_id)
             sc.complexity_factors[branch_id] = new_factor
         end
     else
-        for out_block_id in nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])[2]
+        for out_block_id in nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])
             out_block = sc.blocks[out_block_id]
             out_branch_id = out_block.output_var[2]
             if sc.complexity_factors[out_branch_id] < sc.complexity_factors[branch_id]
@@ -459,43 +459,43 @@ function _push_best_complexity_to_output(
         sc.best_complexities[branch_id] = min(best_complexity, current_best_complexity)
         sc.unmatched_complexities[branch_id] = min(unmatched_complexity, current_unmatched_complexity)
 
-        out_blocks = nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])[2]
+
+        out_blocks = nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])
+
 
         for out_block_id in out_blocks
             new_branches = copy(fixed_branches)
+            new_branches[sc.branch_vars[branch_id]] = branch_id
             new_constraints = active_constraints
             in_complexity = 0.0
             un_complexity = 0.0
 
             out_block = sc.blocks[out_block_id]
 
-            for (in_var_id, in_root_branch_id) in out_block.input_vars
-                if haskey(new_branches, in_var_id)
+            for (new_branches, new_constraints) in get_constrained_branch_options_unknown(sc, out_block_id, new_branches, active_constraints)
+                for (in_var_id, _) in out_block.input_vars
+
                     in_branch_id = new_branches[in_var_id]
-                else
-                    in_branch_id = get_branch_with_constraints(sc, in_var_id, new_constraints, in_root_branch_id)
+
+                    in_complexity += sc.best_complexities[in_branch_id]
+                    un_complexity += sc.unmatched_complexities[in_branch_id]
+
                 end
-                in_complexity += sc.best_complexities[in_branch_id]
-                un_complexity += sc.unmatched_complexities[in_branch_id]
-                new_branches[in_var_id] = in_branch_id
-                if nnz(sc.constrained_vars[in_var_id, new_constraints]) == 0
-                    new_constraints = union(new_constraints, nonzeroinds(sc.constrained_branches[in_branch_id, :])[2])
+                out_var_id = out_block.output_var[1]
+                out_branch_id = get_branch_with_constraints(sc, out_var_id, new_constraints, out_block.output_var[2])
+                if nnz(sc.constrained_vars[out_var_id, new_constraints]) == 0
+                    new_constraints = union(new_constraints, nonzeroinds(sc.constrained_branches[out_branch_id, :]))
                 end
+                _push_best_complexity_to_output(
+                    sc,
+                    out_branch_id,
+                    new_branches,
+                    new_constraints,
+                    in_complexity,
+                    un_complexity,
+                )
             end
-            out_var_id = out_block.output_var[1]
-            out_branch_id = get_branch_with_constraints(sc, out_var_id, new_constraints, out_block.output_var[2])
-            if nnz(sc.constrained_vars[out_var_id, new_constraints]) == 0
-                new_constraints = union(new_constraints, nonzeroinds(sc.constrained_branches[out_branch_id, :])[2])
-            end
-            new_branches[out_var_id] = out_branch_id
-            _push_best_complexity_to_output(
-                sc,
-                out_branch_id,
-                new_branches,
-                new_constraints,
-                in_complexity,
-                un_complexity,
-            )
+
         end
     end
 end
@@ -503,7 +503,7 @@ end
 function _push_unmatched_complexity_to_input(sc::SolutionContext, branch_id, fixed_branches, unmatched_complexity)
     if sc.unmatched_complexities[branch_id] > unmatched_complexity
         sc.unmatched_complexities[branch_id] = unmatched_complexity
-        for in_block_id in nonzeroinds(sc.branch_incoming_blocks[branch_id, :])[2]
+        for in_block_id in nonzeroinds(sc.branch_incoming_blocks[branch_id, :])
             in_block = sc.blocks[in_block_id]
             if isa(in_block, ReverseProgramBlock)
                 un_complexity = sum(
@@ -543,7 +543,7 @@ function update_complexity_factors_unknown(sc::SolutionContext, bl::ProgramBlock
         in_complexity,
     )
 
-    related_branches = nonzeroinds(sc.related_complexity_branches[bl.output_var[2], :])[2]
+    related_branches = nonzeroinds(sc.related_complexity_branches[bl.output_var[2], :])
     for related_branch_id in related_branches
         update_related_branch(sc, related_branch_id)
     end
@@ -557,7 +557,7 @@ function update_complexity_factors_known(
     active_constraints,
 )
     out_branch_id = output_branches[bl.output_var[1]]
-    parents = nonzeroinds(sc.branch_children[:, out_branch_id])[1]
+    parents = get_all_parents(sc, out_branch_id)
     if isempty(bl.input_vars)
         if isempty(parents)
             error("No parents for branch $out_branch")
@@ -574,9 +574,10 @@ function update_complexity_factors_known(
         end
         if isnothing(sc.complexity_factors[out_branch_id]) ||
            sc.complexity_factors[best_parent] < sc.complexity_factors[out_branch_id]
-            sc.complexity_factors[out_branch_id] = sc.complexity_factors[best_parent]
             sc.added_upstream_complexities[out_branch_id] =
-                sc.complexity_factors[out_branch_id] - sc.complexities[out_branch_id]
+                sc.complexity_factors[best_parent] - sc.complexities[best_parent]
+            sc.complexity_factors[out_branch_id] =
+                sc.added_upstream_complexities[out_branch_id] + sc.complexities[out_branch_id]
             # out_branch.related_complexity_branches = best_parent.related_complexity_branches
         end
         # if !isempty(parent_complexities) && new_complexity < maximum(parent_complexities)
@@ -590,7 +591,7 @@ function update_complexity_factors_known(
             inp_branch_id = input_branches[inp_var_id]
             in_complexity += sc.complexities[inp_branch_id]
             added_upstream_complexity += sc.added_upstream_complexities[inp_branch_id]
-            related_brs = nonzeroinds(sc.related_complexity_branches[inp_branch_id, :])[2]
+            related_brs = nonzeroinds(sc.related_complexity_branches[inp_branch_id, :])
             merge!(related_branches, Dict(zip(related_brs, sc.branch_vars[related_brs])))
         end
 
@@ -646,7 +647,7 @@ function _push_factor_diff_reverse_to_input(sc::SolutionContext, branch_id, best
         sc.best_complexities[branch_id] = min(current_best_complexity, best_complexity)
         sc.unmatched_complexities[branch_id] = min(current_unmatched_complexity, unmatched_complexity)
 
-        in_blocks = nonzeroinds(sc.branch_incoming_blocks[branch_id, :])[2]
+        in_blocks = nonzeroinds(sc.branch_incoming_blocks[branch_id, :])
 
         for in_block_id in in_blocks
             in_block = sc.blocks[in_block_id]
@@ -699,7 +700,7 @@ end
 function vars_in_loop(sc::SolutionContext, known_var_id, unknown_var_id)
     prev_known = sc.previous_vars[:, known_var_id]
     foll_unknown = sc.previous_vars[unknown_var_id, :]
-    !isnothing((foll_unknown*prev_known)[1])
+    !isnothing((foll_unknown'*prev_known)[1])
 end
 
 function assert_context_consistency(sc::SolutionContext)
@@ -713,9 +714,9 @@ function assert_context_consistency(sc::SolutionContext)
                 error("Unknown branch $branch_id is in known_branches")
             end
         end
-        branch_parents = nonzeroinds(sc.branch_children[:, branch_id])[1]
+        branch_parents = nonzeroinds(sc.branch_children[:, branch_id])
         var_id = sc.branch_vars[branch_id]
-        for block_id in nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])[2]
+        for block_id in nonzeroinds(sc.branch_outgoing_blocks[branch_id, :])
             block = sc.blocks[block_id]
             if isempty(branch_parents)
                 if block.input_vars[var_id] != branch_id
@@ -725,8 +726,8 @@ function assert_context_consistency(sc::SolutionContext)
         end
 
         branch_outgoing_blocks = sc.branch_outgoing_blocks[branch_id, :]
-        for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
-            if any(in(p_id, branch_parents) for p_id in nonzeroinds(sc.branch_children[:, child_id])[1])
+        for child_id in nonzeroinds(sc.branch_children[branch_id, :])
+            if any(in(p_id, branch_parents) for p_id in nonzeroinds(sc.branch_children[:, child_id]))
                 error("Branch $child_id is a child of $branch_id but also is a child of one of its parents")
             end
             child_outgoing_blocks = sc.branch_outgoing_blocks[child_id, :]
@@ -737,7 +738,7 @@ function assert_context_consistency(sc::SolutionContext)
                 error("Branch $branch_id key differs from child $child_id key")
             end
         end
-        for constraint_id in nonzeroinds(sc.constrained_branches[branch_id, :])[2]
+        for constraint_id in nonzeroinds(sc.constrained_branches[branch_id, :])
             if sc.constrained_branches[branch_id, constraint_id] != var_id
                 error(
                     "Constrained var_id in constraint $constraint_id for branch $branch_id differs from original $var_id",

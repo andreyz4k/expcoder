@@ -67,7 +67,7 @@ import Redis
             ),
             "name" => "invert repeated",
             "programTimeout" => 1,
-            "timeout" => 20,
+            "timeout" => 40,
             "verbose" => false,
             "shatter" => 10,
         )

@@ -281,7 +281,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, abstr
     either_branch_ids = Int[]
     either_var_ids = Int[]
 
-    abstract_constraints = nonzeroinds(sc.constrained_branches[abstract_branch_id, :])[2]
+    abstract_constraints = nonzeroinds(sc.constrained_branches[abstract_branch_id, :])
     has_existing_constraints = length(abstract_constraints) > 0
 
     abs_related_complexity_branches = sc.related_complexity_branches[abstract_branch_id, :]
@@ -320,7 +320,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, abstr
         inds = [b_id for (_, b_id, _) in new_branches if b_id != branch_id]
         sc.related_complexity_branches[branch_id, inds] = 1
     end
-    if !has_existing_constraints && length(either_branch_ids) > 1
+    if !has_existing_constraints && length(either_branch_ids) >= 1
         new_constraint_id = increment!(sc.constraints_count)
         sc.constrained_branches[either_branch_ids, new_constraint_id] = either_var_ids
         sc.constrained_vars[either_var_ids, new_constraint_id] = either_branch_ids
@@ -496,20 +496,8 @@ function _downstream_branch_options(
         return false, Set([(fixed_branches, active_constraints)])
     end
     var_id = unfixed_vars[1]
-    branch_options = DefaultDict(() -> [])
-    common_constraints = UInt64[]
-    constrained_branches = sc.constrained_vars[var_id, active_constraints]
-    for (constraint_id, branch_id) in zip(active_constraints, constrained_branches)
-        if isnothing(branch_id)
-            push!(common_constraints, constraint_id)
-        else
-            push!(branch_options[branch_id], constraint_id)
-        end
-    end
-    if isempty(branch_options)
-        br_id = block.input_vars[var_id]
-        branch_options[br_id] = nonzeroinds(sc.constrained_branches[br_id, :])[2]
-    end
+    common_constraints, branch_options =
+        get_branches_with_constraints(sc, var_id, active_constraints, block.input_vars[var_id])
     options = Dict()
     have_unknowns = false
     for (branch_id, constraint_ids) in branch_options
@@ -526,7 +514,7 @@ function _downstream_branch_options(
                 end
             else
                 updated_constraints = Set{UInt64}()
-                br_constraints = nonzeroinds(sc.constrained_branches[br_id, :])[2]
+                br_constraints = nonzeroinds(sc.constrained_branches[br_id, :])
                 for constraint_id in constraint_ids
                     for br_constraint_id in br_constraints
                         c = merge_constraints(sc, constraint_id, br_constraint_id)
@@ -646,7 +634,7 @@ function add_new_block(run_context, sc::SolutionContext, block_id, inputs)
             error("Not implemented, fix active constraints")
         end
         for (var_id, branch_id) in inputs
-            active_constraints = convert(Vector{Int}, nonzeroinds(sc.constrained_branches[branch_id, :])[2])
+            active_constraints = convert(Vector{Int}, nonzeroinds(sc.constrained_branches[branch_id, :]))
             # TODO: fix for multiple inputs
         end
         best_match = try_run_block_with_downstream(run_context, sc, block_id, inputs, active_constraints, true, Dict())
@@ -764,7 +752,7 @@ function enumeration_iteration_finished_output(run_context, sc::SolutionContext,
         min_path_cost = sc.min_path_costs[output_branch_id] + state.cost
         complexity_factor = sc.complexity_factors[output_branch_id]
         added_upstream_complexity = sc.added_upstream_complexities[output_branch_id]
-        existing_constraints = nonzeroinds(sc.constrained_branches[output_branch_id, :])[2]
+        existing_constraints = nonzeroinds(sc.constrained_branches[output_branch_id, :])
         for (var_id, t) in new_vars
             t_id = push!(sc.types, t)
             entry = NoDataEntry(t_id)

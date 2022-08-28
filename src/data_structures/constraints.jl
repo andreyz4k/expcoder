@@ -5,11 +5,11 @@ function _find_relatives_for_type(sc, t, branch_id, branch_type)
         return branch_id, Int[], Int[]
     end
     if !sc.branches_is_unknown[branch_id] && is_subtype(t, branch_type)
-        return nothing, nonzeroinds(sc.branch_children[:, branch_id])[1], Int[branch_id]
+        return nothing, nonzeroinds(sc.branch_children[:, branch_id]), Int[branch_id]
     end
     parents = Int[]
     children = Int[]
-    for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+    for child_id in nonzeroinds(sc.branch_children[branch_id, :])
         child_type = sc.types[reduce(any, sc.branch_types[child_id, :])]
         if is_subtype(child_type, t)
             exact_match, parents_, children_ = _find_relatives_for_type(sc, t, child_id, child_type)
@@ -36,11 +36,14 @@ function _tighten_constraint(
     new_branch_id,
     old_entry::NoDataEntry,
 )
-    out_branches = Dict()
+    if !haskey(constrained_contexts, new_var_id)
+        return Dict(v => (v == new_var_id ? new_branch_id : b) for (v, b) in constrained_branches), constrained_contexts
+    end
 
     context_id = constrained_contexts[new_var_id]
     context = sc.constraint_contexts[context_id]
 
+    out_branches = Dict()
     out_contexts = Dict()
 
     new_type = sc.types[reduce(any, sc.branch_types[new_branch_id, :])]
@@ -99,8 +102,8 @@ end
 
 function tighten_constraint(sc, constraint_id, new_branch_id, old_branch_id)
     old_entry = sc.entries[sc.branch_entries[old_branch_id]]
-    constrained_branches = Dict(v => b for (b, _, v) in zip(findnz(sc.constrained_branches[:, constraint_id])...))
-    constrained_contexts = Dict(v => c for (v, _, c) in zip(findnz(sc.constrained_contexts[:, constraint_id])...))
+    constrained_branches = Dict(v => b for (b, v) in zip(findnz(sc.constrained_branches[:, constraint_id])...))
+    constrained_contexts = Dict(v => c for (v, c) in zip(findnz(sc.constrained_contexts[:, constraint_id])...))
     new_branches, new_contexts = _tighten_constraint(
         sc,
         constrained_branches,
@@ -191,11 +194,11 @@ function _find_relatives_for_either(sc, new_entry, branch_id)
         return branch_id, Int[], Int[]
     end
     if !sc.branches_is_unknown[branch_id] && is_subeither(new_entry.values, entry.values)
-        return nothing, nonzeroinds(sc.branch_children[:, branch_id])[1], [branch_id]
+        return nothing, nonzeroinds(sc.branch_children[:, branch_id]), [branch_id]
     end
     parents = Int[]
     children = Int[]
-    for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+    for child_id in nonzeroinds(sc.branch_children[branch_id, :])
         child_entry = sc.entries[sc.branch_entries[child_id]]
         if is_subeither(child_entry.values, new_entry.values)
             exact_match, parents_, children_ = _find_relatives_for_either(sc, new_entry, child_id)
@@ -274,7 +277,7 @@ function _tighten_constraint(
     end
     for (old_br_id, new_br_id) in new_branches
         if sc.branches_is_unknown[new_br_id]
-            old_related_branches = nonzeroinds(sc.related_complexity_branches[old_br_id, :])[2]
+            old_related_branches = nonzeroinds(sc.related_complexity_branches[old_br_id, :])
             new_related_branches =
                 UInt64[(haskey(new_branches, b_id) ? new_branches[b_id] : b_id) for b_id in old_related_branches]
             sc.related_complexity_branches[new_br_id, new_related_branches] = 1
@@ -320,8 +323,8 @@ function merge_constraints(sc, constr_a, constr_b)
         return constr_a
     end
 
-    constr_a_branches = Dict(v => b for (v, _, b) in zip(findnz(sc.constrained_vars[:, constr_a])...))
-    constr_a_contexts = Dict(v => c for (v, _, c) in zip(findnz(sc.constrained_contexts[:, constr_a])...))
+    constr_a_branches = Dict(v => b for (v, b) in zip(findnz(sc.constrained_vars[:, constr_a])...))
+    constr_a_contexts = Dict(v => c for (v, c) in zip(findnz(sc.constrained_contexts[:, constr_a])...))
     constr_a_known_vars = nonzeros(
         apply(
             identity,
@@ -331,8 +334,8 @@ function merge_constraints(sc, constr_a, constr_b)
         ),
     )
 
-    constr_b_branches = Dict(v => b for (v, _, b) in zip(findnz(sc.constrained_vars[:, constr_b])...))
-    constr_b_contexts = Dict(v => c for (v, _, c) in zip(findnz(sc.constrained_contexts[:, constr_b])...))
+    constr_b_branches = Dict(v => b for (v, b) in zip(findnz(sc.constrained_vars[:, constr_b])...))
+    constr_b_contexts = Dict(v => c for (v, c) in zip(findnz(sc.constrained_contexts[:, constr_b])...))
 
     constr_b_branches, constr_b_contexts =
         _lift_known_vars(sc, constr_a_known_vars, constr_a_branches, constr_b_branches, constr_b_contexts)
@@ -404,7 +407,7 @@ function merge_constraints(sc, constr_a, constr_b)
     end
 
     out_branches_vec = GBMatrix{Int}(MAX_GRAPH_SIZE, 1)
-    out_branches_vec[out_branches] = out_vars
+    out_branches_vec[out_branches, 1] = out_vars
 
     matching_constraints = *(+, SuiteSparseGraphBLAS.pair)(sc.constrained_branches[:, :]', out_branches_vec)
     select!(==, matching_constraints, length(out_branches))

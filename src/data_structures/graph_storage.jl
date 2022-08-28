@@ -1,7 +1,7 @@
 
 using SuiteSparseGraphBLAS
 
-MAX_GRAPH_SIZE = 1000_000
+MAX_GRAPH_SIZE = 100_000
 
 struct GraphStorage
     edges::GBMatrix{Int}
@@ -80,8 +80,7 @@ function Base.getindex(storage::GraphStorage, inds...)
 end
 
 function Base.setindex!(storage::GraphStorage, value, inds...)
-    storage.new_edges[inds...] = value
-    storage.deleted[inds...] = 0
+    subassign!(storage, value, inds...)
 end
 
 function Base.deleteat!(storage::GraphStorage, i, j)
@@ -105,5 +104,21 @@ function SuiteSparseGraphBLAS.subassign!(
     desc = nothing,
 )
     subassign!(storage.new_edges, values, i, j; mask, accum, desc)
+    subassign!(storage.deleted, 0, i, j; mask, accum, desc)
+end
+
+function SuiteSparseGraphBLAS.subassign!(
+    storage::GraphStorage,
+    values::GBVector,
+    i,
+    j::Colon;
+    mask = nothing,
+    accum = nothing,
+    desc = nothing,
+)
+    if !isnothing(mask)
+        mask = mask'
+    end
+    subassign!(storage.new_edges, values', i, j; mask, accum, desc)
     subassign!(storage.deleted, 0, i, j; mask, accum, desc)
 end

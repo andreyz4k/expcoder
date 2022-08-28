@@ -41,9 +41,9 @@ function Base.getindex(storage::TypeStorage, id::Integer)
 end
 
 function get_sub_types(storage::TypeStorage, type_id::Integer)
-    return nonzeroinds(storage.unifiable_types[:, type_id])[1]
+    return nonzeroinds(storage.unifiable_types[:, type_id])
 end
 
 function get_super_types(storage::TypeStorage, type_id::Integer)
-    return nonzeroinds(storage.unifiable_types[type_id, :])[2]
+    return nonzeroinds(storage.unifiable_types[type_id, :])
 end

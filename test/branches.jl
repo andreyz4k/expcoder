@@ -201,7 +201,7 @@ end
         new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
         @test new_solution_paths == [OrderedDict(out_var_id => new_block_id)]
 
-        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])
         @test length(out_children) == 1
         out_child_id = out_children[1]
         @test sc.branch_entries[out_child_id] == 1
@@ -294,7 +294,7 @@ end
         new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
         @test new_solution_paths == [OrderedDict(out_var_id => first_block_id, connection_var_id => new_block_id)]
 
-        conn_children = nonzeroinds(sc.branch_children[connection_branch_id, :])[2]
+        conn_children = nonzeroinds(sc.branch_children[connection_branch_id, :])
         @test length(conn_children) == 1
         conn_child_id = conn_children[1]
 
@@ -316,7 +316,7 @@ end
         @test sc.unmatched_complexities[conn_child_id] == 0.0
         @test nnz(sc.related_complexity_branches[conn_child_id, :]) == 0
 
-        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])
         @test length(out_children) == 1
         out_child_id = out_children[1]
 
@@ -461,11 +461,11 @@ end
         new_solution_paths = add_new_block(run_context, sc, new_block_id, Dict(inp_var_id => inp_branch_id))
         @test new_solution_paths == []
 
-        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])[2]
+        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])
         @test length(v2_children) == 1
         v2_known_child_id = v2_children[1]
 
-        v1_children = nonzeroinds(sc.branch_children[v1_branch_id, :])[2]
+        v1_children = nonzeroinds(sc.branch_children[v1_branch_id, :])
         @test length(v1_children) == 1
         v1_unknown_child_id = v1_children[1]
 
@@ -514,7 +514,7 @@ end
         @test sc.branches_is_unknown[v1_unknown_child_id] == true
         @test sc.branches_is_known[v1_unknown_child_id] == false
         @test sc.min_path_costs[v1_unknown_child_id] == 2.4849066497880004
-        @test sc.complexity_factors[v1_unknown_child_id] == 22.0
+        @test sc.complexity_factors[v1_unknown_child_id] == 6.0
         @test sc.complexities[v1_unknown_child_id] == 6.0
         @test sc.added_upstream_complexities[v1_unknown_child_id] == 0.0
         @test sc.best_complexities[v1_unknown_child_id] == 6.0
@@ -529,11 +529,11 @@ end
         @test new_solution_paths ==
               [OrderedDict(out_var_id => first_block_id, v2_var_id => new_block_id, v1_var_id => const_block_id)]
 
-        v1_unknown_children = nonzeroinds(sc.branch_children[v1_unknown_child_id, :])[2]
+        v1_unknown_children = nonzeroinds(sc.branch_children[v1_unknown_child_id, :])
         @test length(v1_unknown_children) == 1
         v1_known_child_id = v1_unknown_children[1]
 
-        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])[2]
+        v2_children = nonzeroinds(sc.branch_children[v2_branch_id, :])
         @test length(v2_children) == 1
         v2_unknown_child_id = v2_children[1]
 
@@ -546,7 +546,7 @@ end
         @test sc.branch_children[v2_branch_id, v2_unknown_child_id] == 1
         @test nnz(sc.constrained_branches[v2_unknown_child_id, :]) == 1
 
-        v1_k_v2_u_constraint_id = nonzeroinds(sc.constrained_branches[v2_unknown_child_id, :])[2][1]
+        v1_k_v2_u_constraint_id = nonzeroinds(sc.constrained_branches[v2_unknown_child_id, :])[1]
         @test nnz(sc.constrained_contexts[:, v1_k_v2_u_constraint_id]) == 0
 
         @test sc.constrained_branches[v2_unknown_child_id, v1_k_v2_u_constraint_id] == v2_var_id
@@ -559,7 +559,7 @@ end
         @test sc.branches_is_unknown[v2_unknown_child_id] == true
         @test sc.branches_is_known[v2_unknown_child_id] == false
         @test sc.min_path_costs[v2_unknown_child_id] == 2.4849066497880004
-        @test sc.complexity_factors[v2_unknown_child_id] == 22.0
+        @test sc.complexity_factors[v2_unknown_child_id] == 16.0
         @test sc.complexities[v2_unknown_child_id] == 16.0
         @test sc.added_upstream_complexities[v2_unknown_child_id] == 0.0
         @test sc.best_complexities[v2_unknown_child_id] == 16.0
@@ -590,7 +590,7 @@ end
         @test sc.branches_is_unknown[v1_known_child_id] == false
         @test sc.branches_is_known[v1_known_child_id] == true
         @test isnothing(sc.min_path_costs[v1_known_child_id])
-        @test sc.complexity_factors[v1_known_child_id] == 22.0
+        @test sc.complexity_factors[v1_known_child_id] == 6.0
         @test sc.complexities[v1_known_child_id] == 6.0
         @test sc.added_upstream_complexities[v1_known_child_id] == 16.0
         @test sc.best_complexities[v1_known_child_id] == 6.0
@@ -601,7 +601,7 @@ end
         @test sc.constrained_branches[v2_known_child_id, v1_k_v2_k_constraint_id] == v2_var_id
         @test sc.constrained_vars[v2_var_id, v1_k_v2_k_constraint_id] == v2_known_child_id
 
-        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])[2]
+        out_children = nonzeroinds(sc.branch_children[out_branch_id, :])
         @test length(out_children) == 1
         out_child_id = out_children[1]
 
@@ -620,9 +620,9 @@ end
         @test sc.branches_is_unknown[out_child_id] == false
         @test sc.branches_is_known[out_child_id] == true
         @test sc.min_path_costs[out_child_id] == 2.4849066497880004
-        @test sc.complexity_factors[out_child_id] == 35.0
+        @test sc.complexity_factors[out_child_id] == 19.0
         @test sc.complexities[out_child_id] == 19.0
-        @test sc.added_upstream_complexities[out_child_id] == 16.0
+        @test sc.added_upstream_complexities[out_child_id] == 0.0
         @test sc.best_complexities[out_child_id] == 19.0
         @test sc.unmatched_complexities[out_child_id] == 0.0
         @test nnz(sc.related_complexity_branches[out_child_id, :]) == 0

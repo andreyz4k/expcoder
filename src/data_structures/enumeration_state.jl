@@ -56,7 +56,7 @@ end
 
 function get_candidates_for_unknown_var(sc, branch_id, g)::Vector{BlockPrototype}
     var_id = sc.branch_vars[branch_id]
-    type_id = nonzeroinds(sc.branch_types[branch_id, :])[2][1]
+    type_id = nonzeroinds(sc.branch_types[branch_id, :])[1]
     type = sc.types[type_id]
     entry = sc.entries[sc.branch_entries[branch_id]]
     prototypes = []
@@ -77,7 +77,7 @@ function get_candidates_for_known_var(sc, branch_id, g::ContextualGrammar)
     prototypes = []
     var_id = sc.branch_vars[branch_id]
     if !isnothing(sc.min_path_costs[branch_id])
-        type_id = nonzeroinds(sc.branch_types[branch_id, :])[2][1]
+        type_id = nonzeroinds(sc.branch_types[branch_id, :])[1]
         type = sc.types[type_id]
         push!(
             prototypes,

@@ -3,7 +3,7 @@
 function get_all_children(sc, branch_id::Integer)
     union(
         [branch_id],
-        [get_all_children(sc, child_id) for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]]...,
+        [get_all_children(sc, child_id) for child_id in nonzeroinds(sc.branch_children[branch_id, :])]...,
     )
 end
 
@@ -11,13 +11,32 @@ function get_known_children(sc, branch_id)
     if !sc.branches_is_unknown[branch_id]
         Set([branch_id])
     else
-        children = nonzeroinds(sc.branch_children[branch_id, :])[2]
+        children = nonzeroinds(sc.branch_children[branch_id, :])
         if isempty(children)
             Set()
         else
             union([get_known_children(sc, b) for b in children]...)
         end
     end
+end
+
+function get_unknown_children(sc, branch_id)
+    if !sc.branches_is_unknown[branch_id]
+        Set()
+    else
+        union(
+            [branch_id],
+            [get_unknown_children(sc, child_id) for child_id in nonzeroinds(sc.branch_children[branch_id, :])]...,
+        )
+    end
+end
+
+function get_all_parents(sc, branch_id)
+    parents = nonzeroinds(sc.branch_children[:, branch_id])
+    for parent_id in parents
+        parents = union(parents, get_all_parents(sc, parent_id))
+    end
+    return parents
 end
 
 # function is_branch_compatible(key, branch, fixed_branches)
@@ -73,12 +92,12 @@ function updated_branches(sc, ::ValueEntry, new_values, block, branch_id, t_id, 
     if !sc.branches_is_unknown[branch_id]
         return branch_id, UInt64[], UInt64[], false
     else
-        parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])[2]
+        parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])
         var_id = sc.branch_vars[branch_id]
-        for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+        for child_id in nonzeroinds(sc.branch_children[branch_id, :])
             if sc.branch_entries[child_id] == sc.branch_entries[branch_id] && !sc.branches_is_unknown[child_id]
                 if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
-                    return child_id, parent_constraints, nonzeroinds(sc.constrained_branches[child_id, :])[2], false
+                    return child_id, parent_constraints, nonzeroinds(sc.constrained_branches[child_id, :]), false
                 else
                     if isempty(parent_constraints)
                         sc.constrained_branches[child_id, active_constraints] = var_id
@@ -135,7 +154,7 @@ end
 
 function find_related_branches(sc, branch_id, new_entry, new_entry_index)
     possible_parents = UInt64[]
-    for child_id in nonzeroinds(sc.branch_children[branch_id, :])[2]
+    for child_id in nonzeroinds(sc.branch_children[branch_id, :])
         if !sc.branches_is_unknown[child_id]
             if sc.branch_entries[child_id] == new_entry_index
                 return UInt64[], child_id
@@ -165,13 +184,13 @@ function updated_branches(sc, entry, new_values, block, branch_id, t_id, is_mean
     new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     new_entry_index = push!(sc.entries, new_entry)
     new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)
-    parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])[2]
+    parent_constraints = nonzeroinds(sc.constrained_branches[branch_id, :])
     var_id = sc.branch_vars[branch_id]
     if !isnothing(possible_result)
         if isempty(active_constraints) || is_constrained_var(sc, var_id, active_constraints)
             return possible_result,
             parent_constraints,
-            nonzeroinds(sc.constrained_branches[possible_result, :])[2],
+            nonzeroinds(sc.constrained_branches[possible_result, :]),
             false
         else
             if isempty(parent_constraints)
@@ -218,7 +237,7 @@ function _is_ancestor(sc, br_a, br_b)
     if br_a == br_b
         return true
     end
-    return any(_is_ancestor(sc, parent_a, br_b) for parent_a in nonzeroinds(sc.branch_children[:, br_a])[1])
+    return any(_is_ancestor(sc, parent_a, br_b) for parent_a in nonzeroinds(sc.branch_children[:, br_a]))
 end
 
 function intersect_branches(sc, br_a, br_b)
@@ -245,4 +264,138 @@ function get_branch_with_constraints(sc, var_id, constraints, min_root_branch_id
         return first(options)
     end
     return min_root_branch_id
+end
+
+function get_branches_with_constraints(sc, var_id, constraints, min_root_branch_id)
+    branch_options = DefaultDict(() -> [])
+    common_constraints = UInt64[]
+    constrained_branches = sc.constrained_vars[var_id, constraints]
+    for (constraint_id, branch_id) in zip(constraints, constrained_branches)
+        if isnothing(branch_id)
+            push!(common_constraints, constraint_id)
+        else
+            push!(branch_options[branch_id], constraint_id)
+        end
+    end
+    if isempty(branch_options)
+        branch_options[min_root_branch_id] = nonzeroinds(sc.constrained_branches[min_root_branch_id, :])
+    end
+    return common_constraints, branch_options
+end
+
+function _get_constrained_branch_options_known(
+    sc,
+    block,
+    fixed_branches,
+    active_constraints::Vector,
+    unfixed_vars,
+)
+    if isempty(unfixed_vars)
+        return false, Set([(fixed_branches, active_constraints)])
+    end
+    var_id = unfixed_vars[1]
+    common_constraints, branch_options =
+        get_branches_with_constraints(sc, var_id, active_constraints, block.input_vars[var_id])
+    options = Dict()
+    have_unknowns = false
+    for (branch_id, constraint_ids) in branch_options
+        for br_id in get_all_children(sc, branch_id)
+            if haskey(options, br_id)
+                continue
+            end
+            if sc.branches_is_unknown[br_id]
+                if !have_unknowns
+                    entry = sc.entries[sc.branch_entries[br_id]]
+                    if !isa(entry, ValueEntry)
+                        have_unknowns = true
+                    end
+                end
+            else
+                updated_constraints = Set{UInt64}()
+                br_constraints = nonzeroinds(sc.constrained_branches[br_id, :])
+                for constraint_id in constraint_ids
+                    for br_constraint_id in br_constraints
+                        c = merge_constraints(sc, constraint_id, br_constraint_id)
+                        if !isnothing(c)
+                            push!(updated_constraints, c)
+                        end
+                    end
+                end
+                if isempty(constraint_ids)
+                    updated_constraints = br_constraints
+                end
+                options[br_id] = updated_constraints
+            end
+        end
+    end
+    results = Set()
+    for (option, updated_constraints) in options
+        tail_have_unknowns, tail_results = _get_constrained_branch_options_known(
+            sc,
+            block,
+            merge(fixed_branches, Dict(var_id => option)),
+            union(common_constraints, updated_constraints),
+            unfixed_vars[2:end],
+        )
+        have_unknowns |= tail_have_unknowns
+        results = union(results, tail_results)
+    end
+    have_unknowns, results
+end
+
+function get_constrained_branch_options_known(sc, block_id, fixed_branches, active_constraints)
+    block = sc.blocks[block_id]
+    unfixed_vars = [var_id for (var_id, _) in block.input_vars if !haskey(fixed_branches, var_id)]
+    return _get_constrained_branch_options_known(sc, block, fixed_branches, active_constraints, unfixed_vars)
+end
+
+
+function _get_constrained_branch_options_unknown(
+    sc,
+    block,
+    fixed_branches,
+    active_constraints::Vector,
+    unfixed_vars,
+)
+    if isempty(unfixed_vars)
+        return Set([(fixed_branches, active_constraints)])
+    end
+    var_id = unfixed_vars[1]
+    branch_options = DefaultDict(() -> [])
+    if is_constrained_var(sc, var_id, active_constraints)
+        common_constraints = UInt64[]
+        constrained_branches = sc.constrained_vars[var_id, active_constraints]
+        for (constraint_id, branch_id) in zip(active_constraints, constrained_branches)
+            if isnothing(branch_id)
+                push!(common_constraints, constraint_id)
+            elseif sc.branches_is_unknown[branch_id]
+                push!(branch_options[branch_id], constraint_id)
+            end
+        end
+    else
+        common_constraints = active_constraints
+        for br_id in get_unknown_children(sc, block.input_vars[var_id])
+            br_constraints = nonzeroinds(sc.constrained_branches[br_id, :])
+            branch_options[br_id] = br_constraints
+        end
+    end
+
+    results = Set()
+    for (option, constraint_ids) in branch_options
+        tail_results = _get_constrained_branch_options_unknown(
+            sc,
+            block,
+            merge(fixed_branches, Dict(var_id => option)),
+            union(common_constraints, constraint_ids),
+            unfixed_vars[2:end],
+        )
+        results = union(results, tail_results)
+    end
+    results
+end
+
+function get_constrained_branch_options_unknown(sc, block_id, fixed_branches, active_constraints)
+    block = sc.blocks[block_id]
+    unfixed_vars = [var_id for (var_id, _) in block.input_vars if !haskey(fixed_branches, var_id)]
+    return _get_constrained_branch_options_unknown(sc, block, fixed_branches, active_constraints, unfixed_vars)
 end

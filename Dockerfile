@@ -11,6 +11,7 @@ RUN set -eux; \
     build-essential \
     git \
     zsh \
+    vim \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -31,10 +32,8 @@ ENV PATH=$JULIA_PATH/bin:$CARGO_PATH/bin:$PATH
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'
 
-COPY . /workspaces/ec
+COPY . /workspaces/expcoder
 
-# WORKDIR /workspaces/ec/julia_enumerator
+RUN julia --project=/workspaces/expcoder -e 'using Pkg; Pkg.instantiate(); using Revise; using solver'
 
-RUN julia --project=/workspaces/ec/julia_enumerator -e 'using Pkg; Pkg.instantiate(); using Revise; using solver'
-
-LABEL org.opencontainers.image.source=https://github.com/andreyz4k/ec
+LABEL org.opencontainers.image.source=https://github.com/andreyz4k/expcoder

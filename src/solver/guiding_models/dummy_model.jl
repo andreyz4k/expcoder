@@ -14,7 +14,7 @@ function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
     return result
 end
 
-function generate_grammar(sc, guiding_model::DummyGuidingModel, grammar, entry_id, is_known)
+function generate_grammar(sc::SolutionContext, guiding_model::DummyGuidingModel, grammar, entry_id, is_known)
     if !haskey(guiding_model.grammars, grammar)
         log_variable = 0.0
         log_lambda = -3.0

@@ -37,7 +37,7 @@ using solver:
 
 using DataStructures
 
-@testset "Expl Reachable solutions" begin
+@testset "Reachable solutions" begin
     sample_library = Any[
         "map",
         "map_set",
@@ -155,7 +155,7 @@ using DataStructures
     end
 
     function _create_arc_task(filename, dir = "ARC/data/training/")
-        fname = "../../dreamcoder/domains/arc/" * dir * filename
+        fname = "../data/" * dir * filename
         tp = parse_type("inp0:grid(color) -> grid(color)")
         return create_arc_task(fname, tp)
     end

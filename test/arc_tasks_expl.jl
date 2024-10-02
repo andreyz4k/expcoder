@@ -2,7 +2,7 @@ using solver: create_arc_task, get_starting_grammar, get_guiding_model, solve_ta
 
 @testset "Expl arc tasks" begin
     function _create_arc_task(filename, dir = "ARC/data/training/")
-        fname = "../../dreamcoder/domains/arc/" * dir * filename
+        fname = "../data/" * dir * filename
         tp = parse_type("inp0:grid(color) -> grid(color)")
         return create_arc_task(fname, tp)
     end

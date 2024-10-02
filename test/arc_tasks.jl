@@ -451,7 +451,7 @@ using solver: load_problems, enumerate_for_task
     end
 
     function create_arc_task(filename, dir = "ARC/data/training/")
-        arc_task = JSON.parsefile("../../dreamcoder/domains/arc/" * dir * filename)
+        arc_task = JSON.parsefile("../data/" * dir * filename)
         task_dict = Dict{String,Any}(
             "name" => filename,
             "maximumFrontier" => 10,

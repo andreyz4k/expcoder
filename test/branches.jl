@@ -5,7 +5,6 @@ using solver:
     ProgramBlock,
     FreeVar,
     add_new_block,
-    RedisContext,
     BlockPrototypeOld,
     EnumerationState,
     enumeration_iteration_finished_output_old,

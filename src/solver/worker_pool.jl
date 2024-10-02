@@ -1,3 +1,4 @@
+using Distributed
 
 mutable struct ReplenishingWorkerPool <: AbstractWorkerPool
     pool::WorkerPool

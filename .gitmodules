@@ -1,0 +1,3 @@
+[submodule "data/ARC"]
+	path = data/ARC
+	url = git@github.com:fchollet/ARC.git

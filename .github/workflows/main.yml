@@ -108,6 +108,9 @@ jobs:
       - name: set cores number
         run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
 
+      - name: Set CPU backend
+        run: julia --project=. -e 'using Flux; Flux.gpu_backend!("CPU")'
+
       - name: Run solver
         run: julia --project=. scripts/main.jl -c 2
 
@@ -139,6 +142,9 @@ jobs:
 
       - name: set cores number
         run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
+
+      - name: Set CPU backend
+        run: julia --project=. -e 'using Flux; Flux.gpu_backend!("CPU")'
 
       - name: Run solver
         run: julia --project=. scripts/main.jl -c 2 -m nn

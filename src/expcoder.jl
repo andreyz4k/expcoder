@@ -24,7 +24,7 @@ end
 function get_arc_tasks()
     tasks = []
     tp = parse_type("inp0:grid(color) -> grid(color)")
-    arc_folder = normpath(joinpath(@__DIR__, "../..", "data"))
+    arc_folder = normpath(joinpath(@__DIR__, "..", "data"))
     for fname in readdir(joinpath(arc_folder, "sortOfARC"); join = true)
         if endswith(fname, ".json")
             task = create_arc_task(fname, tp)

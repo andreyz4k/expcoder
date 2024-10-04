@@ -36,4 +36,6 @@ COPY . /workspaces/expcoder
 
 RUN julia --project=/workspaces/expcoder -e 'using Pkg; Pkg.instantiate(); using Revise; using solver'
 
+RUN cd /workspaces/expcoder && git remote set-url origin git@github.com:andreyz4k/expcoder.git
+
 LABEL org.opencontainers.image.source=https://github.com/andreyz4k/expcoder

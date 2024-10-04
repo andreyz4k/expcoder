@@ -9,8 +9,11 @@ end
 
 function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
     grammar_len = length(model_inputs[1])
-    result = [0.0 for _ in 1:grammar_len]
-    result[end-1:end] = [-3.0, -3.0]
+    batch_size = length(model_inputs[2])
+
+    result = zeros(grammar_len, batch_size)
+    result[grammar_len-1:grammar_len, :] .= -3.0
+
     return result
 end
 

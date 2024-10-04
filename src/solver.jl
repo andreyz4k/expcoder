@@ -1,16 +1,16 @@
 module solver
 
-include("solver/timeout.jl")
-include("solver/data_structures/data_structures.jl")
-include("solver/grammar.jl")
-include("solver/primitives.jl")
-include("solver/abstractors/abstractors.jl")
-include("solver/data_complexity.jl")
-include("solver/enumeration.jl")
-include("solver/export.jl")
-include("solver/worker_pool.jl")
-include("solver/guiding_models/guiding_models.jl")
-include("solver/compression.jl")
-include("solver/expcoder.jl")
+include("timeout.jl")
+include("data_structures/data_structures.jl")
+include("grammar.jl")
+include("primitives.jl")
+include("abstractors/abstractors.jl")
+include("data_complexity.jl")
+include("enumeration.jl")
+include("export.jl")
+include("worker_pool.jl")
+include("guiding_models/guiding_models.jl")
+include("compression.jl")
+include("expcoder.jl")
 
 end

@@ -56,24 +56,21 @@ Base.:(==)(p::Invented, q::Invented) = p.b == q.b
 
 struct Hole <: Program
     t::Tp
-    grammar::Any
     locations::Vector{Tuple{Program,Int64}}
     candidates_filter::Any
     possible_values::Any
     hash_value::UInt64
-    Hole(t::Tp, grammar::Any, locations, candidates_filter::Any, possible_values) = new(
+    Hole(t::Tp, locations, candidates_filter::Any, possible_values) = new(
         t,
-        grammar,
         locations,
         candidates_filter,
         possible_values,
-        hash(t, hash(grammar, hash(locations, hash(candidates_filter, hash(possible_values))))),
+        hash(t, hash(locations, hash(candidates_filter, hash(possible_values)))),
     )
 end
 
 Base.:(==)(p::Hole, q::Hole) =
     p.t == q.t &&
-    p.grammar == q.grammar &&
     p.locations == q.locations &&
     p.candidates_filter == q.candidates_filter &&
     p.possible_values == q.possible_values
@@ -369,7 +366,7 @@ parse_object.matcher =
 
 parse_const_clause = P"Const\(" + type_parser + P", " + parse_object + P"\)" |> (v -> SetConst(v[1], v[2]))
 
-parse_hole = P"\?\?\(" + type_parser + P"\)" > (t -> Hole(t, nothing, [], nothing, nothing))
+parse_hole = P"\?\?\(" + type_parser + P"\)" > (t -> Hole(t, [], nothing, nothing))
 
 _parse_program.matcher =
     parse_application |

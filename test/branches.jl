@@ -95,7 +95,6 @@ using DataStructures
         BlockPrototype(
             Hole(
                 target_type,
-                nothing,
                 sc.unknown_var_locations[var_id],
                 CombinedArgChecker([SimpleArgChecker(false, -1, true)]),
                 entry.values,
@@ -154,7 +153,7 @@ using DataStructures
 
                             application_template = Apply(
                                 application_template,
-                                Hole(argument_types[i], nothing, [(candidate, i)], arg_checker, nothing),
+                                Hole(argument_types[i], [(candidate, i)], arg_checker, nothing),
                             )
                         end
                         new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)

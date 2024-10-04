@@ -104,6 +104,6 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     log_lambda = result[end-1]
     log_free_var = result[end]
     productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-    g = Grammar(log_variable, log_lambda, log_free_var, productions, nothing)
+    g = Grammar(log_variable, log_lambda, log_free_var, productions)
     return make_dummy_contextual(g)
 end

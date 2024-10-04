@@ -4,7 +4,6 @@ struct Grammar
     log_lambda::Float64
     log_free_var::Float64
     library::Vector{Tuple{Program,Tp,Float64}}
-    continuation_type::Union{Tp,Nothing}
 end
 
 struct ContextualGrammar
@@ -35,7 +34,7 @@ function _prune(expression, gs)
                 return false
             end
         end
-        Grammar(g.log_variable, g.log_lambda, g.log_free_var, filtered_library, g.continuation_type)
+        Grammar(g.log_variable, g.log_lambda, g.log_free_var, filtered_library)
     end
 end
 
@@ -169,7 +168,6 @@ function unifying_expressions(
             Abstraction(
                 Hole(
                     lambda_type,
-                    nothing,
                     current_hole.locations,
                     step_arg_checker(candidates_filter, ArgTurn(arg_type)),
                     nothing,

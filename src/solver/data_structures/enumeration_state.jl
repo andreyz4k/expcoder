@@ -83,7 +83,6 @@ function get_candidates_for_unknown_var(sc, branch_id, guiding_model_channels, g
             BlockPrototype(
                 Hole(
                     type,
-                    nothing,
                     sc.unknown_var_locations[var_id],
                     CombinedArgChecker([SimpleArgChecker(false, -1, true)]),
                     entry.values,
@@ -125,7 +124,6 @@ function get_candidates_for_known_var(sc, branch_id, guiding_model_channels, gra
             BlockPrototype(
                 Hole(
                     type,
-                    nothing,
                     sc.known_var_locations[var_id],
                     CombinedArgChecker([SimpleArgChecker(true, -1, true)]),
                     nothing,

@@ -5,10 +5,6 @@ using solver:
     Task,
     parse_type,
     supervised_task_checker,
-    Program,
-    Tp,
-    Grammar,
-    make_dummy_contextual,
     parse_program,
     _get_custom_arg_checkers,
     is_reversible

@@ -112,7 +112,6 @@ using solver:
                             Apply(every_primitive["eq?"], Index(0)),
                             Hole(
                                 t0,
-                                nothing,
                                 [],
                                 step_arg_checker(
                                     step_arg_checker(
@@ -129,9 +128,9 @@ using solver:
                         ),
                     ),
                 ),
-                Hole(tgrid(tcolor), nothing, [], nothing, nothing),
+                Hole(tgrid(tcolor), [], nothing, nothing),
             ),
-            Hole(tgrid(tcolor), nothing, [], nothing, nothing),
+            Hole(tgrid(tcolor), [], nothing, nothing),
         )
         @test is_reversible(select_background)
 

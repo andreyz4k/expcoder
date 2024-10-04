@@ -859,7 +859,7 @@ end
 
 function _grammar_with_weights(grammar::Grammar, production_scores, log_variable, log_lambda, log_free_var)
     productions = Tuple{Program,Tp,Float64}[(p, t, production_scores[p]) for (p, t, _) in grammar.library]
-    return Grammar(log_variable, log_lambda, log_free_var, productions, nothing)
+    return Grammar(log_variable, log_lambda, log_free_var, productions)
 end
 
 function generate_grammar(sc::SolutionContext, guiding_model::NNGuidingModel, grammar, entry_id, is_known)
@@ -893,7 +893,7 @@ function generate_grammar(sc::SolutionContext, guiding_model::NNGuidingModel, gr
     log_free_var = result[end]
     if !haskey(guiding_model.contextual_cache, grammar)
         productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-        g = Grammar(log_variable, log_lambda, log_free_var, productions, nothing)
+        g = Grammar(log_variable, log_lambda, log_free_var, productions)
         guiding_model.contextual_cache[grammar] = make_dummy_contextual(g)
         return guiding_model.contextual_cache[grammar]
     else

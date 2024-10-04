@@ -101,7 +101,6 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
                     (Abstraction(
                         Hole(
                             request.arguments[2],
-                            nothing,
                             current_hole.locations,
                             step_arg_checker(current_hole.candidates_filter, ArgTurn(request.arguments[1])),
                             current_hole.possible_values,
@@ -131,7 +130,7 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
             if isa(candidate, Abstraction)
                 new_free_parameters = 0
                 application_template =
-                    Apply(candidate, Hole(argument_types[1], nothing, [], current_hole.candidates_filter, nothing))
+                    Apply(candidate, Hole(argument_types[1], [], current_hole.candidates_filter, nothing))
                 new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
                 new_path = vcat(bp.path, [LeftTurn(), ArgTurn(argument_types[1])])
             else
@@ -155,7 +154,7 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
 
                         application_template = Apply(
                             application_template,
-                            Hole(argument_types[i], nothing, [(candidate, i)], arg_checker, nothing),
+                            Hole(argument_types[i], [(candidate, i)], arg_checker, nothing),
                         )
                     end
                     new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
@@ -268,8 +267,8 @@ function create_wrapping_program_prototype(
         cg,
         Tp[],
         context,
-        Hole(input_type, nothing, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
-        Hole(input_type, nothing, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
+        Hole(input_type, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
+        Hole(input_type, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
         [],
     )
 
@@ -289,7 +288,7 @@ function create_wrapping_program_prototype(
 
     wrapped_p = Apply(
         Apply(Apply(wrapper, filled_p), FreeVar(unknown_type, "r$var_ind", nothing)),
-        Hole(fixer_type, nothing, [(wrapper, 3)], CombinedArgChecker([custom_arg_checkers[3]]), unknown_entry.values),
+        Hole(fixer_type, [(wrapper, 3)], CombinedArgChecker([custom_arg_checkers[3]]), unknown_entry.values),
     )
 
     new_bp = BlockPrototype(

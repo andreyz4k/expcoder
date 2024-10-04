@@ -23,15 +23,6 @@ function get_all_children(sc, branch_id)
     return children
 end
 
-# function is_branch_compatible(key, branch, fixed_branches)
-#     for fixed_branch in fixed_branches
-#         if haskey(fixed_branch.values, key)
-#             return fixed_branch == branch
-#         end
-#     end
-#     return true
-# end
-
 function value_updates(
     sc,
     block::ProgramBlock,
@@ -221,7 +212,6 @@ function updated_branches(
     if any(isa(value, PatternWrapper) for value in new_values)
         new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     else
-        save_values_to_cache(sc.types[t_id], new_values)
         new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     end
     new_entry_index = push!(sc.entries, new_entry)
@@ -299,7 +289,6 @@ function updated_branches(
     if any(isa(value, PatternWrapper) for value in new_values)
         new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     else
-        save_values_to_cache(sc.types[t_id], new_values)
         new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     end
     new_entry_index = push!(sc.entries, new_entry)
@@ -383,7 +372,6 @@ function updated_branches(
     if any(isa(value, PatternWrapper) for value in new_values)
         new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     else
-        save_values_to_cache(sc.types[t_id], new_values)
         new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     end
     new_entry_index = push!(sc.entries, new_entry)
@@ -448,43 +436,6 @@ function updated_branches(
         allow_fails, next_blocks = _downstream_blocks_new_branch(sc, var_id, branch_id, new_branch_id, fixed_branches)
     end
     return new_branch_id, true, allow_fails, next_blocks, true, block_created_paths
-end
-
-function _find_out_block(sc, out_blocks, constrained_branches)
-    for (out_block_copy_id, out_block_id) in out_blocks
-        in_branch_ids = keys(get_connected_to(sc.branch_outgoing_blocks, out_block_copy_id))
-        good_copy = true
-        in_branches = Dict()
-        for in_branch_id in in_branch_ids
-            in_var_id = sc.branch_vars[in_branch_id]
-            if haskey(constrained_branches, in_var_id)
-                if constrained_branches[in_var_id] != in_branch_id
-                    good_copy = false
-                    break
-                end
-            end
-            in_branches[in_var_id] = in_branch_id
-        end
-        if !good_copy
-            continue
-        end
-        out_branch_ids = keys(get_connected_to(sc.branch_incoming_blocks, out_block_copy_id))
-        out_branches = Dict()
-        for out_branch_id in out_branch_ids
-            out_var_id = sc.branch_vars[out_branch_id]
-            if haskey(constrained_branches, out_var_id)
-                if constrained_branches[out_var_id] != out_branch_id
-                    good_copy = false
-                    break
-                end
-            end
-            out_branches[out_var_id] = out_branch_id
-        end
-        if good_copy
-            return sc.blocks[out_block_id], in_branches, out_branches
-        end
-    end
-    error("No good block copy found")
 end
 
 function _get_abducted_values(sc, out_block::ProgramBlock, branches)
@@ -669,7 +620,6 @@ function updated_branches(
     if any(isa(value, PatternWrapper) for value in new_values)
         new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     else
-        save_values_to_cache(sc.types[t_id], new_values)
         new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
     end
     new_entry_index = push!(sc.entries, new_entry)

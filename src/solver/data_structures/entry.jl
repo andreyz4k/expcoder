@@ -179,7 +179,6 @@ end
 
 Base.:(==)(v1::EitherOptions, v2::EitherOptions) = v1.hash_value == v2.hash_value && v1.options == v2.options
 Base.hash(v::EitherOptions, h::UInt64) = hash(v.hash_value, h)
-Base.isempty(v::EitherOptions) = false
 
 get_options_count(value::EitherOptions) = value.options_count
 get_options_count(value) = 1
@@ -208,39 +207,6 @@ function get_fixed_hashes(options, value)
     return hashes
 end
 
-function _get_hashes_paths(options::EitherOptions, value, preselected_hashes)
-    out_paths = []
-
-    filtered = any(haskey(options.options, h) for h in preselected_hashes)
-    for (h, option) in options.options
-        if filtered && !in(h, preselected_hashes)
-            continue
-        end
-        paths = _get_hashes_paths(option, value, preselected_hashes)
-        for path in paths
-            push!(path, h)
-        end
-        append!(out_paths, paths)
-    end
-    return out_paths
-end
-
-function _get_hashes_paths(options, value, preselected_hashes)
-    if _try_unify_values(options, value, false)[1]
-        return [[]]
-    else
-        return []
-    end
-end
-
-function get_hashes_paths(options, value, preselected_hashes = Set())
-    paths = _get_hashes_paths(options, value, preselected_hashes)
-    if isempty(paths)
-        throw(EnumerationException("Inconsistent match"))
-    end
-    return [reverse(p) for p in paths]
-end
-
 function fix_option_hashes(fixed_hashes, value::EitherOptions)
     filter_level = any(haskey(value.options, h) for h in fixed_hashes)
     out_options = Dict()
@@ -265,80 +231,6 @@ function fix_option_hashes(fixed_hashes, value)
     return value
 end
 
-function _remap_options_hashes(path, value, depth)
-    return view(path, 1:depth), value
-end
-
-function _remap_options_hashes(path, value::EitherOptions, depth)
-    if depth == length(path)
-        return path, value
-    end
-
-    h = path[depth+1]
-    if haskey(value.options, h)
-        return _remap_options_hashes(path, value.options[h], depth + 1)
-    else
-        return _remap_options_hashes(path, value, depth + 1)
-    end
-end
-
-function convert_to_either(options, path, depth, processed_hashes)
-    return options, true
-end
-
-function convert_to_either(options::Dict, path, depth, processed_hashes)
-    if depth == length(path)
-        return EitherOptions(options), true
-    end
-    h = path[depth]
-    options[h], processed = convert_to_either(options[h], path, depth + 1, processed_hashes)
-    if processed
-        push!(processed_hashes, h)
-    end
-    if all(in(k, processed_hashes) for k in keys(options))
-        return EitherOptions(options), true
-    else
-        return options, false
-    end
-end
-
-function remap_options_hashes(paths, value::EitherOptions)
-    out_options = Dict()
-    out_paths = []
-    for path in paths
-        out_path, out_value = _remap_options_hashes(path, value, 0)
-        cur_options = out_options
-        push!(out_paths, out_path)
-        for i in 1:length(out_path)-1
-            h = out_path[i]
-            if !haskey(cur_options, h)
-                cur_options[h] = Dict()
-            end
-            cur_options = cur_options[h]
-        end
-        cur_options[out_path[end]] = out_value
-    end
-    # @info "Remapping options"
-    # @info value
-    # @info out_options
-    out_paths = sort(out_paths; by = length, rev = true)
-    # @info out_paths
-    processed_hashes = Set()
-    for path in out_paths
-        # @info path
-        out_options, _ = convert_to_either(out_options, path, 1, processed_hashes)
-        # @info out_options
-        # @info processed_hashes
-    end
-    # @info out_options
-    # @info "Done remapping"
-    return out_options
-end
-
-function remap_options_hashes(paths, value)
-    return value
-end
-
 struct AnyObject end
 any_object = AnyObject()
 
@@ -350,7 +242,6 @@ end
 
 Base.:(==)(v1::PatternWrapper, v2::PatternWrapper) = v1.value == v2.value
 Base.hash(v::PatternWrapper, h::UInt64) = hash(v.value, h)
-Base.isempty(v::PatternWrapper) = false
 
 struct AbductibleValue
     value::Any
@@ -358,7 +249,6 @@ end
 
 Base.:(==)(v1::AbductibleValue, v2::AbductibleValue) = v1.value == v2.value
 Base.hash(v::AbductibleValue, h::UInt64) = hash(v.value, h)
-Base.isempty(v::AbductibleValue) = false
 
 struct EitherEntry <: Entry
     type_id::UInt64

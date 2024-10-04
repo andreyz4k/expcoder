@@ -2,7 +2,6 @@
 using JSON
 
 using solver:
-    load_problems,
     parse_program,
     ProgramBlock,
     ReverseProgramBlock,

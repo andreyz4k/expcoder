@@ -91,7 +91,6 @@ end
 function create_starting_context(task::Task, type_weights, hyperparameters, verbose)::SolutionContext
     argument_types = arguments_of_type(task.task_type)
     example_count = length(task.train_outputs)
-    push!(examples_counts, example_count)
     sc = SolutionContext(
         IndexedStorage{Entry}(),
         TypeStorage(),
@@ -152,7 +151,6 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         values = [inp[key] for inp in task.train_inputs]
         complexity_summary = get_complexity_summary(values, t)
         type_id = push!(sc.types, t)
-        save_values_to_cache(t, values)
         entry = ValueEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
         entry_id = push!(sc.entries, entry)
         var_id = create_next_var(sc)
@@ -181,7 +179,6 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
     return_type = return_of_type(task.task_type)
     complexity_summary = get_complexity_summary(task.train_outputs, return_type)
     type_id = push!(sc.types, return_type)
-    save_values_to_cache(return_type, task.train_outputs)
     entry = ValueEntry(type_id, task.train_outputs, complexity_summary, get_complexity(sc, complexity_summary))
     entry_id = push!(sc.entries, entry)
     var_id = create_next_var(sc)
@@ -943,22 +940,6 @@ function vars_in_loop(sc::SolutionContext, known_var_id, unknown_var_id)
     !isempty(intersect(prev_known, foll_unknown))
 end
 
-function is_block_loops(sc::SolutionContext, bp::BlockPrototypeOld)
-    if isnothing(bp.input_vars)
-        return false
-    end
-    if bp.reverse
-        inp_vars = [bp.output_var[1]]
-        out_vars = collect(keys(bp.input_vars))
-    else
-        out_vars = [bp.output_var[1]]
-        inp_vars = collect(keys(bp.input_vars))
-    end
-    prev_inputs = union(Set{UInt64}(), [get_connected_to(sc.previous_vars, inp_var) for inp_var in inp_vars]...)
-    foll_outputs = union([get_connected_from(sc.previous_vars, out_var) for out_var in out_vars]...)
-    return !isempty(intersect(prev_inputs, foll_outputs))
-end
-
 function is_block_loops(sc::SolutionContext, bp::BlockPrototype)
     if isnothing(bp.input_vars)
         return false
@@ -973,8 +954,4 @@ function is_block_loops(sc::SolutionContext, bp::BlockPrototype)
     prev_inputs = union(Set{UInt64}(), [get_connected_to(sc.previous_vars, inp_var) for inp_var in inp_vars]...)
     foll_outputs = union([get_connected_from(sc.previous_vars, out_var) for out_var in out_vars]...)
     return !isempty(intersect(prev_inputs, foll_outputs))
-end
-
-function assert_context_consistency(sc::SolutionContext)
-    return
 end

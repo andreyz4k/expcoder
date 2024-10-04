@@ -38,7 +38,6 @@ end
     include("abstractors.jl")
     include("abstractors_tasks.jl")
     include("arc_tasks_expl.jl")
-    include("arc_tasks.jl")
     include("branches.jl")
     include("complexity.jl")
     include("enumeration.jl")
@@ -46,5 +45,4 @@ end
     include("objects_processing.jl")
     include("program_parser.jl")
     include("rev_fixers.jl")
-    include("sample.jl")
 end

@@ -351,24 +351,6 @@ function apply_context(context, t::TypeNamedArgsConstructor)
     (context, TypeNamedArgsConstructor(t.name, new_argtypes, ot))
 end
 
-function deserialize_type(message)
-    if haskey(message, "index")
-        return TypeVariable(message["index"])
-    elseif haskey(message, "output")
-        return TypeNamedArgsConstructor(
-            message["constructor"],
-            Dict(key => deserialize_type(value) for (key, value) in message["arguments"]),
-            deserialize_type(message["output"]),
-        )
-    else
-        return TypeConstructor(message["constructor"], map(deserialize_type, message["arguments"]))
-    end
-end
-
-function deserialize_type(message::String)
-    return parse_type(message)
-end
-
 using ParserCombinator
 
 type_parser = Delayed()

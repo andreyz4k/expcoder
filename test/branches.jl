@@ -1,28 +1,19 @@
 
 using solver:
-    load_problems,
     create_starting_context,
     ProgramBlock,
     FreeVar,
     add_new_block,
-    BlockPrototypeOld,
-    EnumerationState,
-    enumeration_iteration_finished_output_old,
-    unifying_expressions_old,
+    BlockPrototype,
+    enumeration_iteration_finished_output,
+    unifying_expressions,
     empty_context,
     every_primitive,
-    tint,
-    tlist,
-    get_argument_requests,
     Apply,
     Hole,
     modify_skeleton,
     LeftTurn,
     RightTurn,
-    ArgTurn,
-    Tp,
-    Context,
-    block_prototype,
     number_of_free_parameters,
     follow_path,
     unwind_path,
@@ -30,166 +21,201 @@ using solver:
     apply_context,
     SetConst,
     Path,
-    all_abstractors,
     get_connected_from,
     get_connected_to,
     CombinedArgChecker,
-    SimpleArgChecker
+    SimpleArgChecker,
+    instantiate,
+    EPSILON,
+    _get_custom_arg_checkers,
+    step_arg_checker,
+    combine_arg_checkers,
+    generate_grammar
 
 using DataStructures
 
-function initial_state(t, g)
-    EnumerationState(
-        Hole(t, g.no_context, [], CombinedArgChecker([SimpleArgChecker(false, -1, true)]), nothing),
-        empty_context,
-        [],
-        0.0,
-        0,
-    )
-end
-
-function next_state(state, target_candidate, cg)
-    current_hole = follow_path(state.skeleton, state.path)
-    if !isa(current_hole, Hole)
-        error("Error during following path")
-    end
-    request = current_hole.t
-    g = current_hole.grammar
-
-    context = state.context
-    context, request = apply_context(context, request)
-
-    environment = path_environment(state.path)
-    candidates = unifying_expressions_old(environment, context, current_hole, state.skeleton, state.path)
-
-    states = collect(
-        skipmissing(
-            map(candidates) do (candidate, argument_types, context, ll)
-                if candidate != target_candidate
-                    return missing
-                end
-                new_free_parameters = number_of_free_parameters(candidate)
-                argument_requests = get_argument_requests(candidate, argument_types, cg)
-
-                if isempty(argument_types)
-                    new_skeleton = modify_skeleton(state.skeleton, candidate, state.path)
-                    new_path = unwind_path(state.path, new_skeleton)
-                else
-                    application_template = candidate
-                    custom_checkers_args_count = 0
-                    if haskey(all_abstractors, candidate)
-                        custom_checkers_args_count = length(all_abstractors[candidate][1])
-                    end
-                    for i in 1:length(argument_types)
-                        if i > custom_checkers_args_count
-                            arg_checker = current_hole.candidates_filter
-                        else
-                            arg_checker = combine_arg_checkers(current_hole.candidates_filter, custom_arg_checkers[i])
-                        end
-
-                        application_template = Apply(
-                            application_template,
-                            Hole(argument_types[i], argument_requests[i], [], arg_checker, nothing),
-                        )
-                    end
-                    new_skeleton = modify_skeleton(state.skeleton, application_template, state.path)
-                    new_path = vcat(state.path, [LeftTurn() for _ in 2:length(argument_types)], [RightTurn()])
-                end
-                return EnumerationState(
-                    new_skeleton,
-                    context,
-                    new_path,
-                    state.cost + ll,
-                    state.free_parameters + new_free_parameters,
-                )
-            end,
-        ),
-    )
-
-    return states[1]
-end
-
-function create_block_prototype(sc, target_branch_id, steps, g)
-    target_type_id = first(get_connected_from(sc.branch_types, target_branch_id))
-    target_type = sc.types[target_type_id]
-    state = initial_state(target_type, g)
-    for step in steps
-        state = next_state(state, step, g)
-    end
-
-    target_var_id = sc.branch_vars[target_branch_id]
-    bp = BlockPrototypeOld(state, target_type, nothing, (target_var_id, target_branch_id), false)
-    return bp
-end
-
 @testset "Test branches" begin
-    base_task = Dict(
-        "DSL" => Dict{String,Any}(
-            "logVariable" => 0.0,
-            "logFreeVar" => 0.0,
-            "logLambda" => 0.0,
-            "productions" => Any[
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "map", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "unfold", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "range", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "index", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "fold", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "length", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "if", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "+", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "-", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "cons", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "car", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "cdr", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "empty?", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "0", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "1", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "*", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "mod", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "gt?", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "eq?", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-prime", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "is-square", "is_reversible" => false),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "repeat", "is_reversible" => true),
-                Dict{String,Any}("logProbability" => 0.0, "expression" => "concat", "is_reversible" => true),
-            ],
-        ),
-        "type_weights" =>
-            Dict{String,Any}("list" => 1.0, "int" => 1.0, "bool" => 1.0, "float" => 1.0, "any" => 1.0),
-        "programTimeout" => 1,
-        "timeout" => 20,
-        "verbose" => false,
-        "shatter" => 10,
+    type_weights = Dict{String,Any}(
+        "int" => 1.0,
+        "list" => 1.0,
+        "color" => 1.0,
+        "bool" => 1.0,
+        "float" => 1.0,
+        "grid" => 1.0,
+        "tuple2" => 1.0,
+        "tuple3" => 1.0,
+        "coord" => 1.0,
+        "set" => 1.0,
+        "any" => 1.0,
     )
-    run_context = Dict("program_timeout" => 1, "timeout" => 20)
 
-    @testcase_log "Exact value match" begin
-        payload = merge(
-            base_task,
-            Dict(
-                "task" => Dict{String,Any}(
-                    "name" => "copy",
-                    "maximumFrontier" => 10,
-                    "examples" => Any[
-                        Dict{String,Any}(
-                            "output" => Any[4, 4, 4, 4, 4],
-                            "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
-                        ),
-                        Dict{String,Any}(
-                            "output" => Any[1, 1, 1, 1, 1, 1],
-                            "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
-                        ),
-                        Dict{String,Any}("output" => Any[3, 3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
-                    ],
-                    "test_examples" => Any[],
-                    "request" => "inp0:list(int) -> list(int)",
-                ),
-                "name" => "copy",
+    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+    guiding_model = get_guiding_model("dummy")
+    grammar = [
+        parse_program(p) for p in [
+            "map",
+            "unfold",
+            "range",
+            "index",
+            "fold",
+            "length",
+            "if",
+            "+",
+            "-",
+            "empty",
+            "cons",
+            "car",
+            "cdr",
+            "empty?",
+            "0",
+            "1",
+            "*",
+            "mod",
+            "gt?",
+            "eq?",
+            "is-prime",
+            "is-square",
+            "repeat",
+            "concat",
+        ]
+    ]
+    function initial_state(sc, branch_id, guiding_model, grammar)
+        target_type_id = first(get_connected_from(sc.branch_types, branch_id))
+        var_id = sc.branch_vars[branch_id]
+        target_type = sc.types[target_type_id]
+        context, target_type = instantiate(target_type, empty_context)
+        entry_id = sc.branch_entries[branch_id]
+        entry = sc.entries[entry_id]
+
+        if !haskey(sc.entry_grammars, (entry_id, false))
+            g = generate_grammar(sc, guiding_model, grammar, entry_id, false)
+            sc.entry_grammars[(entry_id, false)] = g
+        end
+
+        BlockPrototype(
+            Hole(
+                target_type,
+                nothing,
+                sc.unknown_var_locations[var_id],
+                CombinedArgChecker([SimpleArgChecker(false, -1, true)]),
+                entry.values,
+            ),
+            context,
+            [],
+            EPSILON,
+            0,
+            target_type,
+            nothing,
+            (var_id, branch_id),
+            false,
+        )
+    end
+
+    function next_state(sc, bp, target_candidate)
+        current_hole = follow_path(bp.skeleton, bp.path)
+        if !isa(current_hole, Hole)
+            error("Error during following path")
+        end
+        request = current_hole.t
+
+        context = bp.context
+        context, request = apply_context(context, request)
+
+        environment = path_environment(bp.path)
+
+        bp_output_entry_id = sc.branch_entries[bp.output_var[2]]
+        cg = sc.entry_grammars[(bp_output_entry_id, bp.reverse)]
+
+        candidates = unifying_expressions(cg, environment, context, current_hole, bp.skeleton, bp.path)
+
+        states = collect(
+            skipmissing(
+                map(candidates) do (candidate, argument_types, context, ll)
+                    if candidate != target_candidate
+                        return missing
+                    end
+                    new_free_parameters = number_of_free_parameters(candidate)
+
+                    if isempty(argument_types)
+                        new_skeleton = modify_skeleton(bp.skeleton, candidate, bp.path)
+                        new_path = unwind_path(bp.path, new_skeleton)
+                    else
+                        application_template = candidate
+                        custom_arg_checkers = _get_custom_arg_checkers(candidate)
+                        custom_checkers_args_count = length(custom_arg_checkers)
+                        for i in 1:length(argument_types)
+                            current_checker = step_arg_checker(current_hole.candidates_filter, (candidate, i))
+
+                            if i > custom_checkers_args_count || isnothing(custom_arg_checkers[i])
+                                arg_checker = current_checker
+                            else
+                                arg_checker = combine_arg_checkers(current_checker, custom_arg_checkers[i])
+                            end
+
+                            application_template = Apply(
+                                application_template,
+                                Hole(argument_types[i], nothing, [(candidate, i)], arg_checker, nothing),
+                            )
+                        end
+                        new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
+                        new_path = vcat(bp.path, [LeftTurn() for _ in 2:length(argument_types)], [RightTurn()])
+                    end
+                    context, new_request = apply_context(context, bp.request)
+                    return BlockPrototype(
+                        new_skeleton,
+                        context,
+                        new_path,
+                        bp.cost + ll,
+                        bp.free_parameters + new_free_parameters,
+                        new_request,
+                        bp.input_vars,
+                        bp.output_var,
+                        bp.reverse,
+                    )
+                end,
             ),
         )
-        task, maximum_frontier, g, type_weights, hyperparameters, _mfp, _nc, timeout, verbose, program_timeout =
-            load_problems(payload)
+
+        return states[1]
+    end
+
+    function create_block_prototype(sc, target_branch_id, steps, guiding_model, grammar)
+        bp = initial_state(sc, target_branch_id, guiding_model, grammar)
+        for step in steps
+            bp = next_state(sc, bp, step)
+        end
+
+        return bp
+    end
+
+    function create_task(name, type_str, examples)
+        train_inputs = []
+        train_outputs = []
+        for example in examples
+            push!(train_inputs, example["inputs"])
+            push!(train_outputs, example["output"])
+        end
+        task = Task(name, parse_type(type_str), supervised_task_checker, train_inputs, train_outputs, [], [])
+        return task
+    end
+
+    @testcase_log "Exact value match" begin
+        task = create_task(
+            "copy",
+            "inp0:list(int) -> list(int)",
+            [
+                Dict{String,Any}(
+                    "output" => Any[4, 4, 4, 4, 4],
+                    "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
+                ),
+                Dict{String,Any}(
+                    "output" => Any[1, 1, 1, 1, 1, 1],
+                    "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
+                ),
+                Dict{String,Any}("output" => Any[3, 3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
+            ],
+        )
+
         sc = create_starting_context(task, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
@@ -232,31 +258,22 @@ end
     end
 
     @testcase_log "Type only match" begin
-        payload = merge(
-            base_task,
-            Dict(
-                "task" => Dict{String,Any}(
-                    "name" => "cdr",
-                    "maximumFrontier" => 10,
-                    "examples" => Any[
-                        Dict{String,Any}(
-                            "output" => Any[4, 4, 4, 4],
-                            "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
-                        ),
-                        Dict{String,Any}(
-                            "output" => Any[1, 1, 1, 1, 1],
-                            "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
-                        ),
-                        Dict{String,Any}("output" => Any[3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
-                    ],
-                    "test_examples" => Any[],
-                    "request" => "inp0:list(int) -> list(int)",
+        task = create_task(
+            "cdr",
+            "inp0:list(int) -> list(int)",
+            [
+                Dict{String,Any}(
+                    "output" => Any[4, 4, 4, 4],
+                    "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
                 ),
-                "name" => "cdr",
-            ),
+                Dict{String,Any}(
+                    "output" => Any[1, 1, 1, 1, 1],
+                    "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
+                ),
+                Dict{String,Any}("output" => Any[3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
+            ],
         )
-        task, maximum_frontier, g, type_weights, hyperparameters, _mfp, _nc, timeout, verbose, program_timeout =
-            load_problems(payload)
+
         sc = create_starting_context(task, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
@@ -268,10 +285,11 @@ end
         bp = create_block_prototype(
             sc,
             out_branch_id,
-            [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing, nothing)],
-            g,
+            [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing, (every_primitive["cdr"], 1))],
+            guiding_model,
+            grammar,
         )
-        new_block_result, _ = enumeration_iteration_finished_output_old(sc, bp)
+        new_block_result, _ = enumeration_iteration_finished_output(sc, bp)
         @test length(new_block_result) == 1
         first_block_id, input_branches, target_output = new_block_result[1]
         new_solution_paths = add_new_block(sc, first_block_id, input_branches, target_output)
@@ -339,7 +357,7 @@ end
         @test sc.branch_is_unknown[out_branch_id] == true
         @test sc.branch_is_explained[out_branch_id] == true
         @test sc.branch_is_not_copy[out_branch_id] == true
-        @test sc.explained_min_path_costs[out_branch_id] == 5.204006687076795
+        @test sc.explained_min_path_costs[out_branch_id] == 7.8025402473842975
         @test sc.unknown_min_path_costs[out_branch_id] == 0.0
         @test sc.explained_complexity_factors[out_branch_id] == 13.0
         @test sc.unknown_complexity_factors[out_branch_id] == 13.0
@@ -352,39 +370,30 @@ end
     end
 
     @testcase_log "Either match" begin
-        payload = merge(
-            base_task,
-            Dict(
-                "task" => Dict{String,Any}(
-                    "name" => "concat",
-                    "maximumFrontier" => 10,
-                    "examples" => Any[
-                        Dict{String,Any}(
-                            "output" => Any[5, 4, 4, 4, 4, 4],
-                            "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
-                        ),
-                        Dict{String,Any}(
-                            "output" => Any[5, 1, 1, 1, 1, 1, 1],
-                            "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
-                        ),
-                        Dict{String,Any}("output" => Any[5, 3, 3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
-                    ],
-                    "test_examples" => Any[],
-                    "request" => "inp0:list(int) -> list(int)",
+        task = create_task(
+            "concat",
+            "inp0:list(int) -> list(int)",
+            [
+                Dict{String,Any}(
+                    "output" => Any[5, 4, 4, 4, 4, 4],
+                    "inputs" => Dict{String,Any}("inp0" => Any[4, 4, 4, 4, 4]),
                 ),
-                "name" => "concat",
-            ),
+                Dict{String,Any}(
+                    "output" => Any[5, 1, 1, 1, 1, 1, 1],
+                    "inputs" => Dict{String,Any}("inp0" => Any[1, 1, 1, 1, 1, 1]),
+                ),
+                Dict{String,Any}("output" => Any[5, 3, 3], "inputs" => Dict{String,Any}("inp0" => Any[3, 3])),
+            ],
         )
-        task, maximum_frontier, g, type_weights, hyperparameters, _mfp, _nc, timeout, verbose, program_timeout =
-            load_problems(payload)
+
         sc = create_starting_context(task, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
 
-        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], g)
-        new_block_result, _ = enumeration_iteration_finished_output_old(sc, bp)
+        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], guiding_model, grammar)
+        new_block_result, _ = enumeration_iteration_finished_output(sc, bp)
         @test length(new_block_result) == 1
         first_block_id, input_branches, target_output = new_block_result[1]
         new_solution_paths = add_new_block(sc, first_block_id, input_branches, target_output)
@@ -415,7 +424,7 @@ end
         @test sc.branch_outgoing_blocks[v1_branch_id, first_block_copy_id] == first_block_id
         @test sc.branch_is_unknown[v1_branch_id] == true
         @test sc.branch_is_explained[v1_branch_id] == false
-        @test sc.unknown_min_path_costs[v1_branch_id] == 2.5649493574615367
+        @test sc.unknown_min_path_costs[v1_branch_id] == 2.49004698910567
         @test sc.unknown_complexity_factors[v1_branch_id] == 20.0
         @test sc.complexities[v1_branch_id] == 10.0
         @test sc.unmatched_complexities[v1_branch_id] == 10.0
@@ -437,7 +446,7 @@ end
         @test sc.branch_outgoing_blocks[v2_branch_id, first_block_copy_id] == first_block_id
         @test sc.branch_is_unknown[v2_branch_id] == true
         @test sc.branch_is_explained[v2_branch_id] == false
-        @test sc.unknown_min_path_costs[v2_branch_id] == 2.5649493574615367
+        @test sc.unknown_min_path_costs[v2_branch_id] == 2.49004698910567
         @test sc.unknown_complexity_factors[v2_branch_id] == 20.0
         @test sc.complexities[v2_branch_id] == 10.0
         @test sc.unmatched_complexities[v2_branch_id] == 10.0
@@ -504,7 +513,7 @@ end
         @test sc.branch_is_unknown[v1_child_id] == true
         @test sc.branch_is_explained[v1_child_id] == false
         @test sc.branch_is_not_copy[v1_child_id] == false
-        @test sc.unknown_min_path_costs[v1_child_id] == 2.5649493574615367
+        @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
         @test sc.unknown_complexity_factors[v1_child_id] == 6.0
         @test sc.complexities[v1_child_id] == 6.0
         @test sc.unmatched_complexities[v1_child_id] == 6.0
@@ -557,7 +566,7 @@ end
         @test sc.branch_is_unknown[v1_child_id] == true
         @test sc.branch_is_explained[v1_child_id] == true
         @test sc.branch_is_not_copy[v1_child_id] == true
-        @test sc.unknown_min_path_costs[v1_child_id] == 2.5649493574615367
+        @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
         @test sc.explained_min_path_costs[v1_child_id] === nothing
         @test sc.unknown_complexity_factors[v1_child_id] == 6.0
         @test sc.explained_complexity_factors[v1_child_id] == 16.0
@@ -587,7 +596,7 @@ end
         @test sc.branch_is_unknown[out_branch_id] == true
         @test sc.branch_is_explained[out_branch_id] == true
         @test sc.branch_is_not_copy[out_branch_id] == true
-        @test sc.explained_min_path_costs[out_branch_id] == 2.5649493574615367
+        @test sc.explained_min_path_costs[out_branch_id] == 2.49004698910567
         @test sc.explained_complexity_factors[out_branch_id] == 29.0
         @test sc.complexities[out_branch_id] == 19.0
         @test sc.added_upstream_complexities[out_branch_id] == 10.0

@@ -48,35 +48,3 @@ function supervised_task_checker(task::Task, p::Program)
     end
     return 0.0
 end
-
-function build_task(handler, name, task_type, examples, test_examples)
-    Task(
-        name,
-        task_type,
-        handler,
-        [ex["inputs"] for ex in examples],
-        [ex["output"] for ex in examples],
-        [ex["inputs"] for ex in test_examples],
-        [ex["output"] for ex in test_examples],
-    )
-end
-
-function build_task(handler, name, task_type, examples, test_examples, special_task)
-    if special_task == "arc"
-        Task(
-            name,
-            task_type,
-            handler,
-            [
-                Dict(k => vcat([reshape(r, (1, length(r))) for r in val]...) for (k, val) in ex["inputs"]) for
-                ex in examples
-            ],
-            [vcat([reshape(r, (1, length(r))) for r in ex["output"]]...) for ex in examples],
-            [
-                Dict(k => vcat([reshape(r, (1, length(r))) for r in val]...) for (k, val) in ex["inputs"]) for
-                ex in test_examples
-            ],
-            [vcat([reshape(r, (1, length(r))) for r in ex["output"]]...) for ex in test_examples],
-        )
-    end
-end

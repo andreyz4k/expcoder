@@ -95,12 +95,10 @@ Base.:(==)(p::SetConst, q::SetConst) = p.t == q.t && p.value == q.value
 
 struct LetClause <: Program
     var_id::UInt64
-    var_type::Tp
     v::Program
     b::Program
     hash_value::UInt64
-    LetClause(var_id::UInt64, var_type::Tp, v::Program, b::Program) =
-        new(var_id, var_type, v, b, hash(var_id, hash(v, hash(b))))
+    LetClause(var_id::UInt64, v::Program, b::Program) = new(var_id, v, b, hash(var_id, hash(v, hash(b))))
 end
 Base.:(==)(p::LetClause, q::LetClause) = p.var_id == q.var_id && p.v == q.v && p.b == q.b
 
@@ -134,14 +132,8 @@ show_program(p::FreeVar, is_function::Bool) =
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::SetConst, is_function::Bool) = vcat(["Const("], show_type(p.t, true), [", ", p.value, ")"])
-show_program(p::LetClause, is_function::Bool) = vcat(
-    ["let \$v$(p.var_id)::"],
-    show_type(p.var_type, true),
-    [" = "],
-    show_program(p.v, false),
-    [" in "],
-    show_program(p.b, false),
-)
+show_program(p::LetClause, is_function::Bool) =
+    vcat(["let \$v$(p.var_id) = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::LetRevClause, is_function::Bool) = vcat(
     [
         "let ",
@@ -325,16 +317,8 @@ parse_abstraction = P"\(lambda " + parse_whitespace + _parse_program + P"\)" > A
 parse_application = P"\(" + Repeat(_parse_program + parse_whitespace, 2, ALL) + P"\)" |> (xs -> foldl(Apply, xs))
 
 parse_let_clause =
-    P"let " +
-    P"\$v" +
-    parse_number +
-    P"::" +
-    type_parser +
-    P" = " +
-    _parse_program +
-    P" in" +
-    parse_whitespace +
-    _parse_program |> (v -> LetClause(UInt64(v[1]), v[2], v[3], v[4]))
+    P"let " + P"\$v" + parse_number + P" = " + _parse_program + P" in" + parse_whitespace + _parse_program |>
+    (v -> LetClause(UInt64(v[1]), v[2], v[3]))
 
 parse_var_name_list = (E"$"+parse_var_name+E", ")[0:end] + E"$" + parse_var_name |> (vs -> [v for v in vs])
 

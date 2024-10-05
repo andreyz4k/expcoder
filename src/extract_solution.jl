@@ -1,5 +1,5 @@
 
-block_to_let(block::ProgramBlock, output) = LetClause(block.output_var, return_of_type(block.type), block.p, output)
+block_to_let(block::ProgramBlock, output) = LetClause(block.output_var, block.p, output)
 block_to_let(block::ReverseProgramBlock, output) = LetRevClause(block.output_vars, block.input_vars[1], block.p, output)
 
 function extract_solution(sc::SolutionContext, solution_path::Path)
@@ -74,7 +74,7 @@ function alpha_substitution(p::LetClause, replacements, next_index::UInt64, inpu
         new_v, next_index = alpha_substitution(p.v, replacements, next_index, input_keys)
         replacements[p.var_id] = next_index
         new_b, next_index2 = alpha_substitution(p.b, replacements, next_index + 1, input_keys)
-        return LetClause(next_index, p.var_type, new_v, new_b), next_index2
+        return LetClause(next_index, new_v, new_b), next_index2
     end
 end
 

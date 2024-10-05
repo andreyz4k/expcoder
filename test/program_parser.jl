@@ -19,29 +19,27 @@ using solver: parse_program, parse_type, TypeVariable
     parsing_test_case("(lambda (+ 1 #(* 0 1)))")
     parsing_test_case("(lambda (+ 1 (#(* 0) \$0)))")
     parsing_test_case("\$inp0")
-    parsing_test_case("let \$v1::int = 1 in \$v1")
+    parsing_test_case("let \$v1 = 1 in \$v1")
 
-    parsing_test_case("(lambda let \$v1::list(int) = (cdr \$0) in let \$v2::bool = (eq? \$0 \$v1) in \
-                      let \$v3::bool = (eq? \$0 \$0) in (eq? \$v2 \$v3))")
+    parsing_test_case("(lambda let \$v1 = (cdr \$0) in let \$v2 = (eq? \$0 \$v1) in \
+                      let \$v3 = (eq? \$0 \$0) in (eq? \$v2 \$v3))")
 
-    parsing_test_case(
-        "let \$v1::list(int) = Const(list(int), Any[]) in let \$v2::list(int) = Const(list(int), Any[0]) in \
-            let \$v3::list(int) = (concat \$v1 \$v2) in (concat \$inp0 \$v3)",
-    )
+    parsing_test_case("let \$v1 = Const(list(int), Any[]) in let \$v2 = Const(list(int), Any[0]) in \
+                          let \$v3 = (concat \$v1 \$v2) in (concat \$inp0 \$v3)")
 
     parsing_test_case(
-        "let \$v1::list(int) = Const(list(int), Any[5]) in \
+        "let \$v1 = Const(list(int), Any[5]) in \
             let \$v3, \$v4 = rev(\$inp0 = (rev_fix_param (concat \$v3 \$v4) \$v3 (lambda Const(list(int), Any[])))) in \
             (concat \$v1 \$v4)",
     )
 
-    parsing_test_case("let \$v1::list(list(color)) = Const(list(list(color)), Any[Any[0, 0, 0]]) in \$v1")
+    parsing_test_case("let \$v1 = Const(list(list(color)), Any[Any[0, 0, 0]]) in \$v1")
     parsing_test_case("Const(list(list(color)), Any[Any[0, 0, 0]])")
 
-    parsing_test_case("let \$v1::list(list(color)) = Const(list(list(color)), Any[Any[0, 0, 0]]) in \
-                          let \$v2, \$v3 = rev(\$inp0 = (cons \$v2 \$v3)) in let \$v4::list(color) = (car \$v3) in \
-                          let \$v5::int = Const(int, 1) in let \$v6::list(list(color)) = (repeat \$v4 \$v5) in \
-                          let \$v7::list(list(color)) = (cons \$v2 \$v6) in (concat \$v1 \$v7)")
+    parsing_test_case("let \$v1 = Const(list(list(color)), Any[Any[0, 0, 0]]) in \
+                          let \$v2, \$v3 = rev(\$inp0 = (cons \$v2 \$v3)) in let \$v4 = (car \$v3) in \
+                          let \$v5 = Const(int, 1) in let \$v6 = (repeat \$v4 \$v5) in \
+                          let \$v7 = (cons \$v2 \$v6) in (concat \$v1 \$v7)")
 
     parsing_test_case("(+ 1 ??(int))")
     parsing_test_case(
@@ -61,7 +59,7 @@ using solver: parse_program, parse_type, TypeVariable
     parsing_test_case("Const(set(tuple2(int, int)), Set{Any}())")
     parsing_test_case("Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)]))")
     parsing_test_case(
-        "let \$v1, \$v2 = rev(\$inp0 = (tuple2 \$v1 \$v2)) in let \$v3::set(tuple2(int, int)) = Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)])) in (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v3)) \$v1 \$v2)",
+        "let \$v1, \$v2 = rev(\$inp0 = (tuple2 \$v1 \$v2)) in let \$v3 = Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)])) in (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v3)) \$v1 \$v2)",
     )
     parsing_test_case(
         "Const(grid(t1), [[any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object; any_object any_object any_object any_object any_object]])",

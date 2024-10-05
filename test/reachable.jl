@@ -869,7 +869,7 @@ using DataStructures
                 "request" => "inp0:list(int) -> list(int)",
             ),
         )
-        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (repeat \$v1 \$v2)) in let \$v3::int = Const(int, 5) in (repeat \$v2 \$v3)"
+        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (repeat \$v1 \$v2)) in let \$v3 = Const(int, 5) in (repeat \$v2 \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -897,7 +897,7 @@ using DataStructures
                 "request" => "inp0:list(int) -> list(int)",
             ),
         )
-        target_solution = "let \$v1::list(int) = Const(list(int), Any[6, 7, 8, 9, 10]) in (concat \$inp0 \$v1)"
+        target_solution = "let \$v1 = Const(list(int), Any[6, 7, 8, 9, 10]) in (concat \$inp0 \$v1)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -925,7 +925,7 @@ using DataStructures
                 "request" => "inp0:list(int) -> list(int)",
             ),
         )
-        target_solution = "let \$v1::int = (length \$inp0) in let \$v2::int = Const(int, 1) in let \$v3::list(int) = (repeat \$v1 \$v2) in let \$v4::list(int) = (concat \$inp0 \$v3) in let \$v5::list(int) = Const(list(int), Any[6, 7, 8, 9, 10]) in (concat \$v4 \$v5)"
+        target_solution = "let \$v1 = (length \$inp0) in let \$v2 = Const(int, 1) in let \$v3 = (repeat \$v1 \$v2) in let \$v4 = (concat \$inp0 \$v3) in let \$v5 = Const(list(int), Any[6, 7, 8, 9, 10]) in (concat \$v4 \$v5)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -981,7 +981,7 @@ using DataStructures
                 "request" => "inp0:list(int) -> list(int)",
             ),
         )
-        target_solution = "let \$v1::int = Const(int, 1) in let \$v2::int = Const(int, 1) in let \$v3, \$v4, \$v5 = rev(\$inp0 = (rev_fix_param (rev_select (lambda (eq? \$0 \$v3)) \$v4 \$v5) \$v3 (lambda Const(int, 3)))) in let \$v6, \$v7 = rev(\$v4 = (repeat \$v6 \$v7)) in let \$v8::list(int) = (repeat \$v2 \$v7) in (rev_select (lambda (eq? \$0 \$v1)) \$v8 \$v5)"
+        target_solution = "let \$v1 = Const(int, 1) in let \$v2 = Const(int, 1) in let \$v3, \$v4, \$v5 = rev(\$inp0 = (rev_fix_param (rev_select (lambda (eq? \$0 \$v3)) \$v4 \$v5) \$v3 (lambda Const(int, 3)))) in let \$v6, \$v7 = rev(\$v4 = (repeat \$v6 \$v7)) in let \$v8 = (repeat \$v2 \$v7) in (rev_select (lambda (eq? \$0 \$v1)) \$v8 \$v5)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1000,7 +1000,7 @@ using DataStructures
                 "request" => "inp0:int -> int",
             ),
         )
-        target_solution = "let \$v1::int = Const(int, 11) in (+ \$v1 \$inp0)"
+        target_solution = "let \$v1 = Const(int, 11) in (+ \$v1 \$inp0)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1078,9 +1078,9 @@ using DataStructures
         )
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library2)
-        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (cons \$v1 \$v2)) in let \$v3, \$v4 = rev(\$v2 = (cons \$v3 \$v4)) in let \$v5::int = (car \$v4) in let \$v6::list(int) = Const(list(int), Any[]) in let \$v7::list(int) = (cons \$v5 \$v6) in (concat \$v7 \$inp0)"
+        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (cons \$v1 \$v2)) in let \$v3, \$v4 = rev(\$v2 = (cons \$v3 \$v4)) in let \$v5 = (car \$v4) in let \$v6 = Const(list(int), Any[]) in let \$v7 = (cons \$v5 \$v6) in (concat \$v7 \$inp0)"
         check_reachable(task, guiding_model, grammar, target_solution)
-        # target_solution = "let \$v1::int = Const(int, 1) in let \$v2, \$v3 = rev(\$inp0 = (cons \$v2 \$v3)) in let \$v4, \$v5 = rev(\$v3 = (cons \$v4 \$v5)) in let \$v6::int = \$v1 in let \$v7::int = (index \$v6 \$v5) in let \$v8::list(int) = (repeat \$v7 \$v1) in (concat \$v8 \$inp0)"
+        # target_solution = "let \$v1 = Const(int, 1) in let \$v2, \$v3 = rev(\$inp0 = (cons \$v2 \$v3)) in let \$v4, \$v5 = rev(\$v3 = (cons \$v4 \$v5)) in let \$v6 = \$v1 in let \$v7 = (index \$v6 \$v5) in let \$v8 = (repeat \$v7 \$v1) in (concat \$v8 \$inp0)"
         # check_reachable(task, guiding_model, grammar, target_solution, true)
     end
 
@@ -1213,7 +1213,7 @@ using DataStructures
                 "request" => "inp0:grid(color) -> grid(color)",
             ),
         )
-        target_solution = "let \$v4::color = Const(color, 0) in let \$v6::int = (height \$inp0) in let \$v5::int = (width \$inp0) in let \$v1::color = Const(color, 0) in let \$v2::grid(color) = (repeat_grid \$v4 \$v5 \$v6) in (rev_select_grid (lambda (eq? \$0 \$v1)) \$v2 \$inp0)"
+        target_solution = "let \$v4 = Const(color, 0) in let \$v6 = (height \$inp0) in let \$v5 = (width \$inp0) in let \$v1 = Const(color, 0) in let \$v2 = (repeat_grid \$v4 \$v5 \$v6) in (rev_select_grid (lambda (eq? \$0 \$v1)) \$v2 \$inp0)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1279,7 +1279,7 @@ using DataStructures
             ),
         )
 
-        target_solution = "let \$v1, \$v2, \$v3 = rev(\$inp0 = (rev_fix_param (rev_select_grid (lambda (eq? \$0 \$v1)) \$v2 \$v3) \$v1 (lambda Const(color, 0)))) in let \$v4, \$v5, \$v6 = rev(\$v2 = (repeat_grid \$v4 \$v5 \$v6)) in let \$v7::tuple2(int, int) = (tuple2 \$v5 \$v6) in (tuple2 \$v7 \$v3)"
+        target_solution = "let \$v1, \$v2, \$v3 = rev(\$inp0 = (rev_fix_param (rev_select_grid (lambda (eq? \$0 \$v1)) \$v2 \$v3) \$v1 (lambda Const(color, 0)))) in let \$v4, \$v5, \$v6 = rev(\$v2 = (repeat_grid \$v4 \$v5 \$v6)) in let \$v7 = (tuple2 \$v5 \$v6) in (tuple2 \$v7 \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1344,7 +1344,7 @@ using DataStructures
                 "request" => "inp0:set(tuple2(tuple2(int, int), color)) -> grid(color)",
             ),
         )
-        target_solution = "let \$v1::int = Const(int, 20) in let \$v2::int = Const(int, 20) in (rev_grid_elements \$inp0 \$v1 \$v2)"
+        target_solution = "let \$v1 = Const(int, 20) in let \$v2 = Const(int, 20) in (rev_grid_elements \$inp0 \$v1 \$v2)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1891,7 +1891,7 @@ using DataStructures
             ),
         )
 
-        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (tuple2 \$v1 \$v2)) in let \$v3::set(tuple2(int, int)) = Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)])) in (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v3)) \$v1 \$v2)"
+        target_solution = "let \$v1, \$v2 = rev(\$inp0 = (tuple2 \$v1 \$v2)) in let \$v3 = Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)])) in (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v3)) \$v1 \$v2)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1946,7 +1946,7 @@ using DataStructures
             ),
         )
 
-        target_solution = "let \$v1::int = Const(int, 1) in (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v1) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$inp0)"
+        target_solution = "let \$v1 = Const(int, 1) in (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v1) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$inp0)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -1988,14 +1988,14 @@ using DataStructures
         let \$v11 = rev(\$v10 = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v11)) in
         let \$v12 = rev(\$v11 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v12)) in
         let \$v13, \$v14, \$v15 = rev(\$v12 = (rev_fix_param (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v14 \$v15) \$v13 (lambda Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)]))))) in
-        let \$v16::int = Const(int, 1) in
-        let \$v17::set(tuple2(tuple2(tuple2(int, int), set(tuple2(int, int))), color)) = (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v16) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v14) in
-        let \$v18::set(tuple2(tuple2(tuple2(int, int), set(tuple2(int, int))), color)) = (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v17 \$v15) in
-        let \$v19::set(tuple2(set(tuple2(int, int)), color)) = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v18) in
-        let \$v20::set(set(tuple2(tuple2(int, int), color))) = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v19) in
-        let \$v21::set(tuple2(tuple2(int, int), color)) = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (tuple2_first (tuple2_first \$0)) (tuple2_first (tuple2_first \$2)))) 1)) (not (gt? (abs (- (tuple2_second (tuple2_first \$0)) (tuple2_second (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set \$v20) in
-        let \$v22::grid(color) = (rev_grid_elements \$v21 \$v8 \$v9) in
-        let \$v23::grid(color) = (repeat_grid \$v4 \$v5 \$v6) in
+        let \$v16 = Const(int, 1) in
+        let \$v17 = (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v16) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v14) in
+        let \$v18 = (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v17 \$v15) in
+        let \$v19 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v18) in
+        let \$v20 = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v19) in
+        let \$v21 = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (tuple2_first (tuple2_first \$0)) (tuple2_first (tuple2_first \$2)))) 1)) (not (gt? (abs (- (tuple2_second (tuple2_first \$0)) (tuple2_second (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set \$v20) in
+        let \$v22 = (rev_grid_elements \$v21 \$v8 \$v9) in
+        let \$v23 = (repeat_grid \$v4 \$v5 \$v6) in
         (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
@@ -2010,10 +2010,10 @@ using DataStructures
         let \$v7, \$v8, \$v9 = rev(\$v3 = (rev_grid_elements \$v7 \$v8 \$v9)) in
         let \$v12 = rev(\$v7 = (#(lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster \$2 \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1))))) \$v12 (lambda (lambda (any_set (lambda (and (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_first \$0)) \$1))) \$0 \$2)) (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_second \$0)) \$1))) \$0 \$2)))) \$0))))) in
         let \$v13, \$v15, \$v14 = rev(\$v12 = (#(lambda (lambda (lambda (rev_fix_param (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$3)) \$0 \$1) \$2 (lambda Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)]))))))) \$v13 \$v15 \$v14)) in
-        let \$v18::set(tuple2(tuple2(tuple2(int, int), set(tuple2(int, int))), color)) = (#(lambda (lambda (lambda (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$1)) (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) Const(int, 1)) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1) \$2)))) \$v15 \$v14 \$v13) in
-        let \$v21::set(tuple2(tuple2(int, int), color)) = (#(lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster \$2 \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1))))) \$v18 (lambda (lambda (any_set (lambda (and (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_first \$0)) \$1))) \$0 \$2)) (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_second \$0)) \$1))) \$0 \$2)))) \$0)))) in
-        let \$v22::grid(color) = (rev_grid_elements \$v21 \$v8 \$v9) in
-        let \$v23::grid(color) = (repeat_grid \$v4 \$v5 \$v6) in
+        let \$v18 = (#(lambda (lambda (lambda (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$1)) (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) Const(int, 1)) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1) \$2)))) \$v15 \$v14 \$v13) in
+        let \$v21 = (#(lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster \$2 \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1))))) \$v18 (lambda (lambda (any_set (lambda (and (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_first \$0)) \$1))) \$0 \$2)) (#(lambda (not (gt? \$0 1))) (#(lambda (lambda (#(lambda (lambda (lambda (abs (- (\$1 (tuple2_first \$0)) (\$1 (tuple2_first \$2))))))) \$0 (lambda (tuple2_second \$0)) \$1))) \$0 \$2)))) \$0)))) in
+        let \$v22 = (rev_grid_elements \$v21 \$v8 \$v9) in
+        let \$v23 = (repeat_grid \$v4 \$v5 \$v6) in
         (#(lambda (lambda (lambda (rev_select_grid (lambda (eq? \$0 \$1)) \$1 \$2)))) \$v22 \$v23 \$v1)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(
@@ -2074,14 +2074,14 @@ using DataStructures
         let \$v11 = rev(\$v10 = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v11)) in
         let \$v12 = rev(\$v11 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v12)) in
         let \$v13, \$v14, \$v15 = rev(\$v12 = (rev_fix_param (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v14 \$v15) \$v13 (lambda Const(set(tuple2(int, int)), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)]))))) in
-        let \$v16::int = Const(int, 1) in
-        let \$v17::set(tuple2(tuple2(tuple2(int, int), set(tuple2(int, int))), color)) = (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v16) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v14) in
-        let \$v18::set(tuple2(tuple2(tuple2(int, int), set(tuple2(int, int))), color)) = (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v17 \$v15) in
-        let \$v19::set(tuple2(set(tuple2(int, int)), color)) = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v18) in
-        let \$v20::set(set(tuple2(tuple2(int, int), color))) = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v19) in
-        let \$v21::set(tuple2(tuple2(int, int), color)) = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (not (gt? (+ (abs (- (tuple2_first (tuple2_first \$0)) (tuple2_first (tuple2_first \$2)))) (abs (- (tuple2_second (tuple2_first \$0)) (tuple2_second (tuple2_first \$2))))) 1))) \$0))) \$1 \$0))) empty_set \$v20) in
-        let \$v22::grid(color) = (rev_grid_elements \$v21 \$v8 \$v9) in
-        let \$v23::grid(color) = (repeat_grid \$v4 \$v5 \$v6) in
+        let \$v16 = Const(int, 1) in
+        let \$v17 = (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) \$v16) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v14) in
+        let \$v18 = (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$v13)) \$v17 \$v15) in
+        let \$v19 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$v18) in
+        let \$v20 = (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$v19) in
+        let \$v21 = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (not (gt? (+ (abs (- (tuple2_first (tuple2_first \$0)) (tuple2_first (tuple2_first \$2)))) (abs (- (tuple2_second (tuple2_first \$0)) (tuple2_second (tuple2_first \$2))))) 1))) \$0))) \$1 \$0))) empty_set \$v20) in
+        let \$v22 = (rev_grid_elements \$v21 \$v8 \$v9) in
+        let \$v23 = (repeat_grid \$v4 \$v5 \$v6) in
         (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
@@ -2130,7 +2130,7 @@ using DataStructures
 
     @testcase_log "6d0aefbc.json" begin
         task = _create_arc_task("6d0aefbc.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3::list(list(color)) = (concat \$v1 \$v2) in (columns_to_grid \$v3)"
+        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3 = (concat \$v1 \$v2) in (columns_to_grid \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2138,7 +2138,7 @@ using DataStructures
 
     @testcase_log "8be77c9e.json" begin
         task = _create_arc_task("8be77c9e.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3::list(list(color)) = (concat \$v1 \$v2) in (rows_to_grid \$v3)"
+        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3 = (concat \$v1 \$v2) in (rows_to_grid \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2146,7 +2146,7 @@ using DataStructures
 
     @testcase_log "c9e6f938.json" begin
         task = _create_arc_task("c9e6f938.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3::list(list(color)) = (concat \$v1 \$v2) in (columns_to_grid \$v3)"
+        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3 = (concat \$v1 \$v2) in (columns_to_grid \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2154,8 +2154,8 @@ using DataStructures
 
     @testcase_log "25ff71a9.json" begin
         task = _create_arc_task("25ff71a9.json")
-        # target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2::list(list(color)) = Const(list(list(color)), Vector{Any}[[0, 0, 0]]) in let \$v3, \$v4 = wrap(let \$v3, \$v4 = rev(\$v1 = (concat \$v3 \$v4)); let \$v4 = \$v2) in let \$v5::list(list(color)) = (concat \$v4 \$v3) in (rows_to_grid \$v5)"
-        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v3, \$v4 = rev(\$v1 = (rev_fix_param (concat \$v3 \$v4) \$v4 (lambda Const(list(list(color)), Vector{Any}[[0, 0, 0]])))) in let \$v5::list(list(color)) = (concat \$v4 \$v3) in (rows_to_grid \$v5)"
+        # target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = Const(list(list(color)), Vector{Any}[[0, 0, 0]]) in let \$v3, \$v4 = wrap(let \$v3, \$v4 = rev(\$v1 = (concat \$v3 \$v4)); let \$v4 = \$v2) in let \$v5 = (concat \$v4 \$v3) in (rows_to_grid \$v5)"
+        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v3, \$v4 = rev(\$v1 = (rev_fix_param (concat \$v3 \$v4) \$v4 (lambda Const(list(list(color)), Vector{Any}[[0, 0, 0]])))) in let \$v5 = (concat \$v4 \$v3) in (rows_to_grid \$v5)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2163,7 +2163,7 @@ using DataStructures
 
     @testcase_log "6fa7a44f.json" begin
         task = _create_arc_task("6fa7a44f.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3::list(list(color)) = (concat \$v1 \$v2) in (rows_to_grid \$v3)"
+        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3 = (concat \$v1 \$v2) in (rows_to_grid \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2171,7 +2171,7 @@ using DataStructures
 
     @testcase_log "a416b8f3.json" begin
         task = _create_arc_task("a416b8f3.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2::list(list(color)) = (concat \$v1 \$v1) in (columns_to_grid \$v2)"
+        target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = (concat \$v1 \$v1) in (columns_to_grid \$v2)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)
@@ -2179,7 +2179,7 @@ using DataStructures
 
     @testcase_log "4c4377d9.json" begin
         task = _create_arc_task("4c4377d9.json")
-        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3::list(list(color)) = (concat \$v2 \$v1) in (rows_to_grid \$v3)"
+        target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in let \$v2 = rev(\$v1 = (reverse \$v2)) in let \$v3 = (concat \$v2 \$v1) in (rows_to_grid \$v3)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
         check_reachable(task, guiding_model, grammar, target_solution)

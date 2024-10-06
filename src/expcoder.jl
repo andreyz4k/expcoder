@@ -887,7 +887,7 @@ function main(; kwargs...)
 
             @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
             log_traces(cur_traces)
-            log_grammar(i, grammar)
+            log_grammar(i - 1, grammar)
 
             guiding_model = update_guiding_model(guiding_model, traces)
             save_checkpoint(parsed_args, i, traces, grammar, guiding_model)

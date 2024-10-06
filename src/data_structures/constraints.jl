@@ -320,7 +320,11 @@ function _tighten_constraint(
                 throw(EnumerationException("Fixing constraint leads to a redundant block"))
             end
 
-            _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
+            new_b_copy_id = _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
+            if any(isa(sc.entries[e], AbductibleEntry) for e in input_entries)
+                b = first(b for b in inp_branches if haskey(out_branches, b))
+                _abduct_next_block(sc, new_b_copy_id, b_id, new_branch_id, sc.branch_vars[b], b)
+            end
             for target_branch in target_branches
                 update_complexity_factors_unknown(sc, inputs, target_branch)
             end

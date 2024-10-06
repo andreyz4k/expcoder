@@ -32,7 +32,8 @@ using solver:
     supervised_task_checker,
     parse_type,
     Task,
-    extract_solution
+    extract_solution,
+    build_manual_trace
 
 using DataStructures
 
@@ -366,7 +367,6 @@ using DataStructures
         run_context,
         mfp,
         verbose,
-        find_one,
     )
         if verbose
             @info "Simulating block search for $bl"
@@ -496,7 +496,6 @@ using DataStructures
                         run_context,
                         mfp,
                         verbose,
-                        find_one,
                     )
                 end
             else
@@ -527,7 +526,6 @@ using DataStructures
         run_context,
         mfp,
         verbose,
-        find_one,
     )
         if verbose
             @info "Simulating block search for $bl"
@@ -653,7 +651,6 @@ using DataStructures
                         run_context,
                         mfp,
                         verbose,
-                        find_one,
                     )
                 end
             else
@@ -683,7 +680,6 @@ using DataStructures
         run_context,
         mfp,
         verbose,
-        find_one,
     )
         checked_any = false
         if isempty(blocks)
@@ -719,13 +715,9 @@ using DataStructures
                     run_context,
                     mfp,
                     verbose,
-                    find_one,
                 )
                 union!(successful, s)
                 union!(failed, f)
-                if find_one && !isempty(successful)
-                    break
-                end
             end
         end
         if verbose
@@ -736,7 +728,7 @@ using DataStructures
         return successful, failed
     end
 
-    function check_reachable(task, guiding_model, grammar, target_solution, verbose_test = false; find_one = false)
+    function check_reachable(task, guiding_model, grammar, target_solution, verbose_test = false)
         mfp = 10
         run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
 
@@ -807,7 +799,6 @@ using DataStructures
             run_context,
             mfp,
             verbose_test,
-            find_one,
         )
         if verbose_test
             @info "successful: $successful"
@@ -1999,7 +1990,8 @@ using DataStructures
         (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
-        check_reachable(task, guiding_model, grammar, target_solution; find_one = true)
+        hit, cost = @time build_manual_trace(task, target_solution, guiding_model, grammar)
+        @test !isnothing(hit)
     end
 
     @testcase_log "0f39a9d9.json_comp" begin
@@ -2062,7 +2054,8 @@ using DataStructures
                 ],
             ),
         )
-        check_reachable(task, guiding_model, grammar, target_solution; find_one = true)
+        hit, cost = @time build_manual_trace(task, target_solution, guiding_model, grammar)
+        @test !isnothing(hit)
     end
 
     @testcase_log "8b6f1472.json" begin
@@ -2085,7 +2078,8 @@ using DataStructures
         (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
         guiding_model = DummyGuidingModel()
         grammar = build_grammar(sample_library)
-        check_reachable(task, guiding_model, grammar, target_solution; find_one = true)
+        hit, cost = @time build_manual_trace(task, target_solution, guiding_model, grammar)
+        @test !isnothing(hit)
     end
 
     @testcase_log "67a3c6ac.json" begin

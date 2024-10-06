@@ -209,6 +209,8 @@ function transaction(f, sc::SolutionContext)
         start_transaction!(sc, depth + 1)
         result = f()
     catch e
+        # bt = catch_backtrace()
+        # @error "Got error in transaction" exception = (e, bt)
         finished = false
         interrupted = nothing
         while !finished

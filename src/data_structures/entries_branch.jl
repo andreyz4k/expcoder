@@ -804,4 +804,5 @@ function _save_block_branch_connections(sc, block_id, block, fixed_branches, out
 
         @info "Created new block copy $block_copy_id for block $block_id $block with inputs $inputs and outputs $outputs"
     end
+    return block_copy_id
 end

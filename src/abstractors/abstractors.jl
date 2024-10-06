@@ -1106,7 +1106,7 @@ function calculate_dependent_vars(p, inputs, output)
     p_info = gather_info(p)
     success, computed_output, context = _run_in_reverse(p_info, output, context)
     if !success
-        error("Failed to run in reverse")
+        error("Failed to run in reverse $p $output")
     end
     updated_inputs = context.filled_vars
     return Dict(

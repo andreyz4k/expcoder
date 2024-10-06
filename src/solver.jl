@@ -11,6 +11,7 @@ include("export.jl")
 include("worker_pool.jl")
 include("guiding_models/guiding_models.jl")
 include("compression.jl")
+include("manual_traces.jl")
 include("expcoder.jl")
 
 end

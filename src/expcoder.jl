@@ -695,6 +695,17 @@ function try_solve_tasks(
     return new_traces
 end
 
+function get_manual_traces(domain, tasks, grammar)
+    traces = Dict{UInt64,Any}()
+    if domain == "arc"
+        guiding_model = DummyGuidingModel()
+        tr = build_manual_traces(tasks, guiding_model, grammar)
+        grammar_hash = hash(grammar)
+        traces[grammar_hash] = (grammar, tr)
+    end
+    return traces
+end
+
 function config_options()
     s = ArgParseSettings()
     @add_arg_table! s begin
@@ -799,6 +810,7 @@ function main(; kwargs...)
     @info "Starting enumeration service"
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
     merge!(parsed_args, kwargs)
+    tasks = get_domain_tasks(parsed_args[:domain])
 
     if !isnothing(parsed_args[:resume])
         (restored_args, i, traces, grammar, guiding_model) = load_checkpoint(parsed_args[:resume])
@@ -806,7 +818,7 @@ function main(; kwargs...)
     else
         grammar = get_starting_grammar()
         guiding_model = get_guiding_model(parsed_args[:model])
-        traces = Dict{UInt64,Any}()
+        traces = get_manual_traces(parsed_args[:domain], tasks, grammar)
         i = 1
     end
 
@@ -816,8 +828,6 @@ function main(; kwargs...)
     grammar_hash = hash(grammar)
 
     @info "Parsed arguments $parsed_args"
-
-    tasks = get_domain_tasks(parsed_args[:domain])
 
     # tasks = tasks[begin:10]
 

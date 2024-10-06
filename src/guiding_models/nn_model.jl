@@ -38,6 +38,7 @@ vocab = vcat(
         ";",
         ",",
         "any_object",
+        "nothing",
         "[[",
         "]]",
         "{",
@@ -77,6 +78,7 @@ function tokenize(t::Tp, v::Int)
     end
 end
 tokenize(t, v::AnyObject) = ["any_object"]
+tokenize(t, v::Nothing) = ["nothing"]
 
 function tokenize(t, v::Vector)
     tokens = ["["]
@@ -807,7 +809,7 @@ end
 using ProgressMeter
 
 function update_guiding_model(guiding_model::NNGuidingModel, traces)
-    train_set = expand_traces(traces, 16)
+    train_set = expand_traces(traces, 32)
     if isempty(train_set)
         return guiding_model
     end

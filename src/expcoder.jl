@@ -25,16 +25,17 @@ function get_arc_tasks()
     tasks = []
     tp = parse_type("inp0:grid(color) -> grid(color)")
     arc_folder = normpath(joinpath(@__DIR__, "..", "data"))
-    for fname in readdir(joinpath(arc_folder, "sortOfARC"); join = true)
-        if endswith(fname, ".json")
-            task = create_arc_task(fname, tp)
-            push!(tasks, task)
-        end
+    dirs = [joinpath(arc_folder, "sortOfARC"), joinpath(arc_folder, "ARC/data/training")]
+    concept_arc_dir = joinpath(arc_folder, "ConceptARC/corpus")
+    for category_dir in readdir(concept_arc_dir; join = true)
+        push!(dirs, category_dir)
     end
-    for fname in readdir(joinpath(arc_folder, "ARC/data/training"); join = true)
-        if endswith(fname, ".json")
-            task = create_arc_task(fname, tp)
-            push!(tasks, task)
+    for dir in dirs
+        for fname in readdir(dir; join = true)
+            if endswith(fname, ".json")
+                task = create_arc_task(fname, tp)
+                push!(tasks, task)
+            end
         end
     end
     return tasks

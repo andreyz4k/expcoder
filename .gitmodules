@@ -1,3 +1,6 @@
 [submodule "data/ARC"]
 	path = data/ARC
 	url = git@github.com:fchollet/ARC.git
+[submodule "data/ConceptARC"]
+	path = data/ConceptARC
+	url = git@github.com:victorvikram/ConceptARC.git

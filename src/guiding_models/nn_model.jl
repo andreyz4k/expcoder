@@ -200,8 +200,8 @@ _is_in_batch(token::Token) = TextEncoders.TextEncodeBase.getmeta(token)
 _is_in_batch(tokens) = _is_in_batch(tokens[1])
 
 function _make_next_mask(next_masks)
-    nest_count = sum(max(length(m), 1) for m in next_masks)
-    next_mask = zeros(Float32, nest_count, length(next_masks))
+    next_count = sum(max(length(m), 1) for m in next_masks)
+    next_mask = zeros(Float32, next_count, length(next_masks))
 
     i = 1
     for (j, m) in enumerate(next_masks)
@@ -319,15 +319,46 @@ end
 
 Flux.@layer GrammarEncoder
 
+struct InputOutputEncoder
+    chain::Chain
+    linear1::Dense
+    linear2::Dense
+end
+
+hidden_channels = 32
+d_emb_in = hidden_channels * 3 * 3
+
+function InputOutputEncoder()
+    chain = Chain(
+        Conv((3, 3), 10 => hidden_channels, relu; pad = SamePad()),
+        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
+        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
+        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
+        AdaptiveMeanPool((3, 3)),
+    )
+    linear1 = Dense(d_emb_in, d_emb, relu)
+    linear2 = Dense(d_emb, d_emb, relu)
+    return InputOutputEncoder(chain, linear1, linear2)
+end
+
+function (m::InputOutputEncoder)(inputs, subbatch_mask)
+    convoluted = Flux.MLUtils.flatten(m.chain(inputs))
+    l1 = m.linear1(convoluted)
+    batched = l1 * subbatch_mask
+    return m.linear2(batched)
+end
+
+Flux.@layer InputOutputEncoder
+
 struct NNGuidingModel
-    tokenizer::Any
+    preprocessor::Any
+
     embedder::Embedder
     grammar_encoder::GrammarEncoder
+    input_output_encoder::InputOutputEncoder
 
     state_processor::Chain
     decoder::Chain
-
-    contextual_cache::Dict
 end
 
 function _create_tokenizer_process(e)
@@ -344,11 +375,9 @@ end
 
 function NNGuidingModel()
     enable_gpu()
-    tokenizer = TransformerTextEncoder(ExpCoderTokenization(), vocab)
-    tokenizer = TextEncoders.set_annotate(_ -> solver.annotate_objects, tokenizer)
-    tokenizer = TextEncoders.set_process(_create_tokenizer_process, tokenizer)
     embedder = Embedder() |> todevice
     grammar_encoder = GrammarEncoder() |> todevice
+    input_output_encoder = InputOutputEncoder() |> todevice
     state_processor =
         Chain(
             Dense(d_state_in, d_state_h, relu),
@@ -356,14 +385,14 @@ function NNGuidingModel()
             Dense(d_state_h, d_state_out, relu),
         ) |> todevice
     decoder = Chain(Dense(d_state_out + d_emb, d_dec_h, relu), Dense(d_dec_h, 1)) |> todevice
-    return NNGuidingModel(tokenizer, embedder, grammar_encoder, state_processor, decoder, Dict())
+    return NNGuidingModel(Preprocessor(), embedder, grammar_encoder, input_output_encoder, state_processor, decoder)
 end
 
 function (m::NNGuidingModel)(input_batch)
-    grammar_tokens, input_tokens, output_tokens, trace_val_tokens, is_reversed = input_batch
+    grammar_tokens, inputs, outputs, trace_val_tokens, is_reversed = input_batch
     grammar_func_encodings = m.embedder(grammar_tokens)
-    input_encodings = m.embedder(input_tokens)
-    output_encodings = m.embedder(output_tokens)
+    input_encodings = m.input_output_encoder(inputs...)
+    output_encodings = m.input_output_encoder(outputs...)
     trace_val_encodings = m.embedder(trace_val_tokens)
 
     grammar_encodings = m.grammar_encoder(grammar_func_encodings)
@@ -381,15 +410,6 @@ function (m::NNGuidingModel)(input_batch)
     broadcasted_f_emb = repeat(grammar_func_encodings, 1, 1, size(state, 2))
     result = m.decoder(vcat(broadcasted_state, broadcasted_f_emb))
     return reshape(result, size(result)[2:end]...)
-end
-
-function _preprocess_input_batch(m::NNGuidingModel, batch)
-    grammar, inputs, outputs, trace_val, is_reversed = batch
-    grammar_tokens = Transformers.encode(m.tokenizer, grammar)
-    input_tokens = Transformers.encode(m.tokenizer, inputs)
-    output_tokens = Transformers.encode(m.tokenizer, outputs)
-    trace_val_tokens = Transformers.encode(m.tokenizer, trace_val)
-    return (grammar_tokens, input_tokens, output_tokens, trace_val_tokens, is_reversed)
 end
 
 Flux.@layer NNGuidingModel
@@ -717,46 +737,195 @@ function lookup(e, x::NamedTuple{name}) where {name}
     return NamedTuple{name}((TextEncoders.lookup(getfield(e, :vocab), xt[1]), Base.tail(xt)...))
 end
 
+struct Preprocessor
+    tokenizer::Any
+    tokenizer_cache::Any
+    inputs_cache::Any
+    output_cache::Any
+end
+
+function Preprocessor()
+    tokenizer = TransformerTextEncoder(ExpCoderTokenization(), vocab)
+    tokenizer = TextEncoders.set_annotate(_ -> solver.annotate_objects, tokenizer)
+    tokenizer = TextEncoders.set_process(_create_tokenizer_process, tokenizer)
+    return Preprocessor(tokenizer, Dict(), Dict(), Dict())
+end
+
+function _preprocess_value(p::Preprocessor, val)
+    if !haskey(p.tokenizer_cache, val)
+        p.tokenizer_cache[val] = Transformers.encode(p.tokenizer, val)
+    end
+    return p.tokenizer_cache[val]
+end
+
+function _preprocess_inputs(p::Preprocessor, inputs)
+    if !haskey(p.inputs_cache, inputs)
+        var_count = length(inputs)
+        example_count = length(inputs[1])
+        subbatch_mask = fill(1 / (example_count * var_count), example_count * var_count, 1)
+
+        max_x = maximum(size(v, 1) for var in inputs for v in var; init = 3)
+        max_y = maximum(size(v, 2) for var in inputs for v in var; init = 3)
+        input_matrix = fill(10, max_x, max_y, example_count * var_count)
+        i = 1
+        for var_examples in inputs
+            for example in var_examples
+                k, l = size(example)
+                input_matrix[1:k, 1:l, i] = example
+                i += 1
+            end
+        end
+        input_batch = onehotbatch(input_matrix, 0:10)[1:10, :, :, :]
+        input_batch = permutedims(input_batch, [2, 3, 1, 4])
+        p.inputs_cache[inputs] = input_batch, subbatch_mask
+    end
+    return p.inputs_cache[inputs]
+end
+
+function _preprocess_input_batch(p::Preprocessor, inputs)
+    batch_size = length(inputs)
+
+    processed_inputs = [_preprocess_inputs(p, i) for i in inputs]
+
+    example_count = sum(m -> length(m[2]), processed_inputs)
+
+    input_subbatch_mask = zeros(Float32, example_count, batch_size)
+
+    max_x = maximum(size(v, 1) for (v, _) in processed_inputs; init = 3)
+    max_y = maximum(size(v, 2) for (v, _) in processed_inputs; init = 3)
+    input_batch_matrix = fill(false, max_x, max_y, 10, example_count)
+
+    i = 1
+    for (j, (input_matrix, subbatch_mask)) in enumerate(processed_inputs)
+        input_subbatch_mask[i:i+length(subbatch_mask)-1, j] = subbatch_mask
+        input_batch_matrix[1:size(input_matrix, 1), 1:size(input_matrix, 2), :, i:i+length(subbatch_mask)-1] =
+            input_matrix
+        i += length(subbatch_mask)
+    end
+    return input_batch_matrix, input_subbatch_mask
+end
+
+function _preprocess_output_batch(p::Preprocessor, outputs)
+    batch_size = length(outputs)
+    processed_outputs = [_preprocess_output(p, o) for o in outputs]
+    example_count = sum(m -> length(m[2]), processed_outputs)
+    output_subbatch_mask = zeros(Float32, example_count, batch_size)
+
+    max_x = maximum(size(v, 1) for (v, _) in processed_outputs; init = 3)
+    max_y = maximum(size(v, 2) for (v, _) in processed_outputs; init = 3)
+    output_batch_matrix = fill(false, max_x, max_y, 10, example_count)
+
+    i = 1
+    for (j, (output_matrix, subbatch_mask)) in enumerate(processed_outputs)
+        output_subbatch_mask[i:i+length(subbatch_mask)-1, j] = subbatch_mask
+        output_batch_matrix[1:size(output_matrix, 1), 1:size(output_matrix, 2), :, i:i+length(subbatch_mask)-1] =
+            output_matrix
+        i += length(subbatch_mask)
+    end
+    return output_batch_matrix, output_subbatch_mask
+end
+
+function _preprocess_output(p::Preprocessor, output)
+    if !haskey(p.output_cache, output)
+        example_count = length(output)
+        subbatch_mask = fill(1 / (example_count), example_count, 1)
+
+        max_x = maximum(size(v, 1) for v in output; init = 3)
+        max_y = maximum(size(v, 2) for v in output; init = 3)
+        output_matrix = fill(10, max_x, max_y, example_count)
+        for (j, example) in enumerate(output)
+            k, l = size(example)
+            output_matrix[1:k, 1:l, j] = example
+        end
+        output_batch = onehotbatch(output_matrix, 0:10)[1:10, :, :, :]
+        output_batch = permutedims(output_batch, [2, 3, 1, 4])
+        p.output_cache[output] = output_batch, subbatch_mask
+    end
+    return p.output_cache[output]
+end
+
 struct DataBlock
+    preprocessor::Any
     grammar::Any
     values::Any
     labels::Any
+    cache::Dict
+
+    function DataBlock(preprocessor, grammar, values, labels)
+        return new(preprocessor, grammar, values, labels, Dict())
+    end
 end
 
 Base.length(d::DataBlock) = length(d.values)
 
 function Base.getindex(d::DataBlock, i::Int)
-    inputs, outputs, trace_val, is_rev = d.values[i]
+    if !haskey(d.cache, i)
+        inputs, outputs, trace_val, is_rev = d.values[i]
 
-    is_rev_shaped = [is_rev]
-    uses, mask, N, constant = d.labels[i]
-    constant = [constant]
-    return ((d.grammar, inputs, outputs, trace_val, is_rev_shaped), (uses, mask, N, constant))
+        is_rev_shaped = [is_rev]
+        uses, mask, N, constant = d.labels[i]
+        constant = [constant]
+        d.cache[i] = (
+            (
+                _preprocess_value(d.preprocessor, d.grammar),
+                _preprocess_inputs(d.preprocessor, inputs),
+                _preprocess_output(d.preprocessor, outputs),
+                _preprocess_value(d.preprocessor, trace_val),
+                is_rev_shaped,
+            ),
+            (uses, mask, N, constant),
+        )
+    end
+    return d.cache[i]
 end
 
-function Base.getindex(d::DataBlock, i)
-    inputs, outputs, trace_val, is_rev = zip(d.values[i]...)
+using Flux.OneHotArrays
 
-    is_rev_shaped = reshape(collect(is_rev), 1, :)
-    uses, mask, N, constant = zip(d.labels[i]...)
-    uses = hcat(uses...)
-    max_norm_count = maximum(length, N)
-    merged_mask = zeros(Float32, length(d.grammar), max_norm_count, length(N))
-    merged_N = zeros(Float32, max_norm_count, length(N))
-    for (i, counts) in enumerate(N)
-        merged_N[1:length(counts), i] = counts
-        merged_mask[:, 1:length(counts), i] = mask[i]
+function Base.getindex(d::DataBlock, ind)
+    if !haskey(d.cache, ind)
+        inputs, outputs, trace_val, is_rev = zip(d.values[ind]...)
+
+        is_rev_shaped = reshape(collect(is_rev), 1, :)
+        uses, mask, N, constant = zip(d.labels[ind]...)
+        uses = hcat(uses...)
+        max_norm_count = maximum(length, N)
+        merged_mask = zeros(Float32, length(d.grammar), max_norm_count, length(N))
+        merged_N = zeros(Float32, max_norm_count, length(N))
+        for (i, counts) in enumerate(N)
+            merged_N[1:length(counts), i] = counts
+            merged_mask[:, 1:length(counts), i] = mask[i]
+        end
+
+        constant = reshape(collect(constant), 1, :)
+
+        d.cache[ind] = (
+            (
+                _preprocess_value(d.preprocessor, d.grammar),
+                _preprocess_input_batch(d.preprocessor, inputs),
+                _preprocess_output_batch(d.preprocessor, outputs),
+                _preprocess_value(d.preprocessor, collect(trace_val)),
+                is_rev_shaped,
+            ),
+            (uses, merged_mask, merged_N, constant),
+        )
     end
+    return d.cache[ind]
+end
 
-    constant = reshape(collect(constant), 1, :)
-
+function _preprocess_model_inputs(m::NNGuidingModel, batch)
+    grammar, inputs, outputs, trace_val, is_reversed = batch
+    grammar_tokens = _preprocess_value(m.preprocessor, grammar)
+    trace_val_tokens = _preprocess_value(m.preprocessor, trace_val)
     return (
-        (d.grammar, collect(inputs), collect(outputs), collect(trace_val), is_rev_shaped),
-        (uses, merged_mask, merged_N, constant),
+        grammar_tokens,
+        _preprocess_input_batch(m.preprocessor, inputs),
+        _preprocess_output_batch(m.preprocessor, outputs),
+        trace_val_tokens,
+        is_reversed,
     )
 end
 
-function expand_traces(all_traces, batch_size = 1)
+function expand_traces(all_traces, preprocessor, batch_size = 1)
     groups = []
 
     for (grammar, gr_traces) in values(all_traces)
@@ -766,7 +935,11 @@ function expand_traces(all_traces, batch_size = 1)
         summaries = []
         for (task_name, traces) in gr_traces
             for (hit, cost) in traces
-                inputs = Dict(k => v for (k, v) in hit.trace_values if isa(k, String) && k != "output")
+                inputs = [v[2] for (k, v) in hit.trace_values if isa(k, String) && k != "output"]
+                outputs = hit.trace_values["output"][2]
+                if any(isa(v, PatternWrapper) for v in outputs)
+                    continue
+                end
 
                 blocks = extract_program_blocks(hit.hit_program)
                 for (var_id, p, is_rev) in blocks
@@ -775,13 +948,20 @@ function expand_traces(all_traces, batch_size = 1)
                     if isempty(summary[2])
                         continue
                     end
-                    push!(X_data, (inputs, hit.trace_values["output"], trace_val, is_rev))
+                    push!(X_data, (inputs, outputs, trace_val, is_rev))
                     push!(summaries, summary)
                 end
             end
         end
         if !isempty(X_data)
-            push!(groups, DataLoader(DataBlock(full_grammar, X_data, summaries), batchsize = batch_size))
+            push!(
+                groups,
+                DataLoader(
+                    DataBlock(preprocessor, full_grammar, X_data, summaries),
+                    batchsize = batch_size,
+                    parallel = true,
+                ),
+            )
         end
     end
     return groups
@@ -809,7 +989,7 @@ end
 using ProgressMeter
 
 function update_guiding_model(guiding_model::NNGuidingModel, traces)
-    train_set = expand_traces(traces, 32)
+    train_set = expand_traces(traces, guiding_model.preprocessor, 32)
     if isempty(train_set)
         return guiding_model
     end
@@ -825,9 +1005,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
         for (i, data_group) in enumerate(train_set)
             for (j, batch) in enumerate(data_group)
                 # Unpack this element (for supervised training):
-                inputs, summaries = batch
-                inputs = _preprocess_input_batch(guiding_model, inputs) |> todevice
-                summaries = summaries |> todevice
+                inputs, summaries = batch |> todevice
 
                 # Calculate the gradient of the objective
                 # with respect to the parameters within the model:
@@ -855,61 +1033,6 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
 end
 
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
-    preprocessed_inputs = _preprocess_input_batch(guiding_model, model_inputs) |> todevice
+    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs) |> todevice
     return guiding_model(preprocessed_inputs) |> cpu
-end
-
-function _grammar_with_weights(grammar::Grammar, production_scores, log_variable, log_lambda, log_free_var)
-    productions = Tuple{Program,Tp,Float64}[(p, t, production_scores[p]) for (p, t, _) in grammar.library]
-    return Grammar(log_variable, log_lambda, log_free_var, productions)
-end
-
-function generate_grammar(sc::SolutionContext, guiding_model::NNGuidingModel, grammar, entry_id, is_known)
-    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
-    inputs = Dict()
-    for (var_id, name) in sc.input_keys
-        # Using var id as branch id because they are the same for input variables
-        entry = sc.entries[sc.branch_entries[var_id]]
-        inputs[name] = (sc.types[entry.type_id], entry.values)
-    end
-    output_entry = sc.entries[sc.branch_entries[sc.target_branch_id]]
-    output = (sc.types[output_entry.type_id], output_entry.values)
-
-    val_entry = sc.entries[entry_id]
-    trace_val = (sc.types[val_entry.type_id], val_entry.values)
-
-    model_inputs = (full_grammar, inputs, output, trace_val, [is_known])
-    @time begin
-        result = try
-            preprocessed_inputs = _preprocess_input_batch(guiding_model, model_inputs) |> todevice
-            guiding_model(preprocessed_inputs) |> cpu
-        catch e
-            @error "Error during generating grammar: $e"
-            @error model_inputs
-            rethrow()
-        end
-    end
-
-    log_variable = result[end-2]
-    log_lambda = result[end-1]
-    log_free_var = result[end]
-    if !haskey(guiding_model.contextual_cache, grammar)
-        productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-        g = Grammar(log_variable, log_lambda, log_free_var, productions)
-        guiding_model.contextual_cache[grammar] = make_dummy_contextual(g)
-        return guiding_model.contextual_cache[grammar]
-    else
-        prototype = guiding_model.contextual_cache[grammar]
-        production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
-        return ContextualGrammar(
-            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-            Dict(
-                p => [
-                    _grammar_with_weights(g, production_scores, log_variable, log_lambda, log_free_var) for
-                    g in grammars
-                ] for (p, grammars) in prototype.contextual_library
-            ),
-        )
-    end
 end

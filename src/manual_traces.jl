@@ -1,14 +1,34 @@
 
-function build_manual_traces(tasks, guiding_model, grammar)
+function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
     solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
     task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
-    traces = Dict{String,Any}()
-    for (task, sols) in task_solutions
-        traces[task.name] = PriorityQueue{HitResult,Float64}()
-        for sol in sols
-            hit, cost = build_manual_trace(task, sol, guiding_model, grammar)
-            traces[task.name][hit] = cost
+    register_channel = guiding_model_server.worker_register_channel
+    register_response_channel = guiding_model_server.worker_register_result_channel
+    new_traces = pmap(
+        worker_pool,
+        [(task, sol) for (task, sols) in task_solutions for sol in sols];
+        retry_check = (s, e) -> isa(e, ProcessExitedException),
+        retry_delays = zeros(5),
+    ) do (task, sol)
+        put!(register_channel, myid())
+        while true
+            pid, request_channel, result_channel = take!(register_response_channel)
+            if pid == myid()
+                @info "Building manual trace for $(task.name)"
+                hit, cost = @time build_manual_trace(task, sol, (request_channel, result_channel), grammar)
+                return (task.name, hit, cost)
+            else
+                put!(register_response_channel, (pid, request_channel, result_channel))
+                sleep(0.01)
+            end
         end
+    end
+    traces = Dict{String,Any}()
+    for (task_name, hit, cost) in new_traces
+        if !haskey(traces, task_name)
+            traces[task_name] = PriorityQueue{HitResult,Float64}()
+        end
+        traces[task_name][hit] = cost
     end
     return traces
 end

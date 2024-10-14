@@ -696,11 +696,10 @@ function try_solve_tasks(
     return new_traces
 end
 
-function get_manual_traces(domain, tasks, grammar)
+function get_manual_traces(domain, tasks, grammar, worker_pool, guiding_model_server)
     traces = Dict{UInt64,Any}()
     if domain == "arc"
-        guiding_model = DummyGuidingModel()
-        tr = build_manual_traces(tasks, guiding_model, grammar)
+        tr = build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
         grammar_hash = hash(grammar)
         traces[grammar_hash] = (grammar, tr)
     end
@@ -815,24 +814,27 @@ function main(; kwargs...)
 
     if !isnothing(parsed_args[:resume])
         (restored_args, i, traces, grammar, guiding_model) = load_checkpoint(parsed_args[:resume])
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
         parsed_args = merge(restored_args, parsed_args)
-    else
+    end
+
+    @info "Parsed arguments $parsed_args"
+    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
+
+    if isnothing(parsed_args[:resume])
         grammar = get_starting_grammar()
         guiding_model = get_guiding_model(parsed_args[:model])
-        traces = get_manual_traces(parsed_args[:domain], tasks, grammar)
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
+        traces = get_manual_traces(parsed_args[:domain], tasks, grammar, worker_pool, guiding_model_server)
         i = 1
     end
 
-    guiding_model_server = GuidingModelServer(guiding_model)
-    start_server(guiding_model_server)
-
     grammar_hash = hash(grammar)
-
-    @info "Parsed arguments $parsed_args"
 
     # tasks = tasks[begin:10]
 
-    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
     type_weights = Dict{String,Any}(
         "int" => 1.0,
         "list" => 1.0,

@@ -38,7 +38,7 @@ jobs:
         run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
 
       - name: Set CPU backend
-        run: echo "[Flux]\ngpu_backend = \"CPU\"\n" > LocalPreferences.toml
+        run: echo "[Flux]" > LocalPreferences.toml && echo "gpu_backend = \"CPU\"" >> LocalPreferences.toml
 
       - name: Run Julia package tests
         uses: julia-actions/julia-runtest@latest
@@ -112,7 +112,7 @@ jobs:
         run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
 
       - name: Set CPU backend
-        run: echo "[Flux]\ngpu_backend = \"CPU\"\n" > LocalPreferences.toml
+        run: echo "[Flux]" > LocalPreferences.toml && echo "gpu_backend = \"CPU\"" >> LocalPreferences.toml
 
       - name: Run solver
         run: julia --project=. scripts/main.jl -c 2
@@ -147,7 +147,7 @@ jobs:
         run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
 
       - name: Set CPU backend
-        run: echo "[Flux]\ngpu_backend = \"CPU\"\n" > LocalPreferences.toml
+        run: echo "[Flux]" > LocalPreferences.toml && echo "gpu_backend = \"CPU\"" >> LocalPreferences.toml
 
       - name: Run solver
         run: julia --project=. scripts/main.jl -c 2 -m nn

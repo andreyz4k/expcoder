@@ -11,6 +11,7 @@ function DummyGuidingModel()
 end
 
 function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
+    start = time()
     grammar = model_inputs[1]
     grammar_len = length(grammar)
     batch_size = length(model_inputs[2])
@@ -26,7 +27,7 @@ function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
         result[i, :] .= weight
     end
 
-    return result
+    return time() - start, result
 end
 
 function update_guiding_model(guiding_model::DummyGuidingModel, traces)

@@ -59,7 +59,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             # @info model_inputs
 
             # @info "Batch: $(worker_ids)"
-            guiding_result = try
+            run_time, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
                 @error "Got error in guiding model" exception = e
@@ -71,7 +71,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             for (i, worker_id) in enumerate(worker_ids)
                 result_channel = server.result_channels[worker_id]
                 worker_result = guiding_result[:, i]
-                put!(result_channel, worker_result)
+                put!(result_channel, (run_time, worker_result))
             end
             # @info "Batch done"
         end
@@ -128,7 +128,10 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
 
     model_inputs = (full_grammar, inputs, output, trace_val, [is_known])
 
-    result = run_guiding_model(guiding_model_channels, model_inputs)
+    start = time()
+    run_time, result = run_guiding_model(guiding_model_channels, model_inputs)
+    sc.model_wait_time += time() - start
+    sc.model_run_time += run_time
 
     log_variable = result[end-2]
     log_lambda = result[end-1]

@@ -758,4 +758,6 @@ function log_results(sc, hits)
 
     @info "Iterations count $(sc.iterations_count)"
     @info "Total number of valid blocks $(sc.total_number_of_enumerated_programs)"
+    @info "Model wait time $(sc.model_wait_time)"
+    @info "Model run time $(sc.model_run_time)"
 end

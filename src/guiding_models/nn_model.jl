@@ -1036,6 +1036,8 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
 end
 
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
+    start = time()
     preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs) |> todevice
-    return guiding_model(preprocessed_inputs) |> cpu
+    result = guiding_model(preprocessed_inputs) |> cpu
+    return time() - start, result
 end

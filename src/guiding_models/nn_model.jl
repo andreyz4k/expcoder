@@ -285,7 +285,7 @@ function Embedder()
             position = Layers.ApplyEmbed(.+, SinCosPositionEmbed(d_emb)),
             segment = Layers.ApplyEmbed(.+, Embed(d_emb, 2), Transformers.HuggingFace.bert_ones_like),
         ),
-        Layers.DropoutLayer(LayerNorm(d_emb, ϵ = 1.0e-12), nothing),
+        Layers.DropoutLayer(LayerNorm(d_emb, eps = 1.0e-12), nothing),
     )
     encoder = Transformer(TransformerBlock, 2, head_num, d_emb, d_emb ÷ head_num, d_emb)
 

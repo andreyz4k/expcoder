@@ -149,7 +149,7 @@ using solver:
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
                         0xfd29da2cf6a4bc92 => PatternWrapper(
-                            Any[
+                            [
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object 7 7 7 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
@@ -173,7 +173,7 @@ using solver:
                             ],
                         ),
                         0x30dff9ab7c5f54e6 => PatternWrapper(
-                            Any[
+                            [
                                 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                                 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                                 0 0 any_object any_object any_object 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -197,7 +197,7 @@ using solver:
                             ],
                         ),
                         0x919fc667709f16b6 => PatternWrapper(
-                            Any[
+                            [
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
@@ -221,7 +221,7 @@ using solver:
                             ],
                         ),
                         0x7888f4371e0a1750 => PatternWrapper(
-                            Any[
+                            [
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
                                 any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object any_object
@@ -248,7 +248,7 @@ using solver:
                 ),
                 0x0000000000000003 => EitherOptions(
                     Dict{UInt64,Any}(
-                        0xfd29da2cf6a4bc92 => Any[
+                        0xfd29da2cf6a4bc92 => [
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 nothing nothing nothing 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -270,7 +270,7 @@ using solver:
                             0 0 0 0 0 0 0 0 0 9 9 0 0 0 0 0 0 0 0 0
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                         ],
-                        0x30dff9ab7c5f54e6 => Any[
+                        0x30dff9ab7c5f54e6 => [
                             nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing
                             nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing
                             nothing nothing 7 7 7 nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing
@@ -292,7 +292,7 @@ using solver:
                             nothing nothing nothing nothing nothing nothing nothing nothing nothing 9 9 nothing nothing nothing nothing nothing nothing nothing nothing nothing
                             nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing
                         ],
-                        0x919fc667709f16b6 => Any[
+                        0x919fc667709f16b6 => [
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 7 7 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -314,7 +314,7 @@ using solver:
                             0 0 0 0 0 0 0 0 0 nothing nothing 0 0 0 0 0 0 0 0 0
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                         ],
-                        0x7888f4371e0a1750 => Any[
+                        0x7888f4371e0a1750 => [
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                             0 0 7 7 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -415,31 +415,29 @@ using solver:
         @test is_reversible(fetch_elements)
         fetch_elements, _ = capture_free_vars(fetch_elements)
         @test run_in_reverse(fetch_elements, grid) == Dict(
-            UInt64(1) => Set(
-                Any[
-                    ((19, 11), 9),
-                    ((5, 3), 7),
-                    ((18, 10), 9),
-                    ((5, 4), 7),
-                    ((11, 11), 2),
-                    ((9, 11), 2),
-                    ((10, 12), 2),
-                    ((5, 5), 7),
-                    ((17, 10), 9),
-                    ((19, 10), 9),
-                    ((18, 9), 9),
-                    ((3, 3), 7),
-                    ((3, 4), 7),
-                    ((18, 11), 9),
-                    ((11, 12), 2),
-                    ((9, 12), 2),
-                    ((11, 13), 2),
-                    ((17, 9), 9),
-                    ((3, 5), 7),
-                    ((4, 4), 7),
-                    ((9, 13), 2),
-                ],
-            ),
+            UInt64(1) => Set([
+                ((19, 11), 9),
+                ((5, 3), 7),
+                ((18, 10), 9),
+                ((5, 4), 7),
+                ((11, 11), 2),
+                ((9, 11), 2),
+                ((10, 12), 2),
+                ((5, 5), 7),
+                ((17, 10), 9),
+                ((19, 10), 9),
+                ((18, 9), 9),
+                ((3, 3), 7),
+                ((3, 4), 7),
+                ((18, 11), 9),
+                ((11, 12), 2),
+                ((9, 12), 2),
+                ((11, 13), 2),
+                ((17, 9), 9),
+                ((3, 5), 7),
+                ((4, 4), 7),
+                ((9, 13), 2),
+            ]),
             UInt64(2) => 20,
             UInt64(3) => 20,
         )

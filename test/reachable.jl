@@ -1304,50 +1304,7 @@ using DataStructures
                         nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing
                     ],
                     "inputs" => Dict{String,Any}(
-                        "inp0" => Set(
-                            Any[
-                                ((19, 11), 9),
-                                ((5, 3), 7),
-                                ((18, 10), 9),
-                                ((5, 4), 7),
-                                ((11, 11), 2),
-                                ((9, 11), 2),
-                                ((10, 12), 2),
-                                ((5, 5), 7),
-                                ((17, 10), 9),
-                                ((19, 10), 9),
-                                ((18, 9), 9),
-                                ((3, 3), 7),
-                                ((3, 4), 7),
-                                ((18, 11), 9),
-                                ((11, 12), 2),
-                                ((9, 12), 2),
-                                ((11, 13), 2),
-                                ((17, 9), 9),
-                                ((3, 5), 7),
-                                ((4, 4), 7),
-                                ((9, 13), 2),
-                            ],
-                        ),
-                    ),
-                ),],
-                "test_examples" => Any[],
-                "request" => "inp0:set(tuple2(tuple2(int, int), color)) -> grid(color)",
-            ),
-        )
-        target_solution = "let \$v1 = Const(int, 20) in let \$v2 = Const(int, 20) in (rev_grid_elements \$inp0 \$v1 \$v2)"
-        guiding_model = DummyGuidingModel()
-        grammar = build_grammar(sample_library)
-        check_reachable(task, guiding_model, grammar, target_solution)
-    end
-
-    @testcase_log "Non-background cells reverse" begin
-        task = create_task(
-            Dict{String,Any}(
-                "name" => "Non-background cells",
-                "examples" => Any[Dict{String,Any}(
-                    "output" => Set(
-                        Any[
+                        "inp0" => Set([
                             ((19, 11), 9),
                             ((5, 3), 7),
                             ((18, 10), 9),
@@ -1369,8 +1326,47 @@ using DataStructures
                             ((3, 5), 7),
                             ((4, 4), 7),
                             ((9, 13), 2),
-                        ],
+                        ]),
                     ),
+                ),],
+                "test_examples" => Any[],
+                "request" => "inp0:set(tuple2(tuple2(int, int), color)) -> grid(color)",
+            ),
+        )
+        target_solution = "let \$v1 = Const(int, 20) in let \$v2 = Const(int, 20) in (rev_grid_elements \$inp0 \$v1 \$v2)"
+        guiding_model = DummyGuidingModel()
+        grammar = build_grammar(sample_library)
+        check_reachable(task, guiding_model, grammar, target_solution)
+    end
+
+    @testcase_log "Non-background cells reverse" begin
+        task = create_task(
+            Dict{String,Any}(
+                "name" => "Non-background cells",
+                "examples" => Any[Dict{String,Any}(
+                    "output" => Set([
+                        ((19, 11), 9),
+                        ((5, 3), 7),
+                        ((18, 10), 9),
+                        ((5, 4), 7),
+                        ((11, 11), 2),
+                        ((9, 11), 2),
+                        ((10, 12), 2),
+                        ((5, 5), 7),
+                        ((17, 10), 9),
+                        ((19, 10), 9),
+                        ((18, 9), 9),
+                        ((3, 3), 7),
+                        ((3, 4), 7),
+                        ((18, 11), 9),
+                        ((11, 12), 2),
+                        ((9, 12), 2),
+                        ((11, 13), 2),
+                        ((17, 9), 9),
+                        ((3, 5), 7),
+                        ((4, 4), 7),
+                        ((9, 13), 2),
+                    ]),
                     "inputs" => Dict{String,Any}(
                         "inp0" => [
                             nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing nothing

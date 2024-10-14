@@ -34,12 +34,9 @@ using solver:
     guiding_model = get_guiding_model("dummy")
     grammar = get_starting_grammar()
 
-    log_variable = 0.0
-    log_lambda = -10.0
-    log_free_var = 3.0
-    productions = Tuple{Program,Tp,Float64}[(p, p.t, p.name == "rev_fix_param" ? 4.0 : 0.0) for p in grammar]
-    g = Grammar(log_variable, log_lambda, log_free_var, productions)
-    guiding_model.grammars[grammar] = make_dummy_contextual(g)
+    guiding_model.log_lambda = -10.0
+    guiding_model.log_free_var = 3.0
+    guiding_model.preset_weights["rev_fix_param"] = 4.0
 
     function create_task(name, type_str, examples)
         train_inputs = []

@@ -34,12 +34,10 @@ using solver:
     guiding_model = get_guiding_model("dummy")
     grammar = get_starting_grammar()
 
-    log_variable = 4.0
-    log_lambda = -10.0
-    log_free_var = -3.0
-    productions = Tuple{Program,Tp,Float64}[(p, p.t, p.name == "rev_fix_param" ? 4.0 : 0.0) for p in grammar]
-    g = Grammar(log_variable, log_lambda, log_free_var, productions)
-    guiding_model.grammars[grammar] = make_dummy_contextual(g)
+    guiding_model.log_variable = 4.0
+    guiding_model.log_lambda = -10.0
+    guiding_model.log_free_var = -3.0
+    guiding_model.preset_weights["rev_fix_param"] = 4.0
 
     function create_task(name, type_str, examples)
         train_inputs = []
@@ -265,14 +263,11 @@ using solver:
             ],
         )
 
-        g_base_cont = guiding_model.grammars[grammar]
-        g_base = g_base_cont.no_context
+        base_preset_weights = guiding_model.preset_weights
+        preset_weights =
+            Dict{String,Float64}("repeat" => 4.0, "eq?" => 4.0, "rev_select" => 4.0, "rev_fix_param" => 4.0)
 
-        productions = Tuple{Program,Tp,Float64}[
-            (p, p.t, in(p.name, Set(["repeat", "eq?", "rev_select", "rev_fix_param"])) ? 4.0 : 0.0) for p in grammar
-        ]
-        g = Grammar(g_base.log_variable, g_base.log_lambda, g_base.log_free_var, productions)
-        guiding_model.grammars[grammar] = make_dummy_contextual(g)
+        guiding_model.preset_weights = preset_weights
 
         solutions = @time solve_task(
             task,
@@ -287,7 +282,7 @@ using solver:
             verbose,
         )
         @test length(solutions) >= 1
-        guiding_model.grammars[grammar] = g_base_cont
+        guiding_model.preset_weights = base_preset_weights
     end
     # end
 end

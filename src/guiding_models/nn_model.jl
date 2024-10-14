@@ -4,8 +4,6 @@ using NNlib
 
 using Transformers
 
-# alphabet = collect("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[](){},.;#?_+-*\$=> ")
-
 d_emb = 384
 
 d_state_in = d_emb * 4 + 1
@@ -15,7 +13,7 @@ d_state_out = 384
 d_dec_h = 64
 head_num = 4
 
-using Transformers.TextEncoders
+using Transformers.TextEncoders: TransformerTextEncoder
 
 vocab = vcat(
     ["pr_$n" for (n, p) in every_primitive],
@@ -179,6 +177,10 @@ function TextEncoders.TextEncodeBase.splitting(::ExpCoderTokenization, x::Senten
     return tokenize(TextEncoders.TextEncodeBase.getmeta(x).tp, TextEncoders.TextEncodeBase.getvalue(x).value)
 end
 
+function TextEncoders.TextEncodeBase.wrap(::solver.ExpCoderTokenization, ::Batch{S}, ::TokenStages) where {S}
+    error("Inaccessible")
+end
+
 function TextEncoders.TextEncodeBase.wrap(::ExpCoderTokenization, b::Batch{S}, x) where {S}
     S(x, TextEncoders.TextEncodeBase.getmeta(b))
 end
@@ -274,18 +276,19 @@ struct Embedder
     encoder::Any
 end
 
-using Transformers.HuggingFace
+using Transformers.HuggingFace: bert_ones_like
 
-using Transformers.Layers
+using Transformers.Layers:
+    ApplyEmbed, CompositeEmbedding, Embed, LayerNorm, SinCosPositionEmbed, TransformerBlock, DropoutLayer
 
 function Embedder()
     embedder = Chain(
-        Layers.CompositeEmbedding(
+        CompositeEmbedding(
             token = Embed(d_emb, length(vocab) + 4),
-            position = Layers.ApplyEmbed(.+, SinCosPositionEmbed(d_emb)),
-            segment = Layers.ApplyEmbed(.+, Embed(d_emb, 2), Transformers.HuggingFace.bert_ones_like),
+            position = ApplyEmbed(.+, SinCosPositionEmbed(d_emb)),
+            segment = ApplyEmbed(.+, Embed(d_emb, 2), bert_ones_like),
         ),
-        Layers.DropoutLayer(LayerNorm(d_emb, eps = 1.0e-12), nothing),
+        DropoutLayer(LayerNorm(d_emb, ϵ = 1.0e-12), nothing),
     )
     encoder = Transformer(TransformerBlock, 2, head_num, d_emb, d_emb ÷ head_num, d_emb)
 
@@ -758,6 +761,8 @@ function _preprocess_value(p::Preprocessor, val)
     return p.tokenizer_cache[val]
 end
 
+using Flux.OneHotArrays: onehotbatch
+
 function _preprocess_inputs(p::Preprocessor, inputs)
     if !haskey(p.inputs_cache, inputs)
         var_count = length(inputs)
@@ -878,8 +883,6 @@ function Base.getindex(d::DataBlock, i::Int)
     end
     return d.cache[i]
 end
-
-using Flux.OneHotArrays
 
 function Base.getindex(d::DataBlock, ind)
     if !haskey(d.cache, ind)

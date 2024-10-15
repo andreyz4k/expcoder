@@ -2,5 +2,5 @@ using Aqua
 using solver
 
 @testcase_log "Aqua.jl" begin
-    Aqua.test_all(solver; deps_compat = false, stale_deps = (ignore = [:CUDA, :cuDNN],), ambiguities = false)
+    Aqua.test_all(solver; deps_compat = false, stale_deps = (ignore = [:CUDA],), ambiguities = false)
 end

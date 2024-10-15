@@ -28,7 +28,6 @@ SharedMemoryLocks = "7bb51ff7-3c6a-41be-b642-de78e6952b49"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StitchBindings = "98c25cc8-eb50-4420-96bf-d3053e46f68d"
 Transformers = "21ca0261-441d-5938-ace7-c90938fde4d4"
-cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"

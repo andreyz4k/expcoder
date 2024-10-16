@@ -6,6 +6,8 @@ struct ValueEntry <: Entry
     type_id::UInt64
     values::Vector
     complexity_summary::Accumulator
+    max_summary::Accumulator
+    options_count::Int
     complexity::Float64
 end
 
@@ -254,6 +256,8 @@ struct EitherEntry <: Entry
     type_id::UInt64
     values::Vector
     complexity_summary::Accumulator
+    max_summary::Accumulator
+    options_count::Int
     complexity::Float64
 end
 
@@ -350,6 +354,8 @@ struct PatternEntry <: Entry
     type_id::UInt64
     values::Vector
     complexity_summary::Accumulator
+    max_summary::Accumulator
+    options_count::Int
     complexity::Float64
 end
 
@@ -515,6 +521,8 @@ struct AbductibleEntry <: Entry
     type_id::UInt64
     values::Vector
     complexity_summary::Accumulator
+    max_summary::Accumulator
+    options_count::Int
     complexity::Float64
 end
 

@@ -33,3 +33,7 @@ end
 function update_guiding_model(guiding_model::DummyGuidingModel, traces)
     return guiding_model
 end
+
+function get_encoded_value_length(model::DummyGuidingModel, max_summary)
+    return 1
+end

@@ -124,19 +124,24 @@ tokenize(t::TypeConstructor, v::Tuple) =
 
 function tokenize(t, v::EitherOptions)
     return [tokenize(t, x) for (_, x) in v.options]
-    tokens = ["EitherOptions("]
-    for (i, (_, x)) in enumerate(v.options)
-        # if i > 1
-        #     push!(tokens, ",")
-        # end
-        append!(tokens, tokenize(t, x))
-    end
-    push!(tokens, ")")
-    return tokens
 end
 
 tokenize(t, v::PatternWrapper) = vcat(["PatternWrapper("], tokenize(t, v.value), [")"])
 tokenize(t, v::AbductibleValue) = vcat(["AbductibleValue("], tokenize(t, v.value), [")"])
+
+token_weights = Dict(
+    "int" => 1,
+    "list" => 2,
+    "color" => 1,
+    "bool" => 1,
+    "float" => 1,
+    "grid" => 2,
+    "tuple2" => 2,
+    "coord" => 1,
+    "set" => 2,
+    "any" => 1,
+    "nothing" => 1,
+)
 
 struct ValueWrapper
     value::Any
@@ -272,7 +277,6 @@ function flatten_tokens(tokens)
 end
 
 struct Embedder
-    embedder::Any
     encoder::Any
 end
 
@@ -282,22 +286,21 @@ using Transformers.Layers:
     ApplyEmbed, CompositeEmbedding, Embed, LayerNorm, SinCosPositionEmbed, TransformerBlock, DropoutLayer
 
 function Embedder()
-    embedder = Chain(
+    encoder = Chain(
         CompositeEmbedding(
             token = Embed(d_emb, length(vocab) + 4),
             position = ApplyEmbed(.+, SinCosPositionEmbed(d_emb)),
             segment = ApplyEmbed(.+, Embed(d_emb, 2), bert_ones_like),
         ),
         DropoutLayer(LayerNorm(d_emb, ϵ = 1.0e-12), nothing),
+        Transformer(TransformerBlock, 2, head_num, d_emb, d_emb ÷ head_num, d_emb),
     )
-    encoder = Transformer(TransformerBlock, 2, head_num, d_emb, d_emb ÷ head_num, d_emb)
 
-    return Embedder(embedder, encoder)
+    return Embedder(encoder)
 end
 
 function (e::Embedder)(inputs)
-    embs = e.embedder(inputs)
-    outputs = e.encoder(embs)
+    outputs = e.encoder(inputs)
     while any(isnan, outputs.hidden_state)
         error("NaN detected in encoder output")
     end
@@ -308,7 +311,7 @@ function (e::Embedder)(inputs)
 end
 
 function Base.show(io::IO, e::Embedder)
-    print(io, "Embedder(", e.embedder, ", ", e.encoder, ")")
+    print(io, "Embedder(", e.encoder, ")")
 end
 Flux.@layer Embedder
 
@@ -393,10 +396,10 @@ end
 
 function (m::NNGuidingModel)(input_batch)
     grammar_tokens, inputs, outputs, trace_val_tokens, is_reversed = input_batch
+    trace_val_encodings = m.embedder(trace_val_tokens)
     grammar_func_encodings = m.embedder(grammar_tokens)
     input_encodings = m.input_output_encoder(inputs...)
     output_encodings = m.input_output_encoder(outputs...)
-    trace_val_encodings = m.embedder(trace_val_tokens)
 
     grammar_encodings = m.grammar_encoder(grammar_func_encodings)
 
@@ -1035,9 +1038,44 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
     return guiding_model
 end
 
+function get_encoded_value_length(model::NNGuidingModel, max_summary)
+    sum(token_weights[tname] * count for (tname, count) in max_summary; init = 0.0)
+end
+
+function split_model_inputs(model_inputs)
+    grammar, inputs, outputs, trace_val, is_reversed = model_inputs
+    new_batch_size = ceil(Int, length(is_reversed) / 2)
+    b1 = (
+        grammar,
+        inputs[1:new_batch_size],
+        outputs[1:new_batch_size],
+        trace_val[1:new_batch_size],
+        is_reversed[:, 1:new_batch_size],
+    )
+    b2 = (
+        grammar,
+        inputs[new_batch_size+1:end],
+        outputs[new_batch_size+1:end],
+        trace_val[new_batch_size+1:end],
+        is_reversed[:, new_batch_size+1:end],
+    )
+    return [b1, b2]
+end
+
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
     start = time()
-    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs) |> todevice
-    result = guiding_model(preprocessed_inputs) |> cpu
+    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs[1:5]) |> todevice
+    result = try
+        guiding_model(preprocessed_inputs) |> cpu
+    catch e
+        @error size(preprocessed_inputs[4].token)
+        # if isa(e, CUDNNError) && length(model_inputs[end]) > 1
+        #     @error "Splitting batch due to CUDA error"
+        #     batches = split_model_inputs(model_inputs)
+        #     hcat([run_guiding_model(guiding_model, b)[2] for b in batches]...)
+        # else
+        rethrow()
+        # end
+    end
     return time() - start, result
 end

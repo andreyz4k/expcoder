@@ -159,15 +159,43 @@ function _fix_option_hashes(sc, fixed_hashes, entry::EitherEntry)
 end
 
 function _make_entry(sc, type_id, values)
-    complexity_summary = get_complexity_summary(values, sc.types[type_id])
+    complexity_summary, max_summary, options_count = get_complexity_summary(values, sc.types[type_id])
     if any(isa(v, EitherOptions) for v in values)
-        return EitherEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
+        return EitherEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     elseif any(isa(v, AbductibleValue) for v in values)
-        return AbductibleEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
+        return AbductibleEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     elseif any(isa(v, PatternWrapper) for v in values)
-        return PatternEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
+        return PatternEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     else
-        return ValueEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
+        return ValueEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     end
 end
 

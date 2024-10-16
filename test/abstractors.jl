@@ -413,6 +413,8 @@ using DataStructures: OrderedDict, Accumulator
                     PatternWrapper(Any[1, any_object, any_object, any_object, 1, 1, any_object]),
                 ],
                 Accumulator("int" => 9, "list" => 3),
+                Accumulator("int" => 3, "list" => 1),
+                3,
                 12.0,
             ),
             1,

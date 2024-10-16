@@ -208,11 +208,25 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    complexity_summary = get_complexity_summary(new_values, sc.types[t_id])
+    complexity_summary, max_summary, options_count = get_complexity_summary(new_values, sc.types[t_id])
     if any(isa(value, PatternWrapper) for value in new_values)
-        new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = PatternEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     else
-        new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = ValueEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     end
     new_entry_index = push!(sc.entries, new_entry)
     new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)
@@ -285,11 +299,25 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    complexity_summary = get_complexity_summary(new_values, sc.types[t_id])
+    complexity_summary, max_summary, options_count = get_complexity_summary(new_values, sc.types[t_id])
     if any(isa(value, PatternWrapper) for value in new_values)
-        new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = PatternEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     else
-        new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = ValueEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     end
     new_entry_index = push!(sc.entries, new_entry)
     new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)
@@ -368,11 +396,25 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    complexity_summary = get_complexity_summary(new_values, sc.types[t_id])
+    complexity_summary, max_summary, options_count = get_complexity_summary(new_values, sc.types[t_id])
     if any(isa(value, PatternWrapper) for value in new_values)
-        new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = PatternEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     else
-        new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = ValueEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     end
     new_entry_index = push!(sc.entries, new_entry)
     new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)
@@ -616,11 +658,25 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    complexity_summary = get_complexity_summary(new_values, sc.types[t_id])
+    complexity_summary, max_summary, options_count = get_complexity_summary(new_values, sc.types[t_id])
     if any(isa(value, PatternWrapper) for value in new_values)
-        new_entry = PatternEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = PatternEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     else
-        new_entry = ValueEntry(t_id, new_values, complexity_summary, get_complexity(sc, complexity_summary))
+        new_entry = ValueEntry(
+            t_id,
+            new_values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
     end
     new_entry_index = push!(sc.entries, new_entry)
     new_parents, possible_result = find_related_branches(sc, branch_id, new_entry, new_entry_index)

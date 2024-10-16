@@ -35,18 +35,35 @@ function _registration_loop(server::GuidingModelServer)
     end
 end
 
+gpu_mem_threshold = 2 * 10^9
+
 function _guiding_processing_loop(server::GuidingModelServer)
     try
         while true
             request = take!(server.request_channel)
-            worker_id, (grammar, input, output, trace_val, is_rev) = request
+            worker_id, (grammar, input, output, trace_val, is_rev, max_summary, options_count) = request
             # @info "Got request from worker: $worker_id"
             worker_ids = [worker_id]
             batch = ([input], [output], Tuple{Tp,Vector{Any}}[trace_val], [is_rev])
-            while isready(server.request_channel)
+            value_max_length = get_encoded_value_length(server.model, max_summary)
+            batch_size = options_count
+
+            while isready(server.request_channel) && length(worker_ids) < 2
                 # @info "Fetching another request"
-                request = take!(server.request_channel)
-                worker_id, (_, input, output, trace_val, is_rev) = request
+                request = fetch(server.request_channel)
+                worker_id, (_, input, output, trace_val, is_rev, max_summary, options_count) = request
+
+                val_max_length = get_encoded_value_length(server.model, max_summary)
+
+                mem_footprint = max(value_max_length, val_max_length)^2 * (batch_size + options_count)
+                if mem_footprint > gpu_mem_threshold
+                    break
+                end
+
+                value_max_length = max(value_max_length, val_max_length)
+                batch_size += options_count
+
+                take!(server.request_channel)
                 # @info "Got another request from worker: $worker_id"
                 push!(worker_ids, worker_id)
                 push!(batch[1], input)
@@ -126,7 +143,7 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     val_entry = sc.entries[entry_id]
     trace_val = (sc.types[val_entry.type_id], val_entry.values)
 
-    model_inputs = (full_grammar, inputs, output, trace_val, [is_known])
+    model_inputs = (full_grammar, inputs, output, trace_val, [is_known], val_entry.max_summary, val_entry.options_count)
 
     start = time()
     run_time, result = run_guiding_model(guiding_model_channels, model_inputs)

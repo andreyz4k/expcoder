@@ -315,17 +315,45 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, path,
 
     for (var_id, t) in new_vars
         vals = calculated_values[var_id]
-        complexity_summary = get_complexity_summary(vals, t)
+        complexity_summary, max_summary, options_count = get_complexity_summary(vals, t)
         t_id = push!(sc.types, t)
         if any(isa(value, EitherOptions) for value in vals)
-            new_entry = EitherEntry(t_id, vals, complexity_summary, get_complexity(sc, complexity_summary))
+            new_entry = EitherEntry(
+                t_id,
+                vals,
+                complexity_summary,
+                max_summary,
+                options_count,
+                get_complexity(sc, complexity_summary),
+            )
         elseif any(isa(value, PatternWrapper) for value in vals)
-            new_entry = PatternEntry(t_id, vals, complexity_summary, get_complexity(sc, complexity_summary))
+            new_entry = PatternEntry(
+                t_id,
+                vals,
+                complexity_summary,
+                max_summary,
+                options_count,
+                get_complexity(sc, complexity_summary),
+            )
         elseif any(isa(value, AbductibleValue) for value in vals)
             has_abductibles = true
-            new_entry = AbductibleEntry(t_id, vals, complexity_summary, get_complexity(sc, complexity_summary))
+            new_entry = AbductibleEntry(
+                t_id,
+                vals,
+                complexity_summary,
+                max_summary,
+                options_count,
+                get_complexity(sc, complexity_summary),
+            )
         else
-            new_entry = ValueEntry(t_id, vals, complexity_summary, get_complexity(sc, complexity_summary))
+            new_entry = ValueEntry(
+                t_id,
+                vals,
+                complexity_summary,
+                max_summary,
+                options_count,
+                get_complexity(sc, complexity_summary),
+            )
         end
         if new_entry == out_entry
             throw(EnumerationException())

@@ -153,9 +153,16 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
     start_transaction!(sc, 1)
     for (key, t) in argument_types
         values = [inp[key] for inp in task.train_inputs]
-        complexity_summary = get_complexity_summary(values, t)
+        complexity_summary, max_summary, options_count = get_complexity_summary(values, t)
         type_id = push!(sc.types, t)
-        entry = ValueEntry(type_id, values, complexity_summary, get_complexity(sc, complexity_summary))
+        entry = ValueEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
         entry_id = push!(sc.entries, entry)
         var_id = create_next_var(sc)
         sc.input_keys[var_id] = key
@@ -181,9 +188,16 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         add_path!(sc.incoming_paths, branch_id, empty_path())
     end
     return_type = return_of_type(task.task_type)
-    complexity_summary = get_complexity_summary(task.train_outputs, return_type)
+    complexity_summary, max_summary, options_count = get_complexity_summary(task.train_outputs, return_type)
     type_id = push!(sc.types, return_type)
-    entry = ValueEntry(type_id, task.train_outputs, complexity_summary, get_complexity(sc, complexity_summary))
+    entry = ValueEntry(
+        type_id,
+        task.train_outputs,
+        complexity_summary,
+        max_summary,
+        options_count,
+        get_complexity(sc, complexity_summary),
+    )
     entry_id = push!(sc.entries, entry)
     var_id = create_next_var(sc)
     branch_id = increment!(sc.branches_count)

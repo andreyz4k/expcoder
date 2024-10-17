@@ -35,23 +35,25 @@ function _registration_loop(server::GuidingModelServer)
     end
 end
 
-gpu_mem_threshold = 2 * 10^9
+gpu_mem_threshold = 3 * 10^8
 
 function _guiding_processing_loop(server::GuidingModelServer)
     try
         while true
             request = take!(server.request_channel)
-            worker_id, (grammar, input, output, trace_val, is_rev, max_summary, options_count) = request
+            worker_id, (input, output, trace_val, is_rev, max_summary, options_count) = request
             # @info "Got request from worker: $worker_id"
             worker_ids = [worker_id]
-            batch = ([input], [output], Tuple{Tp,Vector{Any}}[trace_val], [is_rev])
+            batch = (input, output, trace_val, [is_rev])
             value_max_length = get_encoded_value_length(server.model, max_summary)
             batch_size = options_count
 
-            while isready(server.request_channel) && length(worker_ids) < 2
+            mem_footprint = max(value_max_length)^2 * batch_size
+
+            while isready(server.request_channel)
                 # @info "Fetching another request"
                 request = fetch(server.request_channel)
-                worker_id, (_, input, output, trace_val, is_rev, max_summary, options_count) = request
+                worker_id, (input, output, trace_val, is_rev, max_summary, options_count) = request
 
                 val_max_length = get_encoded_value_length(server.model, max_summary)
 
@@ -66,20 +68,21 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 take!(server.request_channel)
                 # @info "Got another request from worker: $worker_id"
                 push!(worker_ids, worker_id)
-                push!(batch[1], input)
-                push!(batch[2], output)
-                push!(batch[3], trace_val)
+                append!(batch[1], input)
+                append!(batch[2], output)
+                append!(batch[3], trace_val)
                 push!(batch[4], is_rev)
             end
 
-            model_inputs = (grammar, batch[1:3]..., hcat(batch[4]...))
+            model_inputs = (batch[1:3]..., hcat(batch[4]...))
             # @info model_inputs
 
             # @info "Batch: $(worker_ids)"
-            run_time, guiding_result = try
+            run_time, preprocessing_time, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
                 @error "Got error in guiding model" exception = e
+                @error "Memory footprint: $mem_footprint"
                 @error "Model inputs: $(model_inputs)"
                 rethrow()
             end
@@ -88,7 +91,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             for (i, worker_id) in enumerate(worker_ids)
                 result_channel = server.result_channels[worker_id]
                 worker_result = guiding_result[:, i]
-                put!(result_channel, (run_time, worker_result))
+                put!(result_channel, (run_time, preprocessing_time, worker_result))
             end
             # @info "Batch done"
         end
@@ -130,7 +133,6 @@ function _grammar_with_weights(grammar::Grammar, production_scores, log_variable
 end
 
 function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, entry_id, is_known)
-    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
     inputs = []
     for (var_id, name) in sc.input_keys
         # Using var id as branch id because they are the same for input variables
@@ -143,23 +145,39 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     val_entry = sc.entries[entry_id]
     trace_val = (sc.types[val_entry.type_id], val_entry.values)
 
-    model_inputs = (full_grammar, inputs, output, trace_val, [is_known], val_entry.max_summary, val_entry.options_count)
+    model_inputs = (
+        [inputs],
+        [output],
+        Tuple{Tp,Vector{Any}}[trace_val],
+        reshape([is_known], 1, 1),
+        val_entry.max_summary,
+        val_entry.options_count,
+    )
 
     start = time()
-    run_time, result = run_guiding_model(guiding_model_channels, model_inputs)
-    sc.model_wait_time += time() - start
-    sc.model_run_time += run_time
+    run_time, times, result = run_guiding_model(guiding_model_channels, model_inputs)
+    push!(sc.model_wait_time, time() - start)
+    push!(sc.model_run_time, run_time)
+    for (k, t) in times
+        if !haskey(sc.model_times, k)
+            sc.model_times[k] = []
+        end
+        push!(sc.model_times[k], t)
+    end
 
     log_variable = result[end-2]
     log_lambda = result[end-1]
     log_free_var = result[end]
-    if !haskey(contextual_grammar_cache, grammar)
+
+    grammar_len = length(grammar)
+
+    if !haskey(contextual_grammar_cache, grammar_len)
         productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
         g = Grammar(log_variable, log_lambda, log_free_var, productions)
-        contextual_grammar_cache[grammar] = make_dummy_contextual(g)
-        return contextual_grammar_cache[grammar]
+        contextual_grammar_cache[grammar_len] = make_dummy_contextual(g)
+        return contextual_grammar_cache[grammar_len]
     else
-        prototype = contextual_grammar_cache[grammar]
+        prototype = contextual_grammar_cache[grammar_len]
         production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
         return ContextualGrammar(
             _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),

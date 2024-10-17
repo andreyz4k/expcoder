@@ -1,5 +1,6 @@
 
 mutable struct DummyGuidingModel
+    grammar::Any
     preset_weights::Dict
     log_variable::Float64
     log_lambda::Float64
@@ -7,14 +8,22 @@ mutable struct DummyGuidingModel
 end
 
 function DummyGuidingModel()
-    return DummyGuidingModel(Dict(), 0.0, -3.0, -3.0)
+    return DummyGuidingModel(nothing, Dict(), 0.0, -3.0, -3.0)
+end
+
+function set_current_grammar!(guiding_model::DummyGuidingModel, grammar)
+    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
+    guiding_model.grammar = full_grammar
+end
+
+function clear_model_cache(guiding_model::DummyGuidingModel)
+    guiding_model.grammar = nothing
 end
 
 function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
     start = time()
-    grammar = model_inputs[1]
-    grammar_len = length(grammar)
-    batch_size = length(model_inputs[2])
+    grammar_len = length(guiding_model.grammar)
+    batch_size = length(model_inputs[4])
 
     result = zeros(grammar_len, batch_size)
     result[grammar_len-2, :] .= guiding_model.log_variable
@@ -23,11 +32,11 @@ function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
 
     for (fname, weight) in guiding_model.preset_weights
         prim = every_primitive[fname]
-        i = findfirst(isequal(prim), grammar)
+        i = findfirst(isequal(prim), guiding_model.grammar)
         result[i, :] .= weight
     end
 
-    return time() - start, result
+    return time() - start, Dict(), result
 end
 
 function update_guiding_model(guiding_model::DummyGuidingModel, traces)

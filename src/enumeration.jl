@@ -786,6 +786,12 @@ function log_results(sc, hits)
 
     @info "Iterations count $(sc.iterations_count)"
     @info "Total number of valid blocks $(sc.total_number_of_enumerated_programs)"
-    @info "Model wait time $(sc.model_wait_time)"
-    @info "Model run time $(sc.model_run_time)"
+    @info "Average model wait time $(mean(sc.model_wait_time))"
+    @info "Total model wait time $(sum(sc.model_wait_time))"
+    @info "Average model run time $(mean(sc.model_run_time))"
+    @info "Total model run time $(sum(sc.model_run_time))"
+    for (k, ts) in sc.model_times
+        @info "Average model $k time $(mean(ts))"
+        @info "Total model $k time $(sum(ts))"
+    end
 end

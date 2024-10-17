@@ -9,7 +9,8 @@ using solver:
     Program,
     Tp,
     Grammar,
-    make_dummy_contextual
+    make_dummy_contextual,
+    set_current_grammar!
 
 @testset "Enumeration" begin
     type_weights = Dict{String,Any}(
@@ -33,6 +34,7 @@ using solver:
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
     guiding_model = get_guiding_model("dummy")
     grammar = get_starting_grammar()
+    set_current_grammar!(guiding_model, grammar)
 
     guiding_model.log_lambda = -10.0
     guiding_model.log_free_var = 3.0

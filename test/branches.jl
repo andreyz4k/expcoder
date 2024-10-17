@@ -30,7 +30,9 @@ using solver:
     _get_custom_arg_checkers,
     step_arg_checker,
     combine_arg_checkers,
-    generate_grammar
+    generate_grammar,
+    set_current_grammar!,
+    contextual_grammar_cache
 
 using DataStructures
 
@@ -79,6 +81,9 @@ using DataStructures
             "concat",
         ]
     ]
+    set_current_grammar!(guiding_model, grammar)
+    empty!(contextual_grammar_cache)
+
     function initial_state(sc, branch_id, guiding_model, grammar)
         target_type_id = first(get_connected_from(sc.branch_types, branch_id))
         var_id = sc.branch_vars[branch_id]

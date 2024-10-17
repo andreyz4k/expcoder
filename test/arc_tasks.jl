@@ -1,4 +1,4 @@
-using solver: create_arc_task, get_starting_grammar, get_guiding_model, solve_task
+using solver: create_arc_task, get_starting_grammar, get_guiding_model, solve_task, set_current_grammar!
 
 @testset "Arc tasks" begin
     function _create_arc_task(filename, dir = "ARC/data/training/")
@@ -9,6 +9,7 @@ using solver: create_arc_task, get_starting_grammar, get_guiding_model, solve_ta
 
     grammar = get_starting_grammar()
     guiding_model = get_guiding_model("dummy")
+    set_current_grammar!(guiding_model, grammar)
     type_weights = Dict{String,Any}(
         "int" => 1.0,
         "list" => 1.0,

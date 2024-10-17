@@ -313,7 +313,7 @@ end
 function Base.show(io::IO, e::Embedder)
     print(io, "Embedder(", e.encoder, ")")
 end
-Flux.@layer Embedder
+Flux.@layer :expand Embedder
 
 struct GrammarEncoder end
 
@@ -354,9 +354,9 @@ function (m::InputOutputEncoder)(inputs, subbatch_mask)
     return m.linear2(batched)
 end
 
-Flux.@layer InputOutputEncoder
+Flux.@layer :expand InputOutputEncoder
 
-struct NNGuidingModel
+mutable struct NNGuidingModel
     preprocessor::Any
 
     embedder::Embedder
@@ -365,6 +365,8 @@ struct NNGuidingModel
 
     state_processor::Chain
     decoder::Chain
+
+    grammar_cache::Any
 end
 
 function _create_tokenizer_process(e)
@@ -391,17 +393,22 @@ function NNGuidingModel()
             Dense(d_state_h, d_state_out, relu),
         ) |> todevice
     decoder = Chain(Dense(d_state_out + d_emb, d_dec_h, relu), Dense(d_dec_h, 1)) |> todevice
-    return NNGuidingModel(Preprocessor(), embedder, grammar_encoder, input_output_encoder, state_processor, decoder)
+    return NNGuidingModel(
+        Preprocessor(),
+        embedder,
+        grammar_encoder,
+        input_output_encoder,
+        state_processor,
+        decoder,
+        nothing,
+    )
 end
 
-function (m::NNGuidingModel)(input_batch)
-    grammar_tokens, inputs, outputs, trace_val_tokens, is_reversed = input_batch
+function (m::NNGuidingModel)(grammar_func_encodings, grammar_encodings, input_batch)
+    inputs, outputs, trace_val_tokens, is_reversed = input_batch
     trace_val_encodings = m.embedder(trace_val_tokens)
-    grammar_func_encodings = m.embedder(grammar_tokens)
     input_encodings = m.input_output_encoder(inputs...)
     output_encodings = m.input_output_encoder(outputs...)
-
-    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
 
     state_emb = vcat(
         repeat(grammar_encodings, 1, size(input_encodings, 2)),
@@ -418,7 +425,26 @@ function (m::NNGuidingModel)(input_batch)
     return reshape(result, size(result)[2:end]...)
 end
 
-Flux.@layer NNGuidingModel
+function clear_model_cache(m::NNGuidingModel)
+    m.grammar_cache = nothing
+end
+
+function set_current_grammar!(m::NNGuidingModel, grammar)
+    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
+    grammar_tokens = _preprocess_value(m.preprocessor, full_grammar) |> todevice
+    grammar_func_encodings = m.embedder(grammar_tokens)
+    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
+    m.grammar_cache = (grammar_func_encodings, grammar_encodings)
+end
+
+Flux.trainable(m::NNGuidingModel) = (
+    embedder = m.embedder,
+    input_output_encoder = m.input_output_encoder,
+    state_processor = m.state_processor,
+    decoder = m.decoder,
+)
+
+Flux.@layer :expand NNGuidingModel
 
 function _extract_program_blocks(p::LetRevClause, blocks)
     push!(blocks, (p.inp_var_id, p.v, true))
@@ -919,14 +945,11 @@ function Base.getindex(d::DataBlock, ind)
 end
 
 function _preprocess_model_inputs(m::NNGuidingModel, batch)
-    grammar, inputs, outputs, trace_val, is_reversed = batch
-    grammar_tokens = _preprocess_value(m.preprocessor, grammar)
-    trace_val_tokens = _preprocess_value(m.preprocessor, trace_val)
+    inputs, outputs, trace_val, is_reversed = batch
     return (
-        grammar_tokens,
         _preprocess_input_batch(m.preprocessor, inputs),
         _preprocess_output_batch(m.preprocessor, outputs),
-        trace_val_tokens,
+        _preprocess_value(m.preprocessor, trace_val),
         is_reversed,
     )
 end
@@ -1016,7 +1039,9 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
                 # Calculate the gradient of the objective
                 # with respect to the parameters within the model:
                 loss_val, grads = Flux.withgradient(guiding_model) do m
-                    result = m(inputs)
+                    grammar_func_encodings = m.embedder(inputs[1])
+                    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
+                    result = m(grammar_func_encodings, grammar_encodings, inputs[2:end])
                     loss(result, summaries)
                 end
                 push!(losses, loss_val)
@@ -1039,7 +1064,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
 end
 
 function get_encoded_value_length(model::NNGuidingModel, max_summary)
-    sum(token_weights[tname] * count for (tname, count) in max_summary; init = 0.0)
+    sum(token_weights[tname] * count for (tname, count) in max_summary; init = 0)
 end
 
 function split_model_inputs(model_inputs)
@@ -1063,12 +1088,16 @@ function split_model_inputs(model_inputs)
 end
 
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
+    times = Dict()
     start = time()
-    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs[1:5]) |> todevice
+    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs[1:4]) |> todevice
+    times["preprocessing"] = time() - start
+    start = time()
     result = try
-        guiding_model(preprocessed_inputs) |> cpu
+        grammar_func_encodings, grammar_encodings = guiding_model.grammar_cache
+        guiding_model(grammar_func_encodings, grammar_encodings, preprocessed_inputs) |> cpu
     catch e
-        @error size(preprocessed_inputs[4].token)
+        @error size(preprocessed_inputs[3].token)
         # if isa(e, CUDNNError) && length(model_inputs[end]) > 1
         #     @error "Splitting batch due to CUDA error"
         #     batches = split_model_inputs(model_inputs)
@@ -1077,5 +1106,5 @@ function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
         rethrow()
         # end
     end
-    return time() - start, result
+    return time() - start, times, result
 end

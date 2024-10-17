@@ -7,7 +7,9 @@ using solver:
     supervised_task_checker,
     parse_program,
     _get_custom_arg_checkers,
-    is_reversible
+    is_reversible,
+    set_current_grammar!,
+    contextual_grammar_cache
 
 @testset "Inventions" begin
     type_weights = Dict{String,Any}(
@@ -82,6 +84,8 @@ using solver:
         )
 
         grammar = vcat(base_grammar, [parse_program("#(lambda (repeat (car \$0)))")])
+        set_current_grammar!(guiding_model, grammar)
+        empty!(contextual_grammar_cache)
 
         solutions = @time solve_task(
             task,
@@ -143,6 +147,8 @@ using solver:
                 parse_program("#(lambda (lambda (repeat (cons \$0 \$1))))"),
             ],
         )
+        set_current_grammar!(guiding_model, grammar)
+        empty!(contextual_grammar_cache)
 
         solutions = @time solve_task(
             task,
@@ -235,6 +241,8 @@ using solver:
                 parse_program("#(lambda (lambda (- \$0 (- \$0 \$1))))"),
             ],
         )
+        set_current_grammar!(guiding_model, grammar)
+        empty!(contextual_grammar_cache)
 
         solutions = @time solve_task(
             task,
@@ -314,6 +322,8 @@ using solver:
                 parse_program("#(lambda (concat \$0 (#(lambda (concat \$0 \$0)) \$0)))"),
             ],
         )
+        set_current_grammar!(guiding_model, grammar)
+        empty!(contextual_grammar_cache)
 
         solutions = @time solve_task(
             task,

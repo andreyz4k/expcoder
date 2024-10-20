@@ -361,7 +361,7 @@ end
 
 Flux.@layer :expand InputOutputEncoder
 
-mutable struct NNGuidingModel
+mutable struct NNGuidingModel <: AbstractGuidingModel
     preprocessor::Any
 
     embedder::Embedder
@@ -372,6 +372,9 @@ mutable struct NNGuidingModel
     decoder::Chain
 
     grammar_cache::Any
+    inputs_cache::Any
+    outputs_cache::Any
+    inputs_cache_index::Dict
 end
 
 function _create_tokenizer_process(e)
@@ -406,14 +409,38 @@ function NNGuidingModel()
         state_processor,
         decoder,
         nothing,
+        zeros32(d_emb, 0),
+        zeros32(d_emb, 0),
+        Dict(),
     )
 end
 
-function (m::NNGuidingModel)(grammar_func_encodings, grammar_encodings, input_batch)
-    inputs, outputs, trace_val_tokens, is_reversed = input_batch
+function (m::NNGuidingModel)(input_batch)
+    grammar_tokens, inputs, outputs, trace_val_tokens, is_reversed = input_batch
+    grammar_func_encodings, grammar_encodings = encode_grammar(m, grammar_tokens)
+    input_encodings = encode_input_output(m, inputs)
+    output_encodings = encode_input_output(m, outputs)
+    return run_model_body(
+        m,
+        grammar_func_encodings,
+        grammar_encodings,
+        input_encodings,
+        output_encodings,
+        trace_val_tokens,
+        is_reversed,
+    )
+end
+
+function run_model_body(
+    m::NNGuidingModel,
+    grammar_func_encodings,
+    grammar_encodings,
+    input_encodings,
+    output_encodings,
+    trace_val_tokens,
+    is_reversed,
+)
     trace_val_encodings = m.embedder(trace_val_tokens)
-    input_encodings = m.input_output_encoder(inputs...)
-    output_encodings = m.input_output_encoder(outputs...)
 
     state_emb = vcat(
         repeat(grammar_encodings, 1, size(input_encodings, 2)),
@@ -432,14 +459,25 @@ end
 
 function clear_model_cache(m::NNGuidingModel)
     m.grammar_cache = nothing
+    m.inputs_cache = zeros32(d_emb, 0)
+    m.outputs_cache = zeros32(d_emb, 0)
+    empty!(m.inputs_cache_index)
+end
+
+function encode_input_output(m::NNGuidingModel, input_output_tokens)
+    return m.input_output_encoder(input_output_tokens...)
+end
+
+function encode_grammar(m::NNGuidingModel, grammar_tokens)
+    grammar_func_encodings = m.embedder(grammar_tokens)
+    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
+    return grammar_func_encodings, grammar_encodings
 end
 
 function set_current_grammar!(m::NNGuidingModel, grammar)
     full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
     grammar_tokens = _preprocess_value(m.preprocessor, full_grammar) |> todevice
-    grammar_func_encodings = m.embedder(grammar_tokens)
-    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
-    m.grammar_cache = (grammar_func_encodings, grammar_encodings)
+    m.grammar_cache = encode_grammar(m, grammar_tokens)
 end
 
 Flux.trainable(m::NNGuidingModel) = (
@@ -959,16 +997,6 @@ function Base.getindex(d::DataBlock, ind)
     return d.cache[ind]
 end
 
-function _preprocess_model_inputs(m::NNGuidingModel, batch)
-    inputs, outputs, trace_val, is_reversed = batch
-    return (
-        _preprocess_input_batch(m.preprocessor, inputs),
-        _preprocess_output_batch(m.preprocessor, outputs),
-        _preprocess_value(m.preprocessor, trace_val),
-        is_reversed,
-    )
-end
-
 function expand_traces(all_traces, preprocessor, batch_size = 1)
     groups = []
 
@@ -1054,9 +1082,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
                 # Calculate the gradient of the objective
                 # with respect to the parameters within the model:
                 loss_val, grads = Flux.withgradient(guiding_model) do m
-                    grammar_func_encodings = m.embedder(inputs[1])
-                    grammar_encodings = m.grammar_encoder(grammar_func_encodings)
-                    result = m(grammar_func_encodings, grammar_encodings, inputs[2:end])
+                    result = m(inputs)
                     loss(result, summaries)
                 end
                 push!(losses, loss_val)
@@ -1085,14 +1111,68 @@ end
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
     times = Dict()
     start = time()
-    preprocessed_inputs = _preprocess_model_inputs(guiding_model, model_inputs[1:4]) |> todevice
+    inputs, outputs, trace_val, is_reversed, task_names = model_inputs
+
+    new_tasks = Set(filter(t -> !haskey(guiding_model.inputs_cache_index, t), task_names))
+
+    trace_val_tokens = _preprocess_value(guiding_model.preprocessor, trace_val) |> todevice
+    is_reversed = is_reversed |> todevice
+
     times["preprocessing"] = time() - start
     start = time()
     result = try
+        if !isempty(new_tasks)
+            new_inputs = []
+            new_outputs = []
+            new_task_names = []
+            for (task_name, inp, out) in zip(task_names, inputs, outputs)
+                if in(task_name, new_tasks)
+                    push!(new_inputs, inp)
+                    push!(new_outputs, out)
+                    push!(new_task_names, task_name)
+                    delete!(new_tasks, task_name)
+                end
+            end
+
+            new_proc_inputs = _preprocess_input_batch(guiding_model.preprocessor, new_inputs) |> todevice
+            new_proc_outputs = _preprocess_output_batch(guiding_model.preprocessor, new_outputs) |> todevice
+
+            new_input_encodings = encode_input_output(guiding_model, new_proc_inputs) |> cpu
+            new_output_encodings = encode_input_output(guiding_model, new_proc_outputs) |> cpu
+
+            for task_name in new_task_names
+                j = length(guiding_model.inputs_cache_index) + 1
+                guiding_model.inputs_cache_index[task_name] = j
+            end
+
+            guiding_model.inputs_cache = hcat(guiding_model.inputs_cache |> cpu, new_input_encodings) |> todevice
+            guiding_model.outputs_cache = hcat(guiding_model.outputs_cache |> cpu, new_output_encodings) |> todevice
+        end
+
+        inputs_mask = zeros(Bool, size(guiding_model.inputs_cache, 2), length(task_names))
+
+        for (i, task_name) in enumerate(task_names)
+            inputs_mask[guiding_model.inputs_cache_index[task_name], i] = true
+        end
+
+        inputs_mask = inputs_mask |> todevice
+
+        input_encodings = guiding_model.inputs_cache * inputs_mask
+        output_encodings = guiding_model.outputs_cache * inputs_mask
+        times["inputs_outputs"] = time() - start
+
         grammar_func_encodings, grammar_encodings = guiding_model.grammar_cache
-        guiding_model(grammar_func_encodings, grammar_encodings, preprocessed_inputs) |> cpu
+        run_model_body(
+            guiding_model,
+            grammar_func_encodings,
+            grammar_encodings,
+            input_encodings,
+            output_encodings,
+            trace_val_tokens,
+            is_reversed,
+        ) |> cpu
     catch e
-        @error size(preprocessed_inputs[3].token)
+        @error size(trace_val_tokens.token)
         rethrow()
     end
     return time() - start, times, result

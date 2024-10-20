@@ -1,5 +1,5 @@
 
-mutable struct DummyGuidingModel
+mutable struct DummyGuidingModel <: AbstractGuidingModel
     grammar::Any
     preset_weights::Dict
     log_variable::Float64

@@ -41,10 +41,10 @@ function _guiding_processing_loop(server::GuidingModelServer)
     try
         while true
             request = take!(server.request_channel)
-            worker_id, (input, output, trace_val, is_rev, max_summary, options_count) = request
+            worker_id, (input, output, trace_val, is_rev, task_name, max_summary, options_count) = request
             # @info "Got request from worker: $worker_id"
             worker_ids = [worker_id]
-            batch = (input, output, trace_val, [is_rev])
+            batch = ([input], [output], Tuple{Tp,Vector{Any}}[trace_val], [is_rev], [task_name])
             value_max_length = get_encoded_value_length(server.model, max_summary)
             batch_size = options_count
 
@@ -53,7 +53,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             while isready(server.request_channel)
                 # @info "Fetching another request"
                 request = fetch(server.request_channel)
-                worker_id, (input, output, trace_val, is_rev, max_summary, options_count) = request
+                worker_id, (input, output, trace_val, is_rev, task_name, max_summary, options_count) = request
 
                 val_max_length = get_encoded_value_length(server.model, max_summary)
 
@@ -68,17 +68,18 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 take!(server.request_channel)
                 # @info "Got another request from worker: $worker_id"
                 push!(worker_ids, worker_id)
-                append!(batch[1], input)
-                append!(batch[2], output)
-                append!(batch[3], trace_val)
+                push!(batch[1], input)
+                push!(batch[2], output)
+                push!(batch[3], trace_val)
                 push!(batch[4], is_rev)
+                push!(batch[5], task_name)
             end
 
-            model_inputs = (batch[1:3]..., hcat(batch[4]...))
+            model_inputs = (batch[1:3]..., reshape(batch[4], 1, :), batch[5])
             # @info model_inputs
 
             # @info "Batch: $(worker_ids)"
-            run_time, preprocessing_time, guiding_result = try
+            run_time, times, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
                 @error "Got error in guiding model" exception = e
@@ -91,7 +92,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             for (i, worker_id) in enumerate(worker_ids)
                 result_channel = server.result_channels[worker_id]
                 worker_result = guiding_result[:, i]
-                put!(result_channel, (run_time, preprocessing_time, worker_result))
+                put!(result_channel, (run_time, times, worker_result))
             end
             # @info "Batch done"
         end
@@ -117,12 +118,19 @@ function stop_server(server::GuidingModelServer)
     @info "Guiding model server stopped"
 end
 
-function run_guiding_model(guiding_model_channels, model_inputs)
+function send_inputs_to_model(guiding_model_channels, model_inputs)
     put!(guiding_model_channels[1], (myid(), model_inputs))
     # @info "Waiting for model result"
     result = take!(guiding_model_channels[2])
     # @info "Got model result"
     return result
+end
+
+function send_inputs_to_model(guiding_model::AbstractGuidingModel, model_inputs)
+    (input, output, trace_val, is_rev, task_name, max_summary, options_count) = model_inputs
+    batch = ([input], [output], Tuple{Tp,Vector{Any}}[trace_val], reshape([is_rev], 1, 1), [task_name])
+    run_time, times, guiding_result = run_guiding_model(guiding_model, batch)
+    return run_time, times, guiding_result[:, 1]
 end
 
 contextual_grammar_cache = Dict()
@@ -145,17 +153,10 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     val_entry = sc.entries[entry_id]
     trace_val = (sc.types[val_entry.type_id], val_entry.values)
 
-    model_inputs = (
-        [inputs],
-        [output],
-        Tuple{Tp,Vector{Any}}[trace_val],
-        reshape([is_known], 1, 1),
-        val_entry.max_summary,
-        val_entry.options_count,
-    )
+    model_inputs = (inputs, output, trace_val, is_known, sc.task_name, val_entry.max_summary, val_entry.options_count)
 
     start = time()
-    run_time, times, result = run_guiding_model(guiding_model_channels, model_inputs)
+    run_time, times, result = send_inputs_to_model(guiding_model_channels, model_inputs)
     push!(sc.model_wait_time, time() - start)
     push!(sc.model_run_time, run_time)
     for (k, t) in times

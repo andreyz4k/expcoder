@@ -35,6 +35,7 @@ RUN juliaup default 1.11.0
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'
 
+RUN mkdir -p /root/.julia/config
 RUN echo 'atreplinit((_)->Base.require(Main, :TerminalExtensions))' > /root/.julia/config/startup.jl
 RUN echo 'using Revise' >> /root/.julia/config/startup.jl
 RUN echo 'using OhMyREPL' >> /root/.julia/config/startup.jl

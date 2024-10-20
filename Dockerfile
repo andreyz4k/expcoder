@@ -23,14 +23,14 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 RUN curl -fsSL https://install.julialang.org | sh -s -- -y
 
-RUN juliaup default 1.11.0
-
 # RUN cat /root/.bashrc
 # RUN source /root/.bashrc
 
 ENV JULIA_PATH=/root/.juliaup
 ENV CARGO_PATH=/root/.cargo
 ENV PATH=$JULIA_PATH/bin:$CARGO_PATH/bin:$PATH
+
+RUN juliaup default 1.11.0
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'
 

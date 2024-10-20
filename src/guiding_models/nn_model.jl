@@ -326,30 +326,35 @@ end
 Flux.@layer GrammarEncoder
 
 struct InputOutputEncoder
-    chain::Chain
+    convs::Vector
+    pooler::GlobalMaxPool
     linear1::Dense
     linear2::Dense
 end
 
 hidden_channels = 32
-d_emb_in = hidden_channels * 3 * 3
 
 function InputOutputEncoder()
-    chain = Chain(
+    convs = [
         Conv((3, 3), 10 => hidden_channels, relu; pad = SamePad()),
-        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
-        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
-        Conv((3, 3), hidden_channels => hidden_channels, relu; pad = SamePad()),
-        AdaptiveMeanPool((3, 3)),
-    )
-    linear1 = Dense(d_emb_in, d_emb, relu)
+        Conv((3, 3), hidden_channels => hidden_channels * 2, relu; pad = SamePad()),
+        Conv((3, 3), hidden_channels * 2 => floor(Int, d_emb / 2), relu; pad = SamePad()),
+        Conv((3, 3), floor(Int, d_emb / 2) => d_emb, relu; pad = SamePad()),
+    ]
+    linear1 = Dense(d_emb, d_emb, relu)
     linear2 = Dense(d_emb, d_emb, relu)
-    return InputOutputEncoder(chain, linear1, linear2)
+    return InputOutputEncoder(convs, GlobalMaxPool(), linear1, linear2)
 end
 
-function (m::InputOutputEncoder)(inputs, subbatch_mask)
-    convoluted = Flux.MLUtils.flatten(m.chain(inputs))
-    l1 = m.linear1(convoluted)
+function (m::InputOutputEncoder)(inputs, mask, subbatch_mask)
+    val = inputs
+    for conv in m.convs
+        val = conv(val)
+        val = permutedims(permutedims(val, [1, 2, 4, 3]) .* mask, [1, 2, 4, 3])
+    end
+
+    flattened = Flux.MLUtils.flatten(m.pooler(val))
+    l1 = m.linear1(flattened)
     batched = l1 * subbatch_mask
     return m.linear2(batched)
 end
@@ -801,17 +806,21 @@ function _preprocess_inputs(p::Preprocessor, inputs)
         max_x = maximum(size(v, 1) for var in inputs for v in var; init = 3)
         max_y = maximum(size(v, 2) for var in inputs for v in var; init = 3)
         input_matrix = fill(10, max_x, max_y, example_count * var_count)
+        input_mask = zeros32(max_x, max_y, example_count * var_count)
+
         i = 1
         for var_examples in inputs
             for example in var_examples
                 k, l = size(example)
                 input_matrix[1:k, 1:l, i] = example
+                input_mask[1:k, 1:l, i] .= 1.0
+
                 i += 1
             end
         end
         input_batch = onehotbatch(input_matrix, 0:10)[1:10, :, :, :]
         input_batch = permutedims(input_batch, [2, 3, 1, 4])
-        p.inputs_cache[inputs] = input_batch, subbatch_mask
+        p.inputs_cache[inputs] = input_batch, input_mask, subbatch_mask
     end
     return p.inputs_cache[inputs]
 end
@@ -821,42 +830,46 @@ function _preprocess_input_batch(p::Preprocessor, inputs)
 
     processed_inputs = [_preprocess_inputs(p, i) for i in inputs]
 
-    example_count = sum(m -> length(m[2]), processed_inputs)
+    example_count = sum(m -> length(m[3]), processed_inputs)
 
     input_subbatch_mask = zeros(Float32, example_count, batch_size)
 
-    max_x = maximum(size(v, 1) for (v, _) in processed_inputs; init = 3)
-    max_y = maximum(size(v, 2) for (v, _) in processed_inputs; init = 3)
+    max_x = maximum(size(v, 1) for (v, _, _) in processed_inputs; init = 3)
+    max_y = maximum(size(v, 2) for (v, _, _) in processed_inputs; init = 3)
     input_batch_matrix = fill(false, max_x, max_y, 10, example_count)
+    input_batch_mask = zeros32(max_x, max_y, example_count)
 
     i = 1
-    for (j, (input_matrix, subbatch_mask)) in enumerate(processed_inputs)
+    for (j, (input_matrix, input_mask, subbatch_mask)) in enumerate(processed_inputs)
         input_subbatch_mask[i:i+length(subbatch_mask)-1, j] = subbatch_mask
         input_batch_matrix[1:size(input_matrix, 1), 1:size(input_matrix, 2), :, i:i+length(subbatch_mask)-1] =
             input_matrix
+        input_batch_mask[1:size(input_matrix, 1), 1:size(input_matrix, 2), i:i+length(subbatch_mask)-1] = input_mask
         i += length(subbatch_mask)
     end
-    return input_batch_matrix, input_subbatch_mask
+    return input_batch_matrix, input_batch_mask, input_subbatch_mask
 end
 
 function _preprocess_output_batch(p::Preprocessor, outputs)
     batch_size = length(outputs)
     processed_outputs = [_preprocess_output(p, o) for o in outputs]
-    example_count = sum(m -> length(m[2]), processed_outputs)
+    example_count = sum(m -> length(m[3]), processed_outputs)
     output_subbatch_mask = zeros(Float32, example_count, batch_size)
 
-    max_x = maximum(size(v, 1) for (v, _) in processed_outputs; init = 3)
-    max_y = maximum(size(v, 2) for (v, _) in processed_outputs; init = 3)
+    max_x = maximum(size(v, 1) for (v, _, _) in processed_outputs; init = 3)
+    max_y = maximum(size(v, 2) for (v, _, _) in processed_outputs; init = 3)
     output_batch_matrix = fill(false, max_x, max_y, 10, example_count)
+    output_batch_mask = zeros32(max_x, max_y, example_count)
 
     i = 1
-    for (j, (output_matrix, subbatch_mask)) in enumerate(processed_outputs)
+    for (j, (output_matrix, output_mask, subbatch_mask)) in enumerate(processed_outputs)
         output_subbatch_mask[i:i+length(subbatch_mask)-1, j] = subbatch_mask
         output_batch_matrix[1:size(output_matrix, 1), 1:size(output_matrix, 2), :, i:i+length(subbatch_mask)-1] =
             output_matrix
+        output_batch_mask[1:size(output_matrix, 1), 1:size(output_matrix, 2), i:i+length(subbatch_mask)-1] = output_mask
         i += length(subbatch_mask)
     end
-    return output_batch_matrix, output_subbatch_mask
+    return output_batch_matrix, output_batch_mask, output_subbatch_mask
 end
 
 function _preprocess_output(p::Preprocessor, output)
@@ -867,13 +880,15 @@ function _preprocess_output(p::Preprocessor, output)
         max_x = maximum(size(v, 1) for v in output; init = 3)
         max_y = maximum(size(v, 2) for v in output; init = 3)
         output_matrix = fill(10, max_x, max_y, example_count)
+        output_mask = zeros32(max_x, max_y, example_count)
         for (j, example) in enumerate(output)
             k, l = size(example)
             output_matrix[1:k, 1:l, j] = example
+            output_mask[1:k, 1:l, j] .= 1.0
         end
         output_batch = onehotbatch(output_matrix, 0:10)[1:10, :, :, :]
         output_batch = permutedims(output_batch, [2, 3, 1, 4])
-        p.output_cache[output] = output_batch, subbatch_mask
+        p.output_cache[output] = output_batch, output_mask, subbatch_mask
     end
     return p.output_cache[output]
 end
@@ -1067,26 +1082,6 @@ function get_encoded_value_length(model::NNGuidingModel, max_summary)
     sum(token_weights[tname] * count for (tname, count) in max_summary; init = 0)
 end
 
-function split_model_inputs(model_inputs)
-    grammar, inputs, outputs, trace_val, is_reversed = model_inputs
-    new_batch_size = ceil(Int, length(is_reversed) / 2)
-    b1 = (
-        grammar,
-        inputs[1:new_batch_size],
-        outputs[1:new_batch_size],
-        trace_val[1:new_batch_size],
-        is_reversed[:, 1:new_batch_size],
-    )
-    b2 = (
-        grammar,
-        inputs[new_batch_size+1:end],
-        outputs[new_batch_size+1:end],
-        trace_val[new_batch_size+1:end],
-        is_reversed[:, new_batch_size+1:end],
-    )
-    return [b1, b2]
-end
-
 function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
     times = Dict()
     start = time()
@@ -1098,13 +1093,7 @@ function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
         guiding_model(grammar_func_encodings, grammar_encodings, preprocessed_inputs) |> cpu
     catch e
         @error size(preprocessed_inputs[3].token)
-        # if isa(e, CUDNNError) && length(model_inputs[end]) > 1
-        #     @error "Splitting batch due to CUDA error"
-        #     batches = split_model_inputs(model_inputs)
-        #     hcat([run_guiding_model(guiding_model, b)[2] for b in batches]...)
-        # else
         rethrow()
-        # end
     end
     return time() - start, times, result
 end

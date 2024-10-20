@@ -23,6 +23,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 RUN curl -fsSL https://install.julialang.org | sh -s -- -y
 
+RUN juliaup default 1.11.0
+
 # RUN cat /root/.bashrc
 # RUN source /root/.bashrc
 
@@ -32,10 +34,15 @@ ENV PATH=$JULIA_PATH/bin:$CARGO_PATH/bin:$PATH
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'
 
+RUN echo 'atreplinit((_)->Base.require(Main, :TerminalExtensions))' > /root/.julia/config/startup.jl
+RUN echo 'using Revise' >> /root/.julia/config/startup.jl
+RUN echo 'using OhMyREPL' >> /root/.julia/config/startup.jl
+RUN echo 'using TestEnv' >> /root/.julia/config/startup.jl
+
 COPY . /workspaces/expcoder
 
-RUN julia --project=/workspaces/expcoder -e 'using Pkg; Pkg.instantiate(); using Revise; using solver'
-
 RUN cd /workspaces/expcoder && git remote set-url origin git@github.com:andreyz4k/expcoder.git
+
+RUN julia --project=/workspaces/expcoder -e 'using Pkg; Pkg.instantiate(); using Revise; using solver'
 
 LABEL org.opencontainers.image.source=https://github.com/andreyz4k/expcoder

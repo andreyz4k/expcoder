@@ -30,6 +30,7 @@ ENV JULIA_PATH=/root/.juliaup
 ENV CARGO_PATH=/root/.cargo
 ENV PATH=$JULIA_PATH/bin:$CARGO_PATH/bin:$PATH
 
+RUN juliaup add 1.11.0
 RUN juliaup default 1.11.0
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'

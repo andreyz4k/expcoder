@@ -36,7 +36,7 @@ function run_guiding_model(guiding_model::DummyGuidingModel, model_inputs)
         result[i, :] .= weight
     end
 
-    return time() - start, Dict(), result
+    return Dict("run" => time() - start), result
 end
 
 function update_guiding_model(guiding_model::DummyGuidingModel, traces)

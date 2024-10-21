@@ -79,7 +79,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             # @info model_inputs
 
             # @info "Batch: $(worker_ids)"
-            run_time, times, guiding_result = try
+            times, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
                 @error "Got error in guiding model" exception = e
@@ -92,7 +92,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             for (i, worker_id) in enumerate(worker_ids)
                 result_channel = server.result_channels[worker_id]
                 worker_result = guiding_result[:, i]
-                put!(result_channel, (run_time, times, worker_result))
+                put!(result_channel, (times, worker_result))
             end
             # @info "Batch done"
         end
@@ -129,8 +129,8 @@ end
 function send_inputs_to_model(guiding_model::AbstractGuidingModel, model_inputs)
     (input, output, trace_val, is_rev, task_name, max_summary, options_count) = model_inputs
     batch = ([input], [output], Tuple{Tp,Vector{Any}}[trace_val], reshape([is_rev], 1, 1), [task_name])
-    run_time, times, guiding_result = run_guiding_model(guiding_model, batch)
-    return run_time, times, guiding_result[:, 1]
+    times, guiding_result = run_guiding_model(guiding_model, batch)
+    return times, guiding_result[:, 1]
 end
 
 contextual_grammar_cache = Dict()
@@ -156,14 +156,11 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     model_inputs = (inputs, output, trace_val, is_known, sc.task_name, val_entry.max_summary, val_entry.options_count)
 
     start = time()
-    run_time, times, result = send_inputs_to_model(guiding_model_channels, model_inputs)
-    push!(sc.model_wait_time, time() - start)
-    push!(sc.model_run_time, run_time)
+    times, result = send_inputs_to_model(guiding_model_channels, model_inputs)
+
+    push!(sc.stats["wait"], time() - start)
     for (k, t) in times
-        if !haskey(sc.model_times, k)
-            sc.model_times[k] = []
-        end
-        push!(sc.model_times[k], t)
+        push!(sc.stats[k], t)
     end
 
     log_variable = result[end-2]

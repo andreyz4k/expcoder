@@ -87,9 +87,7 @@ mutable struct SolutionContext
 
     verbose::Bool
     transaction_depth::Int
-    model_wait_time::Vector{Float64}
-    model_run_time::Vector{Float64}
-    model_times::Dict
+    stats::DefaultDict
 end
 
 function create_starting_context(task::Task, type_weights, hyperparameters, verbose)::SolutionContext
@@ -150,9 +148,7 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         VectorStorage{Vector{Tuple{Program,Int64}}}(),
         verbose,
         0,
-        [],
-        [],
-        Dict(),
+        DefaultDict(() -> []),
     )
     start_transaction!(sc, 1)
     for (key, t) in argument_types

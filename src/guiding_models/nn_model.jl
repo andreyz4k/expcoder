@@ -1183,5 +1183,6 @@ function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
         @error size(trace_val_tokens.token)
         rethrow()
     end
-    return time() - start, times, result
+    times["run"] = time() - start
+    return times, result
 end

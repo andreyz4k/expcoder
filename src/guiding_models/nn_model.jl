@@ -373,7 +373,9 @@ mutable struct NNGuidingModel <: AbstractGuidingModel
 
     grammar_cache::Any
     inputs_cache::Any
+    inputs_cache_gpu::Any
     outputs_cache::Any
+    outputs_cache_gpu::Any
     inputs_cache_index::Dict
 end
 
@@ -410,7 +412,9 @@ function NNGuidingModel()
         decoder,
         nothing,
         zeros32(d_emb, 0),
+        nothing,
         zeros32(d_emb, 0),
+        nothing,
         Dict(),
     )
 end
@@ -460,7 +464,9 @@ end
 function clear_model_cache(m::NNGuidingModel)
     m.grammar_cache = nothing
     m.inputs_cache = zeros32(d_emb, 0)
+    m.inputs_cache_gpu = nothing
     m.outputs_cache = zeros32(d_emb, 0)
+    m.outputs_cache_gpu = nothing
     empty!(m.inputs_cache_index)
 end
 
@@ -1145,8 +1151,10 @@ function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
                 guiding_model.inputs_cache_index[task_name] = j
             end
 
-            guiding_model.inputs_cache = hcat(guiding_model.inputs_cache |> cpu, new_input_encodings) |> todevice
-            guiding_model.outputs_cache = hcat(guiding_model.outputs_cache |> cpu, new_output_encodings) |> todevice
+            guiding_model.inputs_cache = hcat(guiding_model.inputs_cache, new_input_encodings)
+            guiding_model.inputs_cache_gpu = guiding_model.inputs_cache |> todevice
+            guiding_model.outputs_cache = hcat(guiding_model.outputs_cache, new_output_encodings)
+            guiding_model.outputs_cache_gpu = guiding_model.outputs_cache |> todevice
         end
 
         inputs_mask = zeros(Bool, size(guiding_model.inputs_cache, 2), length(task_names))
@@ -1157,8 +1165,8 @@ function run_guiding_model(guiding_model::NNGuidingModel, model_inputs)
 
         inputs_mask = inputs_mask |> todevice
 
-        input_encodings = guiding_model.inputs_cache * inputs_mask
-        output_encodings = guiding_model.outputs_cache * inputs_mask
+        input_encodings = guiding_model.inputs_cache_gpu * inputs_mask
+        output_encodings = guiding_model.outputs_cache_gpu * inputs_mask
         times["inputs_outputs"] = time() - start
 
         grammar_func_encodings, grammar_encodings = guiding_model.grammar_cache

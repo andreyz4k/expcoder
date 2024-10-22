@@ -202,7 +202,8 @@ function is_var_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verb
         @info vars_mapping[bl.output_var]
         @info bp.output_var
     end
-    if vars_mapping[bl.output_var] != bp.output_var[1]
+
+    if !haskey(vars_mapping, bl.output_var) || vars_mapping[bl.output_var] != bp.output_var[1]
         return false
     end
     if haskey(vars_mapping, bl.p.var_id)

@@ -187,22 +187,24 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
     output_branch_id = bp.output_var[2]
     output_entry = sc.entries[sc.branch_entries[output_branch_id]]
 
-    parent_branches = get_all_parents(sc, output_branch_id)
-    parent_blocks = Set([
-        bl_id for parent_branch_id in parent_branches for
-        (_, bl_id) in get_connected_from(sc.branch_incoming_blocks, parent_branch_id)
+    related_branches = union(get_all_parents(sc, output_branch_id), get_all_children(sc, output_branch_id))
+    related_blocks = Set([
+        bl_id for related_branch_id in related_branches for
+        (_, bl_id) in get_connected_from(sc.branch_incoming_blocks, related_branch_id)
     ])
     p = bp.skeleton
-    for bl_id in parent_blocks
-        parent_bl = sc.blocks[bl_id]
-        if isa(parent_bl.p, FreeVar)
+    block_id = nothing
+    for bl_id in related_blocks
+        bl = sc.blocks[bl_id]
+        if isa(bl.p, FreeVar)
             continue
         end
-        if is_on_path(bp.skeleton, parent_bl.p, Dict(), sc.verbose)
+        if is_on_path(bp.skeleton, bl.p, Dict(), sc.verbose)
             if sc.verbose
-                @info "Found matching parent block $parent_bl"
+                @info "Found matching parent block $bl"
             end
-            p = parent_bl.p
+            p = bl.p
+            block_id = bl_id
         end
     end
 
@@ -258,10 +260,12 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
         p_type = arrow(arg_types..., return_of_type(bp.request))
     end
     input_branches = Dict{UInt64,UInt64}(var_id => branch_id for (var_id, branch_id, _) in input_vars)
-    new_block =
-        ProgramBlock(p, p_type, bp.cost, [var_id for (var_id, _, _) in input_vars], bp.output_var[1], is_reverse)
-    block_id = push!(sc.blocks, new_block)
-    sc.block_root_branches[block_id] = bp.output_var[2]
+    if isnothing(block_id)
+        new_block =
+            ProgramBlock(p, p_type, bp.cost, [var_id for (var_id, _, _) in input_vars], bp.output_var[1], is_reverse)
+        block_id = push!(sc.blocks, new_block)
+        sc.block_root_branches[block_id] = bp.output_var[2]
+    end
     return [(block_id, input_branches, Dict{UInt64,UInt64}(bp.output_var[1] => bp.output_var[2]))], []
 end
 

@@ -297,7 +297,7 @@ function enumeration_iteration_finished_traced(
         else
             if sc.verbose
                 @info "Not on path $new_block"
-                @info "Target blocks $target_blocks"
+                # @info "Target blocks $target_blocks"
             end
         end
     end
@@ -323,6 +323,7 @@ function enumeration_iteration_traced(
     if (is_reversible(bp.skeleton) && !isa(sc.entries[sc.branch_entries[br_id]], AbductibleEntry)) || state_finished(bp)
         if sc.verbose
             @info "Checking finished $bp"
+            @info "Target blocks $target_blocks"
         end
         found_solutions = transaction(sc) do
             if is_block_loops(sc, bp)
@@ -352,7 +353,6 @@ function enumeration_iteration_traced(
                 else
                     if sc.verbose
                         @info "Not on path $new_bp"
-                        @info "Target blocks $target_blocks"
                     end
                 end
             end
@@ -368,6 +368,7 @@ function enumeration_iteration_traced(
     else
         if sc.verbose
             @info "Checking unfinished $bp"
+            @info "Target blocks $target_blocks"
         end
         for new_bp in block_state_successors(sc, max_free_parameters, bp)
             if any(is_bp_on_path(new_bp, bl, vars_mapping) for bl in target_blocks)
@@ -379,7 +380,6 @@ function enumeration_iteration_traced(
             else
                 if sc.verbose
                     @info "Not on path $new_bp"
-                    @info "Target blocks $target_blocks"
                 end
             end
         end

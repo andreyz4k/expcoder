@@ -186,17 +186,37 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
     is_reverse = is_reversible(bp.skeleton)
     output_branch_id = bp.output_var[2]
     output_entry = sc.entries[sc.branch_entries[output_branch_id]]
+
+    parent_branches = get_all_parents(sc, output_branch_id)
+    parent_blocks = Set([
+        bl_id for parent_branch_id in parent_branches for
+        (_, bl_id) in get_connected_from(sc.branch_incoming_blocks, parent_branch_id)
+    ])
+    p = bp.skeleton
+    for bl_id in parent_blocks
+        parent_bl = sc.blocks[bl_id]
+        if isa(parent_bl.p, FreeVar)
+            continue
+        end
+        if is_on_path(bp.skeleton, parent_bl.p, Dict(), sc.verbose)
+            if sc.verbose
+                @info "Found matching parent block $parent_bl"
+            end
+            p = parent_bl.p
+        end
+    end
+
     if is_reverse &&
        !isa(output_entry, AbductibleEntry) &&
        !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
         # @info "Try get reversed for $bp"
-        p, input_vars = try_get_reversed_inputs(sc, bp.skeleton, bp.context, bp.path, bp.output_var[2], bp.cost)
+        p, input_vars = try_get_reversed_inputs(sc, p, bp.context, bp.path, output_branch_id, bp.cost)
         var_locations = collect_var_locations(p)
         for (var_id, locations) in var_locations
             sc.unknown_var_locations[var_id] = collect(locations)
         end
     elseif isnothing(bp.input_vars)
-        p, new_vars = capture_free_vars(sc, bp.skeleton, bp.context)
+        p, new_vars = capture_free_vars(sc, p, bp.context)
         input_vars = []
         min_path_cost = sc.unknown_min_path_costs[output_branch_id] + bp.cost
         complexity_factor = sc.unknown_complexity_factors[output_branch_id]
@@ -226,7 +246,6 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
             sc.constrained_contexts[new_constraint_id] = context_id
         end
     else
-        p = bp.skeleton
         input_vars = [
             (var_id, branch_id, first(get_connected_from(sc.branch_types, branch_id))) for
             (var_id, branch_id) in bp.input_vars

@@ -241,6 +241,12 @@ function _capture_free_vars(sc, p::FreeVar, context, captured_vars)
         _, t = apply_context(context, p.t)
         var_id = create_next_var(sc)
         push!(captured_vars, (var_id, t))
+    elseif isa(p.var_id, UInt64)
+        var_id = p.var_id
+        t = p.t
+        if !in((var_id, t), captured_vars)
+            push!(captured_vars, (var_id, t))
+        end
     else
         i = parse(Int, p.var_id[2:end])
         var_id, t = captured_vars[i]

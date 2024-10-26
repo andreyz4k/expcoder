@@ -61,8 +61,6 @@ function _guiding_processing_loop(server::GuidingModelServer)
         while !server.stopped
             while isready(server.end_tasks_channel)
                 task_name = take!(server.end_tasks_channel)
-                task_channel = server.result_channels[task_name]
-                close(task_channel)
                 delete!(server.result_channels, task_name)
             end
             request = take!(server.request_channel)
@@ -81,8 +79,6 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 # @info "Fetching another request"
                 while isready(server.end_tasks_channel)
                     task_name = take!(server.end_tasks_channel)
-                    task_channel = server.result_channels[task_name]
-                    close(task_channel)
                     delete!(server.result_channels, task_name)
                 end
 

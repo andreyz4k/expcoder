@@ -34,6 +34,10 @@ function _registration_loop(server::GuidingModelServer)
     try
         while !server.stopped
             task_name = take!(server.worker_register_channel)
+            while isready(server.end_tasks_channel)
+                end_task_name = take!(server.end_tasks_channel)
+                delete!(server.result_channels, end_task_name)
+            end
             if !haskey(server.result_channels, task_name)
                 result_channel = RemoteChannel(() -> Channel{Any}(1000))
                 server.result_channels[task_name] = result_channel

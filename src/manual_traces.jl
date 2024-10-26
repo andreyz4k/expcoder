@@ -10,19 +10,25 @@ function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
-        put!(register_channel, myid())
+        put!(register_channel, task.name)
         while true
-            pid, request_channel, result_channel = take!(register_response_channel)
-            if pid == myid()
+            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            if task_name == task.name
                 @info "Building manual trace for $(task.name)"
-                hit, cost = @time build_manual_trace(task, sol, (request_channel, result_channel), grammar)
+                hit, cost = @time build_manual_trace(
+                    task,
+                    sol,
+                    (request_channel, result_channel, end_tasks_channel),
+                    grammar,
+                )
                 return (task.name, hit, cost)
             else
-                put!(register_response_channel, (pid, request_channel, result_channel))
+                put!(register_response_channel, (task_name, request_channel, result_channel, end_tasks_channel))
                 sleep(0.01)
             end
         end
     end
+
     traces = Dict{String,Any}()
     for (task_name, hit, cost) in new_traces
         if !haskey(traces, task_name)
@@ -312,7 +318,6 @@ function enumeration_iteration_traced(
     max_free_parameters::Int,
     guiding_model_channels,
     grammar,
-    q,
     bp::BlockPrototype,
     br_id::UInt64,
     is_explained::Bool,
@@ -321,6 +326,7 @@ function enumeration_iteration_traced(
     rev_vars_mapping,
 )
     sc.iterations_count += 1
+    q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
     if (is_reversible(bp.skeleton) && !isa(sc.entries[sc.branch_entries[br_id]], AbductibleEntry)) || state_finished(bp)
         if sc.verbose
             @info "Checking finished $bp"
@@ -350,7 +356,9 @@ function enumeration_iteration_traced(
                         @info "On path $new_bp"
                         @info "Enqueing $new_bp"
                     end
-                    q[new_bp] = new_bp.cost
+                    lock(sc.queues_lock) do
+                        q[new_bp] = new_bp.cost
+                    end
                 else
                     if sc.verbose
                         @info "Not on path $new_bp"
@@ -377,7 +385,9 @@ function enumeration_iteration_traced(
                     @info "On path $new_bp"
                     @info "Enqueing $new_bp"
                 end
-                q[new_bp] = new_bp.cost
+                lock(sc.queues_lock) do
+                    q[new_bp] = new_bp.cost
+                end
             else
                 if sc.verbose
                     @info "Not on path $new_bp"
@@ -386,11 +396,13 @@ function enumeration_iteration_traced(
         end
         found_solutions = []
     end
-    update_branch_priority(sc, br_id, is_explained)
+    lock(sc.queues_lock) do
+        update_branch_priority(sc, br_id, is_explained)
+    end
     return found_solutions
 end
 
-function build_manual_trace(task::Task, target_solution, guiding_model, grammar)
+function build_manual_trace(task::Task, target_solution, guiding_model_channels, grammar)
     verbose_test = false
     max_free_parameters = 10
     run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
@@ -424,80 +436,99 @@ function build_manual_trace(task::Task, target_solution, guiding_model, grammar)
 
     # verbose_test = true
     sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
-    enqueue_updates(sc, guiding_model, grammar)
 
-    branches = Dict()
-    for br_id in 1:sc.branches_count[]
-        branches[sc.branch_vars[br_id]] = br_id
-    end
-    if verbose_test
-        @info branches
-        @info in_blocks
-        @info out_blocks
-    end
-    save_changes!(sc, 0)
+    receiver = Threads.@spawn grammar_receiver_loop(sc, guiding_model_channels[2], grammar)
+    try
+        enqueue_updates(sc, guiding_model_channels, grammar)
 
-    inner_mapping = Dict{UInt64,UInt64}()
-    rev_inner_mapping = Dict{UInt64,UInt64}()
-    for (arg, _) in task.task_type.arguments
-        for (v, a) in sc.input_keys
-            if a == arg
-                inner_mapping[v] = vars_mapping[arg]
-                rev_inner_mapping[vars_mapping[arg]] = v
+        branches = Dict()
+        for br_id in 1:sc.branches_count[]
+            branches[sc.branch_vars[br_id]] = br_id
+        end
+        if verbose_test
+            @info branches
+            @info in_blocks
+            @info out_blocks
+        end
+        save_changes!(sc, 0)
+
+        inner_mapping = Dict{UInt64,UInt64}()
+        rev_inner_mapping = Dict{UInt64,UInt64}()
+        for (arg, _) in task.task_type.arguments
+            for (v, a) in sc.input_keys
+                if a == arg
+                    inner_mapping[v] = vars_mapping[arg]
+                    rev_inner_mapping[vars_mapping[arg]] = v
+                end
             end
         end
-    end
-    inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
-    rev_inner_mapping[sc.branch_vars[sc.target_branch_id]] = vars_mapping["out"]
-    if verbose_test
-        @info inner_mapping
-    end
-
-    from_input = true
-
-    while (!isempty(sc.pq_input) || !isempty(sc.pq_output))
-        from_input = !from_input
-        pq = from_input ? sc.pq_input : sc.pq_output
-        if isempty(pq)
-            continue
+        inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
+        rev_inner_mapping[sc.branch_vars[sc.target_branch_id]] = vars_mapping["out"]
+        if verbose_test
+            @info inner_mapping
         end
-        (br_id, is_explained) = draw(pq)
-        q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-        bp = dequeue!(q)
 
-        target_blocks_group = from_input ? in_blocks : out_blocks
-        var_id = sc.branch_vars[br_id]
-        if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
-            update_branch_priority(sc, br_id, is_explained)
-            continue
-        end
-        target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
+        from_input = true
 
-        found_solutions = enumeration_iteration_traced(
-            run_context,
-            sc,
-            max_free_parameters,
-            guiding_model,
-            grammar,
-            q,
-            bp,
-            br_id,
-            is_explained,
-            target_blocks,
-            inner_mapping,
-            rev_inner_mapping,
-        )
+        while (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches))
+            sleep(0.0001)
+            from_input = !from_input
+            pq = from_input ? sc.pq_input : sc.pq_output
+            if isempty(pq)
+                continue
+            end
+            br_id, is_explained, bp = lock(sc.queues_lock) do
+                (br_id, is_explained) = draw(pq)
+                q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
+                bp = dequeue!(q)
+                br_id, is_explained, bp
+            end
 
-        for solution_path in found_solutions
-            solution, cost, trace_values = extract_solution(sc, solution_path)
-            # @info "Got solution $solution with cost $cost"
-            ll = task.log_likelihood_checker(task, solution)
-            if !isnothing(ll) && !isinf(ll)
-                dt = time() - start_time
-                res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
-                return res, -cost + ll
+            target_blocks_group = from_input ? in_blocks : out_blocks
+            var_id = sc.branch_vars[br_id]
+            if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
+                lock(sc.queues_lock) do
+                    update_branch_priority(sc, br_id, is_explained)
+                end
+                continue
+            end
+            target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
+
+            found_solutions = enumeration_iteration_traced(
+                run_context,
+                sc,
+                max_free_parameters,
+                guiding_model_channels,
+                grammar,
+                bp,
+                br_id,
+                is_explained,
+                target_blocks,
+                inner_mapping,
+                rev_inner_mapping,
+            )
+
+            for solution_path in found_solutions
+                solution, cost, trace_values = extract_solution(sc, solution_path)
+                # @info "Got solution $solution with cost $cost"
+                ll = task.log_likelihood_checker(task, solution)
+                if !isnothing(ll) && !isinf(ll)
+                    dt = time() - start_time
+                    res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
+                    return res, -cost + ll
+                end
             end
         end
+    catch e
+        bt = catch_backtrace()
+        @error "Error in build_manual_trace" exception = (e, bt)
+        rethrow()
+    finally
+        put!(guiding_model_channels[2], (task.name, "stop"))
+        put!(guiding_model_channels[3], task.name)
+        wait(receiver)
     end
+    @info [sc.blocks[UInt64(i)] for i in 1:length(sc.blocks)]
+    @error "Could not find a trace for $(task.name) with target solution $target_solution"
     error("Could not find a trace for $(task.name) with target solution $target_solution")
 end

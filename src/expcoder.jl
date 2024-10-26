@@ -70,7 +70,9 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
         if in(branch_id, new_unknown_branches)
             enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
         elseif haskey(sc.branch_queues_unknown, branch_id)
-            update_branch_priority(sc, branch_id, false)
+            lock(sc.queues_lock) do
+                update_branch_priority(sc, branch_id, false)
+            end
         end
     end
     for branch_id in union(updated_factors_explained_branches, new_explained_branches)
@@ -80,7 +82,9 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
         if !haskey(sc.branch_queues_explained, branch_id)
             enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
         else
-            update_branch_priority(sc, branch_id, true)
+            lock(sc.queues_lock) do
+                update_branch_priority(sc, branch_id, true)
+            end
         end
     end
 end
@@ -457,12 +461,12 @@ function enumeration_iteration(
     max_free_parameters::Int,
     guiding_model_channels,
     grammar,
-    q,
     bp::BlockPrototype,
     br_id::UInt64,
     is_explained::Bool,
 )
     sc.iterations_count += 1
+    q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
     if (is_reversible(bp.skeleton) && !isa(sc.entries[sc.branch_entries[br_id]], AbductibleEntry)) || state_finished(bp)
         if sc.verbose
             @info "Checking finished $bp"
@@ -479,11 +483,13 @@ function enumeration_iteration(
                 throw(EnumerationException())
             end
             unfinished_prototypes, found_solutions = finish_results
-            for new_bp in unfinished_prototypes
-                if sc.verbose
-                    @info "Enqueing $new_bp"
+            lock(sc.queues_lock) do
+                for new_bp in unfinished_prototypes
+                    if sc.verbose
+                        @info "Enqueing $new_bp"
+                    end
+                    q[new_bp] = new_bp.cost
                 end
-                q[new_bp] = new_bp.cost
             end
             enqueue_updates(sc, guiding_model_channels, grammar)
             if isempty(unfinished_prototypes)
@@ -498,15 +504,20 @@ function enumeration_iteration(
         if sc.verbose
             @info "Checking unfinished $bp"
         end
-        for new_bp in block_state_successors(sc, max_free_parameters, bp)
-            if sc.verbose
-                @info "Enqueing $new_bp"
+        new_bps = block_state_successors(sc, max_free_parameters, bp)
+        lock(sc.queues_lock) do
+            for new_bp in new_bps
+                if sc.verbose
+                    @info "Enqueing $new_bp"
+                end
+                q[new_bp] = new_bp.cost
             end
-            q[new_bp] = new_bp.cost
         end
         found_solutions = []
     end
-    update_branch_priority(sc, br_id, is_explained)
+    lock(sc.queues_lock) do
+        update_branch_priority(sc, br_id, is_explained)
+    end
     return found_solutions
 end
 
@@ -538,60 +549,69 @@ function solve_task(
     max_free_parameters = 10
 
     start_time = time()
+    receiver = Threads.@spawn grammar_receiver_loop(sc, guiding_model_channels[2], grammar)
+    try
+        enqueue_updates(sc, guiding_model_channels, grammar)
+        save_changes!(sc, 0)
 
-    enqueue_updates(sc, guiding_model_channels, grammar)
-    save_changes!(sc, 0)
+        from_input = true
 
-    from_input = true
+        while (!(enumeration_timed_out(enumeration_timeout))) &&
+                  (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches)) &&
+                  length(hits) < maximum_solutions
+            from_input = !from_input
+            pq = from_input ? sc.pq_input : sc.pq_output
+            if isempty(pq)
+                sleep(0.0001)
+                continue
+            end
+            br_id, is_explained, bp = lock(sc.queues_lock) do
+                (br_id, is_explained) = draw(pq)
+                q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
+                bp = dequeue!(q)
+                br_id, is_explained, bp
+            end
 
-    while (!(enumeration_timed_out(enumeration_timeout))) &&
-              (!isempty(sc.pq_input) || !isempty(sc.pq_output)) &&
-              length(hits) < maximum_solutions
-        from_input = !from_input
-        pq = from_input ? sc.pq_input : sc.pq_output
-        if isempty(pq)
-            continue
-        end
-        (br_id, is_explained) = draw(pq)
-        q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-        bp = dequeue!(q)
+            found_solutions = enumeration_iteration(
+                run_context,
+                sc,
+                max_free_parameters,
+                guiding_model_channels,
+                grammar,
+                bp,
+                br_id,
+                is_explained,
+            )
 
-        found_solutions = enumeration_iteration(
-            run_context,
-            sc,
-            max_free_parameters,
-            guiding_model_channels,
-            grammar,
-            q,
-            bp,
-            br_id,
-            is_explained,
-        )
-
-        for solution_path in found_solutions
-            solution, cost, trace_values = extract_solution(sc, solution_path)
-            # @info "Got solution $solution with cost $cost"
-            ll = task.log_likelihood_checker(task, solution)
-            if !isnothing(ll) && !isinf(ll)
-                dt = time() - start_time
-                res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
-                if haskey(hits, res)
-                    # @warn "Duplicated solution $solution"
-                else
-                    hits[res] = -cost + ll
-                end
-                while length(hits) > maximum_solutions
-                    dequeue!(hits)
+            for solution_path in found_solutions
+                solution, cost, trace_values = extract_solution(sc, solution_path)
+                # @info "Got solution $solution with cost $cost"
+                ll = task.log_likelihood_checker(task, solution)
+                if !isnothing(ll) && !isinf(ll)
+                    dt = time() - start_time
+                    res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
+                    if haskey(hits, res)
+                        # @warn "Duplicated solution $solution"
+                    else
+                        hits[res] = -cost + ll
+                    end
+                    while length(hits) > maximum_solutions
+                        dequeue!(hits)
+                    end
                 end
             end
         end
-    end
 
-    log_results(sc, hits)
+        log_results(sc, hits)
 
-    need_export = false
-    if need_export
-        export_solution_context(sc, task)
+        need_export = false
+        if need_export
+            export_solution_context(sc, task)
+        end
+    finally
+        put!(guiding_model_channels[2], (task.name, "stop"))
+        put!(guiding_model_channels[3], task.name)
+        wait(receiver)
     end
 
     hits
@@ -635,44 +655,6 @@ end
 function try_solve_tasks(
     worker_pool,
     tasks,
-    guiding_model,
-    grammar,
-    timeout,
-    program_timeout,
-    type_weights,
-    hyperparameters,
-    maximum_solutions,
-    verbose,
-)
-    timeout_containers = worker_pool.timeout_containers
-    new_traces = pmap(
-        worker_pool,
-        tasks;
-        retry_check = (s, e) -> isa(e, ProcessExitedException),
-        retry_delays = zeros(5),
-    ) do task
-        # new_traces = map(tasks) do task
-        @time try_solve_task(
-            task,
-            guiding_model,
-            grammar,
-            timeout_containers,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
-    end
-    filter!(tr -> !isempty(tr["traces"]), new_traces)
-    @info "Got new solutions for $(length(new_traces))/$(length(tasks)) tasks"
-    return new_traces
-end
-
-function try_solve_tasks(
-    worker_pool,
-    tasks,
     guiding_model_server::GuidingModelServer,
     grammar,
     timeout,
@@ -692,13 +674,13 @@ function try_solve_tasks(
         retry_delays = zeros(5),
     ) do task
         # new_traces = map(tasks) do task
-        put!(register_channel, myid())
+        put!(register_channel, task.name)
         while true
-            pid, request_channel, result_channel = take!(register_response_channel)
-            if pid == myid()
+            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            if task_name == task.name
                 return @time try_solve_task(
                     task,
-                    (request_channel, result_channel),
+                    (request_channel, result_channel, end_tasks_channel),
                     grammar,
                     timeout_containers,
                     timeout,
@@ -709,7 +691,7 @@ function try_solve_tasks(
                     verbose,
                 )
             else
-                put!(register_response_channel, (pid, request_channel, result_channel))
+                put!(register_response_channel, (task_name, request_channel, result_channel, end_tasks_channel))
                 sleep(0.01)
             end
         end
@@ -719,11 +701,10 @@ function try_solve_tasks(
     return new_traces
 end
 
-function get_manual_traces(domain, tasks, grammar, worker_pool, guiding_model_server)
+function get_manual_traces(domain, tasks, grammar, grammar_hash, worker_pool, guiding_model_server)
     traces = Dict{UInt64,Any}()
     if domain == "arc"
         tr = build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
-        grammar_hash = hash(grammar)
         traces[grammar_hash] = (grammar, tr)
     end
     return traces
@@ -837,28 +818,19 @@ function main(; kwargs...)
 
     if !isnothing(parsed_args[:resume])
         (restored_args, i, traces, grammar, guiding_model) = load_checkpoint(parsed_args[:resume])
-        set_current_grammar!(guiding_model, grammar)
-        guiding_model_server = GuidingModelServer(guiding_model)
-        start_server(guiding_model_server)
         parsed_args = merge(restored_args, parsed_args)
-    end
-
-    @info "Parsed arguments $parsed_args"
-    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
-
-    if isnothing(parsed_args[:resume])
+    else
         grammar = get_starting_grammar()
         guiding_model = get_guiding_model(parsed_args[:model])
-        set_current_grammar!(guiding_model, grammar)
-        guiding_model_server = GuidingModelServer(guiding_model)
-        start_server(guiding_model_server)
-        traces = get_manual_traces(parsed_args[:domain], tasks, grammar, worker_pool, guiding_model_server)
         i = 1
     end
 
+    @info "Parsed arguments $parsed_args"
     grammar_hash = hash(grammar)
-
-    # tasks = tasks[begin:10]
+    set_current_grammar!(guiding_model, grammar)
+    guiding_model_server = GuidingModelServer(guiding_model)
+    start_server(guiding_model_server)
+    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
 
     type_weights = Dict{String,Any}(
         "int" => 1.0,
@@ -875,7 +847,14 @@ function main(; kwargs...)
     )
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
 
+    # tasks = tasks[begin:10]
+
     try
+        if isnothing(parsed_args[:resume])
+            traces =
+                get_manual_traces(parsed_args[:domain], tasks, grammar, grammar_hash, worker_pool, guiding_model_server)
+        end
+
         while i <= parsed_args[:iterations]
             i += 1
 
@@ -924,6 +903,6 @@ function main(; kwargs...)
         end
     finally
         stop(worker_pool)
-        stop_server(guiding_model_server)
+        stop_server(guiding_model_server, true)
     end
 end

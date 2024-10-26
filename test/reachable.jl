@@ -35,7 +35,11 @@ using solver:
     extract_solution,
     build_manual_trace,
     set_current_grammar!,
-    contextual_grammar_cache
+    contextual_grammar_cache,
+    GuidingModelServer,
+    start_server,
+    stop_server,
+    grammar_receiver_loop
 
 using DataStructures
 
@@ -364,7 +368,8 @@ using DataStructures
         branches,
         branches_history,
         vars_mapping,
-        guiding_model,
+        guiding_model_server,
+        guiding_model_channels,
         grammar,
         run_context,
         mfp,
@@ -408,8 +413,16 @@ using DataStructures
                     end
                     out_branch_id = first(get_connected_from(sc.branch_children, out_branch_id))
                 end
-                found_solutions =
-                    enumeration_iteration(run_context, sc, mfp, guiding_model, grammar, q, bp, branch_id, is_explained)
+                found_solutions = enumeration_iteration(
+                    run_context,
+                    sc,
+                    mfp,
+                    guiding_model_channels,
+                    grammar,
+                    bp,
+                    branch_id,
+                    is_explained,
+                )
                 if is_reversible(bp.skeleton) || state_finished(bp)
                     if verbose
                         @info "found end"
@@ -493,7 +506,8 @@ using DataStructures
                         updated_vars_mapping,
                         updated_branches,
                         updated_history,
-                        guiding_model,
+                        guiding_model_server,
+                        guiding_model_channels,
                         grammar,
                         run_context,
                         mfp,
@@ -523,7 +537,8 @@ using DataStructures
         branches,
         branches_history,
         vars_mapping,
-        guiding_model,
+        guiding_model_server,
+        guiding_model_channels,
         grammar,
         run_context,
         mfp,
@@ -570,9 +585,8 @@ using DataStructures
                     run_context,
                     sc,
                     mfp,
-                    guiding_model,
+                    guiding_model_channels,
                     grammar,
-                    q,
                     bp,
                     in_branch_id,
                     is_explained,
@@ -648,7 +662,8 @@ using DataStructures
                         updated_vars_mapping,
                         updated_branches,
                         updated_history,
-                        guiding_model,
+                        guiding_model_server,
+                        guiding_model_channels,
                         grammar,
                         run_context,
                         mfp,
@@ -677,7 +692,8 @@ using DataStructures
         vars_mapping,
         branches,
         branches_history,
-        guiding_model,
+        guiding_model_server,
+        guiding_model_channels,
         grammar,
         run_context,
         mfp,
@@ -695,29 +711,51 @@ using DataStructures
         if verbose
             @info "Checking blocks $blocks"
         end
+
+        while !isempty(sc.waiting_branches)
+            sleep(0.001)
+        end
+
         has_multiple_options = length([1 for b in blocks if _block_can_be_next(b, vars_mapping)]) > 1
         for bl in blocks
             if _block_can_be_next(bl, vars_mapping)
                 checked_any = true
                 if has_multiple_options
                     sc_next = deepcopy(sc)
+                    sc_next.task_name = sc.task_name * "_$bl"
+                    sc_next.queues_lock = ReentrantLock()
+
+                    put!(guiding_model_server.worker_register_channel, sc_next.task_name)
+                    task_name, request_channel, result_channel, end_tasks_channel =
+                        take!(guiding_model_server.worker_register_result_channel)
+                    guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+                    receiver = Threads.@spawn grammar_receiver_loop(sc_next, result_channel, grammar)
                 else
                     sc_next = sc
                 end
-                s, f = _simulate_block_search(
-                    sc_next,
-                    task,
-                    bl,
-                    Any[b for b in blocks if b != bl],
-                    branches,
-                    branches_history,
-                    vars_mapping,
-                    guiding_model,
-                    grammar,
-                    run_context,
-                    mfp,
-                    verbose,
-                )
+                s, f = try
+                    _simulate_block_search(
+                        sc_next,
+                        task,
+                        bl,
+                        Any[b for b in blocks if b != bl],
+                        branches,
+                        branches_history,
+                        vars_mapping,
+                        guiding_model_server,
+                        guiding_model_channels,
+                        grammar,
+                        run_context,
+                        mfp,
+                        verbose,
+                    )
+                finally
+                    if has_multiple_options
+                        put!(result_channel, (sc_next.task_name, "stop"))
+                        put!(end_tasks_channel, sc_next.task_name)
+                        wait(receiver)
+                    end
+                end
                 union!(successful, s)
                 union!(failed, f)
             end
@@ -730,101 +768,126 @@ using DataStructures
         return successful, failed
     end
 
-    function check_reachable(task, guiding_model, grammar, target_solution, verbose_test = false)
-        mfp = 10
-        run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
+    function check_reachable(task, guiding_model, task_grammar, target_solution, verbose_test = false)
+        set_current_grammar!(guiding_model, task_grammar)
+        empty!(contextual_grammar_cache)
 
-        type_weights = Dict(
-            "int" => 1.0,
-            "list" => 1.0,
-            "color" => 1.0,
-            "bool" => 1.0,
-            "float" => 1.0,
-            "grid" => 1.0,
-            "tuple2" => 1.0,
-            "tuple3" => 1.0,
-            "coord" => 1.0,
-            "set" => 1.0,
-            "any" => 1.0,
-        )
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
 
-        hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+        try
+            mfp = 10
+            run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
 
-        target_program = parse_program(target_solution)
+            type_weights = Dict(
+                "int" => 1.0,
+                "list" => 1.0,
+                "color" => 1.0,
+                "bool" => 1.0,
+                "float" => 1.0,
+                "grid" => 1.0,
+                "tuple2" => 1.0,
+                "tuple3" => 1.0,
+                "coord" => 1.0,
+                "set" => 1.0,
+                "any" => 1.0,
+            )
 
-        ll = task.log_likelihood_checker(task, target_program)
-        @test !isnothing(ll) && !isinf(ll)
-        if isnothing(ll) || isinf(ll)
-            return
-        end
+            hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
 
-        blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
-        if verbose_test
-            @info blocks
-            @info vars_mapping
-        end
-        sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
-        enqueue_updates(sc, guiding_model, grammar)
-        branches = Dict()
-        for br_id in 1:sc.branches_count[]
-            branches[sc.branch_vars[br_id]] = br_id
-        end
-        if verbose_test
-            @info branches
-        end
-        save_changes!(sc, 0)
+            target_program = parse_program(target_solution)
 
-        start_time = time()
-
-        inner_mapping = Dict{UInt64,UInt64}()
-        for (arg, _) in task.task_type.arguments
-            for (v, a) in sc.input_keys
-                if a == arg
-                    inner_mapping[v] = vars_mapping[arg]
-                end
+            ll = task.log_likelihood_checker(task, target_program)
+            @test !isnothing(ll) && !isinf(ll)
+            if isnothing(ll) || isinf(ll)
+                return
             end
-        end
-        inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
-        if verbose_test
-            @info inner_mapping
-        end
 
-        successful, failed = @time _check_reachable(
-            sc,
-            task,
-            blocks,
-            inner_mapping,
-            branches,
-            [],
-            guiding_model,
-            grammar,
-            run_context,
-            mfp,
-            verbose_test,
-        )
-        if verbose_test
-            @info "successful: $successful"
-            @info "failed: $failed"
-            @info "length successful: $(length(successful))"
-            @info "length failed: $(length(failed))"
-        end
-        @test !isempty(successful)
-        for f_entries in failed
-            for s_snapshots in successful
-                @test all(s_entries != f_entries for s_entries in s_snapshots)
-                if any(s_entries == f_entries for s_entries in s_snapshots)
-                    @info "Found failed case"
-                    @info f_entries
-                    @info s_snapshots
-                end
+            blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
+            if verbose_test
+                @info blocks
+                @info vars_mapping
             end
+
+            put!(guiding_model_server.worker_register_channel, task.name)
+            task_name, request_channel, result_channel, end_tasks_channel =
+                take!(guiding_model_server.worker_register_result_channel)
+            guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+
+            sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
+
+            receiver = Threads.@spawn grammar_receiver_loop(sc, result_channel, task_grammar)
+
+            try
+                enqueue_updates(sc, guiding_model_channels, task_grammar)
+                branches = Dict()
+                for br_id in 1:sc.branches_count[]
+                    branches[sc.branch_vars[br_id]] = br_id
+                end
+                if verbose_test
+                    @info branches
+                end
+                save_changes!(sc, 0)
+
+                inner_mapping = Dict{UInt64,UInt64}()
+                for (arg, _) in task.task_type.arguments
+                    for (v, a) in sc.input_keys
+                        if a == arg
+                            inner_mapping[v] = vars_mapping[arg]
+                        end
+                    end
+                end
+                inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
+                if verbose_test
+                    @info inner_mapping
+                end
+
+                successful, failed = @time _check_reachable(
+                    sc,
+                    task,
+                    blocks,
+                    inner_mapping,
+                    branches,
+                    [],
+                    guiding_model_server,
+                    guiding_model_channels,
+                    task_grammar,
+                    run_context,
+                    mfp,
+                    verbose_test,
+                )
+                if verbose_test
+                    @info "successful: $successful"
+                    @info "failed: $failed"
+                    @info "length successful: $(length(successful))"
+                    @info "length failed: $(length(failed))"
+                end
+                @test !isempty(successful)
+                for f_entries in failed
+                    for s_snapshots in successful
+                        @test all(s_entries != f_entries for s_entries in s_snapshots)
+                        if any(s_entries == f_entries for s_entries in s_snapshots)
+                            @info "Found failed case"
+                            @info f_entries
+                            @info s_snapshots
+                        end
+                    end
+                end
+            finally
+                put!(result_channel, (task.name, "stop"))
+                put!(end_tasks_channel, task.name)
+                wait(receiver)
+            end
+        finally
+            stop_server(guiding_model_server)
+            set_current_grammar!(guiding_model, grammar)
         end
     end
+
     grammar = build_grammar(sample_library)
     grammar2 = build_grammar(sample_library2)
 
     guiding_model = get_guiding_model("dummy")
-    set_current_grammar!(guiding_model, grammar)
 
     @testcase_log "Repeat" begin
         task = create_task(
@@ -1061,11 +1124,8 @@ using DataStructures
             ),
         )
 
-        set_current_grammar!(guiding_model, grammar2)
-        empty!(contextual_grammar_cache)
         target_solution = "let \$v1, \$v2 = rev(\$inp0 = (cons \$v1 \$v2)) in let \$v3, \$v4 = rev(\$v2 = (cons \$v3 \$v4)) in let \$v5 = (car \$v4) in let \$v6 = Const(list(int), Any[]) in let \$v7 = (cons \$v5 \$v6) in (concat \$v7 \$inp0)"
         check_reachable(task, guiding_model, grammar2, target_solution)
-        set_current_grammar!(guiding_model, grammar)
         # target_solution = "let \$v1 = Const(int, 1) in let \$v2, \$v3 = rev(\$inp0 = (cons \$v2 \$v3)) in let \$v4, \$v5 = rev(\$v3 = (cons \$v4 \$v5)) in let \$v6 = \$v1 in let \$v7 = (index \$v6 \$v5) in let \$v8 = (repeat \$v7 \$v1) in (concat \$v8 \$inp0)"
         # check_reachable(task, guiding_model, grammar, target_solution, true)
     end
@@ -1139,10 +1199,7 @@ using DataStructures
         )
         target_solution = "let \$v1, \$v2 = rev(\$inp0 = (cons \$v1 \$v2)) in let \$v3, \$v4 = rev(\$v2 = (cons \$v3 \$v4)) in let \$v5, \$v6 = rev(\$v4 = (cons \$v5 \$v6)) in (cdr (cdr \$v6))"
 
-        set_current_grammar!(guiding_model, grammar2)
-        empty!(contextual_grammar_cache)
         check_reachable(task, guiding_model, grammar2, target_solution)
-        set_current_grammar!(guiding_model, grammar)
     end
 
     @testcase_log "Select background" begin
@@ -1687,12 +1744,10 @@ using DataStructures
                 ],
             ),
         )
-        set_current_grammar!(guiding_model, grammar3)
-        empty!(contextual_grammar_cache)
+
         target_solution = "let \$v2, \$v1 = rev(\$inp0 = (tuple2 \$v2 \$v1)) in (rev_fix_param (map_set (lambda (#(lambda (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1))))) \$0 \$v2)) \$v1) \$v2 (lambda (tuple2 (#(lambda (fold (lambda (lambda (#(lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) \$0 \$1))) \$0 max_int)) (map (lambda (tuple2_first \$0)) (collect \$0))) (#(lambda (fold (lambda (lambda (#(lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) \$0 \$1))) \$0 max_int)) (map (lambda (tuple2_second \$0)) (collect \$0))))))"
 
         check_reachable(task, guiding_model, grammar3, target_solution)
-        set_current_grammar!(guiding_model, grammar)
     end
 
     @testcase_log "Single object coordinates extraction reverse 1" begin
@@ -1739,12 +1794,10 @@ using DataStructures
                 ],
             ),
         )
-        set_current_grammar!(guiding_model, grammar3)
-        empty!(contextual_grammar_cache)
+
         target_solution = "let \$v2, \$v1 = rev(\$inp0 = (rev_fix_param (map_set (lambda (#(lambda (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1))))) \$0 \$v2)) \$v1) \$v2 (lambda (tuple2 (#(lambda (fold (lambda (lambda (#(lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) \$0 \$1))) \$0 max_int)) (map (lambda (tuple2_first \$0)) (collect \$0))) (#(lambda (fold (lambda (lambda (#(lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) \$0 \$1))) \$0 max_int)) (map (lambda (tuple2_second \$0)) (collect \$0))))))) in (tuple2 \$v2 \$v1)"
 
         check_reachable(task, guiding_model, grammar3, target_solution)
-        set_current_grammar!(guiding_model, grammar)
     end
 
     @testcase_log "Single object coordinates extraction 2" begin
@@ -1953,7 +2006,30 @@ using DataStructures
 
     @testset "Guiding model type $model_type" for model_type in ["dummy", "nn"]
         arc_guiding_model = get_guiding_model(model_type)
-        set_current_grammar!(arc_guiding_model, grammar)
+
+        function test_build_manual_trace(task, target_solution, task_grammar)
+            set_current_grammar!(arc_guiding_model, task_grammar)
+            empty!(contextual_grammar_cache)
+
+            guiding_model_server = GuidingModelServer(arc_guiding_model)
+            start_server(guiding_model_server)
+
+            try
+                register_channel = guiding_model_server.worker_register_channel
+                register_response_channel = guiding_model_server.worker_register_result_channel
+                put!(register_channel, task.name)
+                task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+                return @time build_manual_trace(
+                    task,
+                    target_solution,
+                    (request_channel, result_channel, end_tasks_channel),
+                    task_grammar,
+                )
+            finally
+                stop_server(guiding_model_server)
+                set_current_grammar!(arc_guiding_model, grammar)
+            end
+        end
 
         @testcase_log "0f39a9d9.json" begin
             task = _create_arc_task("0f39a9d9.json", "sortOfARC/")
@@ -1974,7 +2050,7 @@ using DataStructures
             let \$v23 = (repeat_grid \$v4 \$v5 \$v6) in
             (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
 
-            hit, cost = @time build_manual_trace(task, target_solution, arc_guiding_model, grammar)
+            hit, cost = test_build_manual_trace(task, target_solution, grammar)
             @test !isnothing(hit)
         end
 
@@ -2038,10 +2114,7 @@ using DataStructures
                     ],
                 ),
             )
-            set_current_grammar!(arc_guiding_model, grammar3)
-            empty!(contextual_grammar_cache)
-            hit, cost = @time build_manual_trace(task, target_solution, arc_guiding_model, grammar3)
-            set_current_grammar!(arc_guiding_model, grammar)
+            hit, cost = test_build_manual_trace(task, target_solution, grammar3)
             @test !isnothing(hit)
         end
 
@@ -2064,7 +2137,7 @@ using DataStructures
             let \$v23 = (repeat_grid \$v4 \$v5 \$v6) in
             (rev_select_grid (lambda (eq? \$0 \$v1)) \$v23 \$v22)"
 
-            hit, cost = @time build_manual_trace(task, target_solution, arc_guiding_model, grammar)
+            hit, cost = test_build_manual_trace(task, target_solution, grammar)
             @test !isnothing(hit)
         end
 

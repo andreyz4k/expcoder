@@ -10,7 +10,10 @@ using solver:
     Tp,
     Grammar,
     make_dummy_contextual,
-    set_current_grammar!
+    set_current_grammar!,
+    GuidingModelServer,
+    start_server,
+    stop_server
 
 @testset "Abstractors tasks" begin
     type_weights = Dict{String,Any}(
@@ -52,6 +55,32 @@ using solver:
         return task
     end
 
+    function test_solve_task(task)
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
+
+        try
+            register_channel = guiding_model_server.worker_register_channel
+            register_response_channel = guiding_model_server.worker_register_result_channel
+            put!(register_channel, task.name)
+            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            return @time solve_task(
+                task,
+                (request_channel, result_channel, end_tasks_channel),
+                grammar,
+                nothing,
+                timeout,
+                program_timeout,
+                type_weights,
+                hyperparameters,
+                maximum_solutions,
+                verbose,
+            )
+        finally
+            stop_server(guiding_model_server)
+        end
+    end
+
     @testcase_log "Repeat" begin
         task = create_task(
             "invert repeated",
@@ -66,18 +95,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -95,18 +113,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -130,18 +137,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -164,18 +160,7 @@ using solver:
                 ),
             ],
         )
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -199,18 +184,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -271,18 +245,7 @@ using solver:
 
         guiding_model.preset_weights = preset_weights
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
         guiding_model.preset_weights = base_preset_weights
     end

@@ -10,7 +10,10 @@ using solver:
     Tp,
     Grammar,
     make_dummy_contextual,
-    set_current_grammar!
+    set_current_grammar!,
+    GuidingModelServer,
+    start_server,
+    stop_server
 
 @testset "Enumeration" begin
     type_weights = Dict{String,Any}(
@@ -49,6 +52,32 @@ using solver:
         end
         task = Task(name, parse_type(type_str), supervised_task_checker, train_inputs, train_outputs, [], [])
         return task
+    end
+
+    function test_solve_task(task)
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
+
+        try
+            register_channel = guiding_model_server.worker_register_channel
+            register_response_channel = guiding_model_server.worker_register_result_channel
+            put!(register_channel, task.name)
+            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            return @time solve_task(
+                task,
+                (request_channel, result_channel, end_tasks_channel),
+                grammar,
+                nothing,
+                timeout,
+                program_timeout,
+                type_weights,
+                hyperparameters,
+                maximum_solutions,
+                verbose,
+            )
+        finally
+            stop_server(guiding_model_server)
+        end
     end
 
     @testcase_log "try_enumerate add-k with k=1" begin
@@ -92,18 +121,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 0
     end
 
@@ -133,18 +151,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -245,18 +252,7 @@ using solver:
                 ),
             ],
         )
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 2
         # end
     end
@@ -283,18 +279,7 @@ using solver:
                 Dict{String,Any}("output" => 6, "inputs" => Dict{String,Any}("inp0" => Any[15, 15, 0, 1, 3, 16])),
             ],
         )
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -324,18 +309,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 5
     end
 
@@ -383,18 +357,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) >= 1
     end
 
@@ -497,18 +460,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) == 0
     end
 
@@ -576,18 +528,7 @@ using solver:
                 ),
             ],
         )
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) > 0
     end
 
@@ -656,18 +597,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) == 0
     end
 
@@ -757,18 +687,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) > 0
         # end
     end
@@ -799,18 +718,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) == 0
     end
 
@@ -837,18 +745,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) == 0
     end
 
@@ -884,18 +781,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) == 0
     end
 
@@ -946,18 +832,7 @@ using solver:
             ],
         )
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(task)
         @test length(solutions) > 0
     end
 end

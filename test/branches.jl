@@ -29,10 +29,7 @@ using solver:
     EPSILON,
     _get_custom_arg_checkers,
     step_arg_checker,
-    combine_arg_checkers,
-    generate_grammar,
-    set_current_grammar!,
-    contextual_grammar_cache
+    combine_arg_checkers
 
 using DataStructures
 
@@ -52,7 +49,6 @@ using DataStructures
     )
 
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
-    guiding_model = get_guiding_model("dummy")
     grammar = [
         parse_program(p) for p in [
             "map",
@@ -81,10 +77,8 @@ using DataStructures
             "concat",
         ]
     ]
-    set_current_grammar!(guiding_model, grammar)
-    empty!(contextual_grammar_cache)
 
-    function initial_state(sc, branch_id, guiding_model, grammar)
+    function initial_state(sc, branch_id, grammar)
         target_type_id = first(get_connected_from(sc.branch_types, branch_id))
         var_id = sc.branch_vars[branch_id]
         target_type = sc.types[target_type_id]
@@ -93,8 +87,9 @@ using DataStructures
         entry = sc.entries[entry_id]
 
         if !haskey(sc.entry_grammars, (entry_id, false))
-            g = generate_grammar(sc, guiding_model, grammar, entry_id, false)
-            sc.entry_grammars[(entry_id, false)] = g
+            productions = Tuple{Program,Tp,Float64}[(p, p.t, 0.0) for p in grammar]
+            g = Grammar(0.0, -3.0, -3.0, productions)
+            sc.entry_grammars[(entry_id, false)] = make_dummy_contextual(g)
         end
 
         BlockPrototype(
@@ -183,8 +178,8 @@ using DataStructures
         return states[1]
     end
 
-    function create_block_prototype(sc, target_branch_id, steps, guiding_model, grammar)
-        bp = initial_state(sc, target_branch_id, guiding_model, grammar)
+    function create_block_prototype(sc, target_branch_id, steps, grammar)
+        bp = initial_state(sc, target_branch_id, grammar)
         for step in steps
             bp = next_state(sc, bp, step)
         end
@@ -290,7 +285,6 @@ using DataStructures
             sc,
             out_branch_id,
             [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing, (every_primitive["cdr"], 1))],
-            guiding_model,
             grammar,
         )
         new_block_result, _ = enumeration_iteration_finished_output(sc, bp)
@@ -396,7 +390,7 @@ using DataStructures
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
 
-        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], guiding_model, grammar)
+        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], grammar)
         new_block_result, _ = enumeration_iteration_finished_output(sc, bp)
         @test length(new_block_result) == 1
         first_block_id, input_branches, target_output = new_block_result[1]

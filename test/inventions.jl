@@ -9,7 +9,10 @@ using solver:
     _get_custom_arg_checkers,
     is_reversible,
     set_current_grammar!,
-    contextual_grammar_cache
+    contextual_grammar_cache,
+    GuidingModelServer,
+    start_server,
+    stop_server
 
 @testset "Inventions" begin
     type_weights = Dict{String,Any}(
@@ -43,6 +46,35 @@ using solver:
         end
         task = Task(name, parse_type(type_str), supervised_task_checker, train_inputs, train_outputs, [], [])
         return task
+    end
+
+    function test_solve_task(grammar, task)
+        set_current_grammar!(guiding_model, grammar)
+        empty!(contextual_grammar_cache)
+
+        guiding_model_server = GuidingModelServer(guiding_model)
+        start_server(guiding_model_server)
+
+        try
+            register_channel = guiding_model_server.worker_register_channel
+            register_response_channel = guiding_model_server.worker_register_result_channel
+            put!(register_channel, task.name)
+            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            return @time solve_task(
+                task,
+                (request_channel, result_channel, end_tasks_channel),
+                grammar,
+                nothing,
+                timeout,
+                program_timeout,
+                type_weights,
+                hyperparameters,
+                maximum_solutions,
+                verbose,
+            )
+        finally
+            stop_server(guiding_model_server)
+        end
     end
 
     @testcase_log "slice-k-n with k=2 and n=1" begin
@@ -84,21 +116,8 @@ using solver:
         )
 
         grammar = vcat(base_grammar, [parse_program("#(lambda (repeat (car \$0)))")])
-        set_current_grammar!(guiding_model, grammar)
-        empty!(contextual_grammar_cache)
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(grammar, task)
         @test length(solutions) >= 1
     end
 
@@ -147,21 +166,8 @@ using solver:
                 parse_program("#(lambda (lambda (repeat (cons \$0 \$1))))"),
             ],
         )
-        set_current_grammar!(guiding_model, grammar)
-        empty!(contextual_grammar_cache)
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(grammar, task)
         @test length(solutions) >= 1
     end
 
@@ -241,21 +247,8 @@ using solver:
                 parse_program("#(lambda (lambda (- \$0 (- \$0 \$1))))"),
             ],
         )
-        set_current_grammar!(guiding_model, grammar)
-        empty!(contextual_grammar_cache)
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(grammar, task)
         @test length(solutions) >= 1
     end
 
@@ -322,21 +315,8 @@ using solver:
                 parse_program("#(lambda (concat \$0 (#(lambda (concat \$0 \$0)) \$0)))"),
             ],
         )
-        set_current_grammar!(guiding_model, grammar)
-        empty!(contextual_grammar_cache)
 
-        solutions = @time solve_task(
-            task,
-            guiding_model,
-            grammar,
-            nothing,
-            timeout,
-            program_timeout,
-            type_weights,
-            hyperparameters,
-            maximum_solutions,
-            verbose,
-        )
+        solutions = test_solve_task(grammar, task)
         @test length(solutions) >= 1
     end
 

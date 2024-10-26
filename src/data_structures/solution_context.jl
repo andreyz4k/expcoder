@@ -74,6 +74,8 @@ mutable struct SolutionContext
     hyperparameters::Dict{String,Any}
     total_number_of_enumerated_programs::Int64
     iterations_count::Int64
+
+    queues_lock::ReentrantLock
     pq_input::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
     pq_output::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
     branch_queues_unknown::Dict{UInt64,PriorityQueue}
@@ -82,6 +84,8 @@ mutable struct SolutionContext
     branch_known_from_input::VectorStorage{Bool}
 
     entry_grammars::Dict{Tuple{UInt64,Bool},Any}
+    waiting_branches::Dict{Tuple{UInt64,Bool},Vector{UInt64}}
+
     known_var_locations::VectorStorage{Vector{Tuple{Program,Int64}}}
     unknown_var_locations::VectorStorage{Vector{Tuple{Program,Int64}}}
 
@@ -137,6 +141,7 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         hyperparameters,
         0,
         0,
+        ReentrantLock(),
         NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
         NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
         Dict(),
@@ -144,6 +149,7 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
         Dict{Tuple{UInt64,Bool},Any}(),
+        Dict{Tuple{UInt64,Bool},Vector{UInt64}}(),
         VectorStorage{Vector{Tuple{Program,Int64}}}(),
         VectorStorage{Vector{Tuple{Program,Int64}}}(),
         verbose,

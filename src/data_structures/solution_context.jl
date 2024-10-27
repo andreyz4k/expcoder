@@ -93,11 +93,11 @@ mutable struct SolutionContext
     stats::DefaultDict
 end
 
-function create_starting_context(task::Task, type_weights, hyperparameters, verbose)::SolutionContext
+function create_starting_context(task::Task, task_name, type_weights, hyperparameters, verbose)::SolutionContext
     argument_types = arguments_of_type(task.task_type)
     example_count = length(task.train_outputs)
     sc = SolutionContext(
-        task.name,
+        task_name,
         IndexedStorage{Entry}(),
         TypeStorage(),
         CountStorage(),

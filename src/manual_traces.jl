@@ -10,20 +10,22 @@ function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
-        put!(register_channel, task.name)
+        task_name = "$(task.name)_$(randstring(6))"
+        put!(register_channel, task_name)
         while true
-            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
-            if task_name == task.name
+            reg_task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            if reg_task_name == task_name
                 @info "Building manual trace for $(task.name)"
                 hit, cost = @time build_manual_trace(
                     task,
+                    task_name,
                     sol,
                     (request_channel, result_channel, end_tasks_channel),
                     grammar,
                 )
                 return (task.name, hit, cost)
             else
-                put!(register_response_channel, (task_name, request_channel, result_channel, end_tasks_channel))
+                put!(register_response_channel, (reg_task_name, request_channel, result_channel, end_tasks_channel))
                 sleep(0.01)
             end
         end
@@ -396,7 +398,7 @@ function enumeration_iteration_traced(
     return found_solutions
 end
 
-function build_manual_trace(task::Task, target_solution, guiding_model_channels, grammar)
+function build_manual_trace(task::Task, task_name, target_solution, guiding_model_channels, grammar)
     verbose_test = false
     max_free_parameters = 10
     run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
@@ -429,7 +431,7 @@ function build_manual_trace(task::Task, target_solution, guiding_model_channels,
     start_time = time()
 
     # verbose_test = true
-    sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
+    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test)
 
     try
         enqueue_updates(sc, guiding_model_channels, grammar)
@@ -513,7 +515,7 @@ function build_manual_trace(task::Task, target_solution, guiding_model_channels,
         @error "Error in build_manual_trace" exception = (e, bt)
         rethrow()
     finally
-        put!(guiding_model_channels[3], task.name)
+        put!(guiding_model_channels[3], task_name)
     end
     @info [sc.blocks[UInt64(i)] for i in 1:length(sc.blocks)]
     @error "Could not find a trace for $(task.name) with target solution $target_solution"

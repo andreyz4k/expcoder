@@ -215,7 +215,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
@@ -273,7 +273,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
@@ -384,7 +384,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1

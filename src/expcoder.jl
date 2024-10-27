@@ -1,6 +1,7 @@
 
 using ArgParse
 using JSON
+using Random
 
 function create_arc_task(fname, tp)
     arc_task = JSON.parsefile(fname)
@@ -513,6 +514,7 @@ end
 
 function solve_task(
     task,
+    task_name,
     guiding_model_channels,
     grammar,
     timeout_container,
@@ -530,7 +532,7 @@ function solve_task(
 
     enumeration_timeout = get_enumeration_timeout(timeout)
 
-    sc = create_starting_context(task, type_weights, hyperparameters, verbose)
+    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose)
 
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
@@ -596,7 +598,7 @@ function solve_task(
             export_solution_context(sc, task)
         end
     finally
-        put!(guiding_model_channels[3], task.name)
+        put!(guiding_model_channels[3], task_name)
     end
 
     hits
@@ -604,6 +606,7 @@ end
 
 function try_solve_task(
     task,
+    task_name,
     guiding_model_channels,
     grammar,
     timeout_containers,
@@ -619,6 +622,7 @@ function try_solve_task(
     traces = try
         solve_task(
             task,
+            task_name,
             guiding_model_channels,
             grammar,
             timeout_container,
@@ -659,12 +663,14 @@ function try_solve_tasks(
         retry_delays = zeros(5),
     ) do task
         # new_traces = map(tasks) do task
-        put!(register_channel, task.name)
+        task_name = "$(task.name)_$(randstring(6))"
+        put!(register_channel, task_name)
         while true
-            task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
-            if task_name == task.name
+            reg_task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+            if reg_task_name == task_name
                 return @time try_solve_task(
                     task,
+                    task_name,
                     (request_channel, result_channel, end_tasks_channel),
                     grammar,
                     timeout_containers,
@@ -676,7 +682,7 @@ function try_solve_tasks(
                     verbose,
                 )
             else
-                put!(register_response_channel, (task_name, request_channel, result_channel, end_tasks_channel))
+                put!(register_response_channel, (reg_task_name, request_channel, result_channel, end_tasks_channel))
                 sleep(0.01)
             end
         end

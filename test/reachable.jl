@@ -811,7 +811,7 @@ using DataStructures
                 take!(guiding_model_server.worker_register_result_channel)
             guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
 
-            sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
+            sc = create_starting_context(task, task.name, type_weights, hyperparameters, verbose_test)
 
             try
                 enqueue_updates(sc, guiding_model_channels, task_grammar)
@@ -2014,6 +2014,7 @@ using DataStructures
                 task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
                 return @time build_manual_trace(
                     task,
+                    task.name,
                     target_solution,
                     (request_channel, result_channel, end_tasks_channel),
                     task_grammar,

@@ -65,6 +65,7 @@ using solver:
             task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
             return @time solve_task(
                 task,
+                task_name,
                 (request_channel, result_channel, end_tasks_channel),
                 grammar,
                 nothing,

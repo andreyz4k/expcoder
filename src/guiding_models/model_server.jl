@@ -5,6 +5,7 @@ mutable struct GuidingModelServer
     worker_register_result_channel::RemoteChannel
     request_channel::RemoteChannel
     result_channels::Dict{String,RemoteChannel}
+    result_channels_lock::ReentrantLock
     end_tasks_channel::RemoteChannel
     stopped::Bool
     registration_loop::Any
@@ -23,6 +24,7 @@ function GuidingModelServer(model)
         worker_register_result_channel,
         request_channel,
         result_channels,
+        ReentrantLock(),
         end_tasks_channel,
         false,
         nothing,
@@ -34,13 +36,12 @@ function _registration_loop(server::GuidingModelServer)
     try
         while !server.stopped
             task_name = take!(server.worker_register_channel)
-            while isready(server.end_tasks_channel)
-                end_task_name = take!(server.end_tasks_channel)
-                delete!(server.result_channels, end_task_name)
-            end
+
             if !haskey(server.result_channels, task_name)
                 result_channel = RemoteChannel(() -> Channel{Any}(1000))
-                server.result_channels[task_name] = result_channel
+                lock(server.result_channels_lock) do
+                    server.result_channels[task_name] = result_channel
+                end
             else
                 @warn "Requesting a channel for an already registered task: $task_name"
             end
@@ -60,13 +61,19 @@ end
 
 gpu_mem_threshold = 3 * 10^8
 
+function _check_ended_tasks(server::GuidingModelServer)
+    while isready(server.end_tasks_channel)
+        task_name = take!(server.end_tasks_channel)
+        lock(server.result_channels_lock) do
+            delete!(server.result_channels, task_name)
+        end
+    end
+end
+
 function _guiding_processing_loop(server::GuidingModelServer)
     try
         while !server.stopped
-            while isready(server.end_tasks_channel)
-                task_name = take!(server.end_tasks_channel)
-                delete!(server.result_channels, task_name)
-            end
+            _check_ended_tasks(server)
             request = take!(server.request_channel)
             input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
             if !haskey(server.result_channels, task_name)
@@ -81,10 +88,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
 
             while isready(server.request_channel)
                 # @info "Fetching another request"
-                while isready(server.end_tasks_channel)
-                    task_name = take!(server.end_tasks_channel)
-                    delete!(server.result_channels, task_name)
-                end
+                _check_ended_tasks(server)
 
                 request = fetch(server.request_channel)
                 input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
@@ -124,6 +128,8 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 @error "Model inputs: $(model_inputs)"
                 rethrow()
             end
+
+            _check_ended_tasks(server)
             # @info "Result size: $(size(guiding_result))"
             for (i, task_name) in enumerate(batch[5])
                 if !haskey(server.result_channels, task_name)

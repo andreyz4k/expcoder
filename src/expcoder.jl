@@ -70,9 +70,7 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
         if in(branch_id, new_unknown_branches)
             enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
         elseif haskey(sc.branch_queues_unknown, branch_id)
-            lock(sc.queues_lock) do
-                update_branch_priority(sc, branch_id, false)
-            end
+            update_branch_priority(sc, branch_id, false)
         end
     end
     for branch_id in union(updated_factors_explained_branches, new_explained_branches)
@@ -82,9 +80,7 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
         if !haskey(sc.branch_queues_explained, branch_id)
             enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
         else
-            lock(sc.queues_lock) do
-                update_branch_priority(sc, branch_id, true)
-            end
+            update_branch_priority(sc, branch_id, true)
         end
     end
 end
@@ -483,13 +479,11 @@ function enumeration_iteration(
                 throw(EnumerationException())
             end
             unfinished_prototypes, found_solutions = finish_results
-            lock(sc.queues_lock) do
-                for new_bp in unfinished_prototypes
-                    if sc.verbose
-                        @info "Enqueing $new_bp"
-                    end
-                    q[new_bp] = new_bp.cost
+            for new_bp in unfinished_prototypes
+                if sc.verbose
+                    @info "Enqueing $new_bp"
                 end
+                q[new_bp] = new_bp.cost
             end
             enqueue_updates(sc, guiding_model_channels, grammar)
             if isempty(unfinished_prototypes)
@@ -505,19 +499,15 @@ function enumeration_iteration(
             @info "Checking unfinished $bp"
         end
         new_bps = block_state_successors(sc, max_free_parameters, bp)
-        lock(sc.queues_lock) do
-            for new_bp in new_bps
-                if sc.verbose
-                    @info "Enqueing $new_bp"
-                end
-                q[new_bp] = new_bp.cost
+        for new_bp in new_bps
+            if sc.verbose
+                @info "Enqueing $new_bp"
             end
+            q[new_bp] = new_bp.cost
         end
         found_solutions = []
     end
-    lock(sc.queues_lock) do
-        update_branch_priority(sc, br_id, is_explained)
-    end
+    update_branch_priority(sc, br_id, is_explained)
     return found_solutions
 end
 
@@ -549,7 +539,6 @@ function solve_task(
     max_free_parameters = 10
 
     start_time = time()
-    receiver = Threads.@spawn grammar_receiver_loop(sc, guiding_model_channels[2], grammar)
     try
         enqueue_updates(sc, guiding_model_channels, grammar)
         save_changes!(sc, 0)
@@ -559,18 +548,16 @@ function solve_task(
         while (!(enumeration_timed_out(enumeration_timeout))) &&
                   (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches)) &&
                   length(hits) < maximum_solutions
+            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
             from_input = !from_input
             pq = from_input ? sc.pq_input : sc.pq_output
             if isempty(pq)
                 sleep(0.0001)
                 continue
             end
-            br_id, is_explained, bp = lock(sc.queues_lock) do
-                (br_id, is_explained) = draw(pq)
-                q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-                bp = dequeue!(q)
-                br_id, is_explained, bp
-            end
+            (br_id, is_explained) = draw(pq)
+            q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
+            bp = dequeue!(q)
 
             found_solutions = enumeration_iteration(
                 run_context,
@@ -609,9 +596,7 @@ function solve_task(
             export_solution_context(sc, task)
         end
     finally
-        put!(guiding_model_channels[2], (task.name, "stop"))
         put!(guiding_model_channels[3], task.name)
-        wait(receiver)
     end
 
     hits

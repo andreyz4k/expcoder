@@ -39,7 +39,7 @@ using solver:
     GuidingModelServer,
     start_server,
     stop_server,
-    grammar_receiver_loop
+    receive_grammar_weights
 
 using DataStructures
 
@@ -714,6 +714,7 @@ using DataStructures
 
         while !isempty(sc.waiting_branches)
             sleep(0.001)
+            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
         end
 
         has_multiple_options = length([1 for b in blocks if _block_can_be_next(b, vars_mapping)]) > 1
@@ -723,13 +724,11 @@ using DataStructures
                 if has_multiple_options
                     sc_next = deepcopy(sc)
                     sc_next.task_name = sc.task_name * "_$bl"
-                    sc_next.queues_lock = ReentrantLock()
 
                     put!(guiding_model_server.worker_register_channel, sc_next.task_name)
                     task_name, request_channel, result_channel, end_tasks_channel =
                         take!(guiding_model_server.worker_register_result_channel)
                     guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
-                    receiver = Threads.@spawn grammar_receiver_loop(sc_next, result_channel, grammar)
                 else
                     sc_next = sc
                 end
@@ -751,9 +750,7 @@ using DataStructures
                     )
                 finally
                     if has_multiple_options
-                        put!(result_channel, (sc_next.task_name, "stop"))
                         put!(end_tasks_channel, sc_next.task_name)
-                        wait(receiver)
                     end
                 end
                 union!(successful, s)
@@ -816,8 +813,6 @@ using DataStructures
 
             sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
 
-            receiver = Threads.@spawn grammar_receiver_loop(sc, result_channel, task_grammar)
-
             try
                 enqueue_updates(sc, guiding_model_channels, task_grammar)
                 branches = Dict()
@@ -874,9 +869,7 @@ using DataStructures
                     end
                 end
             finally
-                put!(result_channel, (task.name, "stop"))
                 put!(end_tasks_channel, task.name)
-                wait(receiver)
             end
         finally
             stop_server(guiding_model_server)

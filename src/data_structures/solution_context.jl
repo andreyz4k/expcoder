@@ -75,7 +75,6 @@ mutable struct SolutionContext
     total_number_of_enumerated_programs::Int64
     iterations_count::Int64
 
-    queues_lock::ReentrantLock
     pq_input::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
     pq_output::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
     branch_queues_unknown::Dict{UInt64,PriorityQueue}
@@ -141,7 +140,6 @@ function create_starting_context(task::Task, type_weights, hyperparameters, verb
         hyperparameters,
         0,
         0,
-        ReentrantLock(),
         NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
         NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
         Dict(),

@@ -356,9 +356,7 @@ function enumeration_iteration_traced(
                         @info "On path $new_bp"
                         @info "Enqueing $new_bp"
                     end
-                    lock(sc.queues_lock) do
-                        q[new_bp] = new_bp.cost
-                    end
+                    q[new_bp] = new_bp.cost
                 else
                     if sc.verbose
                         @info "Not on path $new_bp"
@@ -385,9 +383,7 @@ function enumeration_iteration_traced(
                     @info "On path $new_bp"
                     @info "Enqueing $new_bp"
                 end
-                lock(sc.queues_lock) do
-                    q[new_bp] = new_bp.cost
-                end
+                q[new_bp] = new_bp.cost
             else
                 if sc.verbose
                     @info "Not on path $new_bp"
@@ -396,9 +392,7 @@ function enumeration_iteration_traced(
         end
         found_solutions = []
     end
-    lock(sc.queues_lock) do
-        update_branch_priority(sc, br_id, is_explained)
-    end
+    update_branch_priority(sc, br_id, is_explained)
     return found_solutions
 end
 
@@ -437,7 +431,6 @@ function build_manual_trace(task::Task, target_solution, guiding_model_channels,
     # verbose_test = true
     sc = create_starting_context(task, type_weights, hyperparameters, verbose_test)
 
-    receiver = Threads.@spawn grammar_receiver_loop(sc, guiding_model_channels[2], grammar)
     try
         enqueue_updates(sc, guiding_model_channels, grammar)
 
@@ -471,25 +464,21 @@ function build_manual_trace(task::Task, target_solution, guiding_model_channels,
         from_input = true
 
         while (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches))
-            sleep(0.0001)
+            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
             from_input = !from_input
             pq = from_input ? sc.pq_input : sc.pq_output
             if isempty(pq)
+                sleep(0.0001)
                 continue
             end
-            br_id, is_explained, bp = lock(sc.queues_lock) do
-                (br_id, is_explained) = draw(pq)
-                q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-                bp = dequeue!(q)
-                br_id, is_explained, bp
-            end
+            (br_id, is_explained) = draw(pq)
+            q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
+            bp = dequeue!(q)
 
             target_blocks_group = from_input ? in_blocks : out_blocks
             var_id = sc.branch_vars[br_id]
             if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
-                lock(sc.queues_lock) do
-                    update_branch_priority(sc, br_id, is_explained)
-                end
+                update_branch_priority(sc, br_id, is_explained)
                 continue
             end
             target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
@@ -524,9 +513,7 @@ function build_manual_trace(task::Task, target_solution, guiding_model_channels,
         @error "Error in build_manual_trace" exception = (e, bt)
         rethrow()
     finally
-        put!(guiding_model_channels[2], (task.name, "stop"))
         put!(guiding_model_channels[3], task.name)
-        wait(receiver)
     end
     @info [sc.blocks[UInt64(i)] for i in 1:length(sc.blocks)]
     @error "Could not find a trace for $(task.name) with target solution $target_solution"

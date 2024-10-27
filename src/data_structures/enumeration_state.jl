@@ -171,19 +171,17 @@ function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
         return
     end
     prototypes = get_candidates_for_known_var(sc, branch_id, guiding_model_channels, grammar)
-    lock(sc.queues_lock) do
-        if haskey(sc.branch_queues_explained, branch_id)
-            q = sc.branch_queues_explained[branch_id]
-        else
-            q = PriorityQueue{BlockPrototype,Float64}()
-        end
-        for bp in prototypes
-            enqueue_known_bp(sc, bp, q, branch_id)
-        end
-        if !isempty(q)
-            sc.branch_queues_explained[branch_id] = q
-            update_branch_priority(sc, branch_id, true)
-        end
+    if haskey(sc.branch_queues_explained, branch_id)
+        q = sc.branch_queues_explained[branch_id]
+    else
+        q = PriorityQueue{BlockPrototype,Float64}()
+    end
+    for bp in prototypes
+        enqueue_known_bp(sc, bp, q, branch_id)
+    end
+    if !isempty(q)
+        sc.branch_queues_explained[branch_id] = q
+        update_branch_priority(sc, branch_id, true)
     end
 end
 
@@ -209,19 +207,17 @@ end
 
 function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
     prototypes = get_candidates_for_unknown_var(sc, branch_id, guiding_model_channels, grammar)
-    lock(sc.queues_lock) do
-        if haskey(sc.branch_queues_unknown, branch_id)
-            q = sc.branch_queues_unknown[branch_id]
-        else
-            q = PriorityQueue{BlockPrototype,Float64}()
-        end
-        for bp in prototypes
-            enqueue_unknown_bp(sc, bp, q)
-        end
-        if !isempty(q)
-            sc.branch_queues_unknown[branch_id] = q
-            update_branch_priority(sc, branch_id, false)
-        end
+    if haskey(sc.branch_queues_unknown, branch_id)
+        q = sc.branch_queues_unknown[branch_id]
+    else
+        q = PriorityQueue{BlockPrototype,Float64}()
+    end
+    for bp in prototypes
+        enqueue_unknown_bp(sc, bp, q)
+    end
+    if !isempty(q)
+        sc.branch_queues_unknown[branch_id] = q
+        update_branch_priority(sc, branch_id, false)
     end
 end
 

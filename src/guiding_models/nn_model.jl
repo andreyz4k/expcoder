@@ -1032,14 +1032,7 @@ function expand_traces(all_traces, preprocessor, batch_size = 1)
             end
         end
         if !isempty(X_data)
-            push!(
-                groups,
-                DataLoader(
-                    DataBlock(preprocessor, full_grammar, X_data, summaries),
-                    batchsize = batch_size,
-                    parallel = true,
-                ),
-            )
+            push!(groups, DataLoader(DataBlock(preprocessor, full_grammar, X_data, summaries), batchsize = batch_size))
         end
     end
     return groups

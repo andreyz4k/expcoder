@@ -29,7 +29,7 @@ function compress_traces(traces, grammar)
     if isempty(traces)
         return traces, grammar
     end
-    store_precompressed_traces(traces, grammar)
+    # store_precompressed_traces(traces, grammar)
     existing_inventions = String[string(p) for p in grammar if isa(p, Invented)]
     programs, tasks, hits = extract_programs_and_tasks(traces)
     iterations = 0

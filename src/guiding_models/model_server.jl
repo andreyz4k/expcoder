@@ -70,11 +70,14 @@ function _check_ended_tasks(server::GuidingModelServer)
     end
 end
 
+model_stats = DefaultDict(() -> [])
+
 function _guiding_processing_loop(server::GuidingModelServer)
     try
         while !server.stopped
             _check_ended_tasks(server)
             request = take!(server.request_channel)
+            start = time()
             input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
             if !haskey(server.result_channels, task_name)
                 continue
@@ -86,7 +89,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
 
             mem_footprint = max(value_max_length)^2 * batch_size
 
-            while isready(server.request_channel)
+            while isready(server.request_channel) && batch_size * value_max_length < 4000
                 # @info "Fetching another request"
                 _check_ended_tasks(server)
 
@@ -119,7 +122,8 @@ function _guiding_processing_loop(server::GuidingModelServer)
 
             model_inputs = (batch[1:3]..., reshape(batch[4], 1, :), batch[5])
             # @info model_inputs
-
+            fetch_time = time() - start
+            start = time()
             times, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
@@ -128,23 +132,46 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 @error "Model inputs: $(model_inputs)"
                 rethrow()
             end
+            # @info "Guiding model $(time() - start)"
+            push!(model_stats["full_run"], time() - start)
+            push!(model_stats["batch_size"], batch_size)
+            push!(model_stats["value_max_length"], value_max_length)
+            push!(model_stats["mem_footprint"], mem_footprint)
+            push!(model_stats["fetch_time"], fetch_time)
+            for (k, v) in times
+                push!(model_stats[k], v)
+            end
+            start = time()
 
             _check_ended_tasks(server)
             # @info "Result size: $(size(guiding_result))"
+            skipped = 0
             for (i, task_name) in enumerate(batch[5])
                 if !haskey(server.result_channels, task_name)
+                    skipped += 1
                     continue
                 end
                 result_channel = server.result_channels[task_name]
                 worker_result = guiding_result[:, i]
                 put!(result_channel, (task_name, entry_ids[i], batch[4][i], times, worker_result))
             end
+            # @info "Skipped $skipped/$(length(batch[5]))"
+            push!(model_stats["send_time"], time() - start)
+            push!(model_stats["skipped"], skipped)
+            push!(model_stats["out_batch_size"], length(batch[5]))
             # @info "Batch done"
         end
     catch e
         if !server.stopped
             bt = catch_backtrace()
             @error "Got error in guiding processing loop" exception = (e, bt)
+            close(server.worker_register_channel)
+            close(server.worker_register_result_channel)
+            close(server.request_channel)
+            close(server.end_tasks_channel)
+            for (task_name, result_channel) in server.result_channels
+                close(result_channel)
+            end
             rethrow()
         end
     end

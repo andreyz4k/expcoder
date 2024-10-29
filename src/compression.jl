@@ -54,7 +54,10 @@ function compress_traces(traces, grammar)
     )
     new_grammar = Program[p for p in grammar]
     for abst_dict in new_abstractions
-        push!(new_grammar, parse_program(abst_dict["body"]))
+        new_abstraction = parse_program(abst_dict["body"])
+        if !in(new_abstraction, new_grammar)
+            push!(new_grammar, new_abstraction)
+        end
     end
     new_traces = Dict()
     for ((hit, cost), task_name, new_program) in zip(hits, tasks, rewritten_programs)

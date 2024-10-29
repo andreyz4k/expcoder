@@ -808,6 +808,13 @@ function build_likelihood_summary(grammar, request, p, is_reversed)
         Dict(),
         summary,
     )
+    if sum(values(summary.uses); init = 0) != sum(values(summary.normalizers); init = 0)
+        @info request
+        @info p
+        @info is_reversed
+        @info summary
+        error("Length of uses and normalizers should be the same")
+    end
     return _preprocess_summary(summary, length(grammar) + 3)
 end
 
@@ -1083,6 +1090,12 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
                 loss_val, grads = Flux.withgradient(guiding_model) do m
                     result = m(inputs)
                     loss(result, summaries)
+                end
+                if loss_val < 0
+                    @warn "Negative loss is $loss_val on item $i $j"
+                    # @info inputs
+                    # @info summaries
+                    error("Negative loss")
                 end
                 push!(losses, loss_val)
 

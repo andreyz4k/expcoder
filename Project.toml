@@ -32,7 +32,7 @@ Transformers = "21ca0261-441d-5938-ace7-c90938fde4d4"
 cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [compat]
-Flux = "0.14.22"
+Flux = "=0.14.22"
 JLD2 = "0.4.53"
 cuDNN = "1.4.0"
 

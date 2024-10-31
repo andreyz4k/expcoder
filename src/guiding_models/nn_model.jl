@@ -1090,7 +1090,9 @@ function loss(result, summary)
 
     denominator = sum(N .* z, dims = 1)
 
-    return mean(denominator .- numenator)
+    weight_sum = sum(result, dims = 1)
+
+    return mean(denominator .- numenator .+ weight_sum)
 end
 
 using ProgressMeter
@@ -1101,7 +1103,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
         return guiding_model
     end
 
-    opt_state = Flux.setup(Adam(0.001, (0.9, 0.999), 1e-8), guiding_model)
+    opt_state = Flux.setup(Adam(0.01, (0.9, 0.999), 1e-8), guiding_model)
 
     train_set_size = sum(length, train_set)
     epochs = 10
@@ -1140,6 +1142,12 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
         end
         finish!(p)
         @info "Average loss for epoch $e: $(mean(losses))"
+        if e % 10 == 0
+            save_guiding_model(guiding_model, joinpath("model_checkpoints", "$(string(Dates.now())).jld2"))
+        end
+        if e % 10 == 0
+            save_guiding_model(guiding_model, "guiding_model.jld2")
+        end
     end
 
     return guiding_model

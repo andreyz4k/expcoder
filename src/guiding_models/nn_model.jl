@@ -1085,15 +1085,13 @@ function loss(result, summary)
     numenator = sum(result .* uses, dims = 1) .+ constant
 
     z = (mask .+ repeat(reshape(result, size(result, 1), 1, size(result)[2:end]...), 1, size(mask, 2), 1))
-    probs = exp.(z)
-    prob_sum = sum(probs, dims = 1)
-    prob_sum = reshape(prob_sum, size(probs)[2:end]...)
+
     z = logsumexp(z, dims = 1)
     z = reshape(z, size(z)[2:end]...)
 
     denominator = sum(N .* z, dims = 1)
 
-    return mean(denominator .- numenator) + mse(prob_sum, 1)
+    return mean(denominator .- numenator) + mean(z .^ 2 ./ 1000)
 end
 
 using ProgressMeter
@@ -1104,7 +1102,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
         return guiding_model
     end
 
-    opt_state = Flux.setup(Adam(0.01, (0.9, 0.999), 1e-8), guiding_model)
+    opt_state = Flux.setup(Adam(0.005, (0.9, 0.999), 1e-8), guiding_model)
 
     train_set_size = sum(length, train_set)
     epochs = 10

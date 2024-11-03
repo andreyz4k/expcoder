@@ -1085,20 +1085,21 @@ function loss(result, summary)
     numenator = sum(result .* uses, dims = 1) .+ constant
 
     z = (mask .+ repeat(reshape(result, size(result, 1), 1, size(result)[2:end]...), 1, size(mask, 2), 1))
+    probs = exp.(z)
+    prob_sum = sum(probs, dims = 1)
+    prob_sum = reshape(prob_sum, size(probs)[2:end]...)
     z = logsumexp(z, dims = 1)
     z = reshape(z, size(z)[2:end]...)
 
     denominator = sum(N .* z, dims = 1)
 
-    weight_sum = sum(result, dims = 1)
-
-    return mean(denominator .- numenator .+ weight_sum)
+    return mean(denominator .- numenator) + mse(prob_sum, 1)
 end
 
 using ProgressMeter
 
 function update_guiding_model(guiding_model::NNGuidingModel, traces)
-    train_set = expand_traces(traces, guiding_model.preprocessor, 32)
+    train_set = expand_traces(traces, guiding_model.preprocessor, 40)
     if isempty(train_set)
         return guiding_model
     end

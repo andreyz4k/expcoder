@@ -22,3 +22,5 @@ test/solution_dumps
 checkpoints/
 compressed_traces/
 LocalPreferences.toml
+model_checkpoints/
+model_stats/

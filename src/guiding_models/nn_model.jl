@@ -1102,7 +1102,10 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
         return guiding_model
     end
 
-    opt_state = Flux.setup(Adam(0.005, (0.9, 0.999), 1e-8), guiding_model)
+    opt_state = Flux.setup(
+        OptimiserChain(SignDecay(0.005), WeightDecay(0.001), ClipGrad(10), Adam(0.005, (0.9, 0.999), 1e-8)),
+        guiding_model,
+    )
 
     train_set_size = sum(length, train_set)
     epochs = 10

@@ -336,13 +336,13 @@ hidden_channels = 32
 
 function InputOutputEncoder()
     convs = [
-        Conv((3, 3), 10 => hidden_channels, relu; pad = SamePad()),
-        Conv((3, 3), hidden_channels => hidden_channels * 2, relu; pad = SamePad()),
-        Conv((3, 3), hidden_channels * 2 => floor(Int, d_emb / 2), relu; pad = SamePad()),
-        Conv((3, 3), floor(Int, d_emb / 2) => d_emb, relu; pad = SamePad()),
+        Conv((3, 3), 10 => hidden_channels, elu; pad = SamePad()),
+        Conv((3, 3), hidden_channels => hidden_channels * 2, elu; pad = SamePad()),
+        Conv((3, 3), hidden_channels * 2 => floor(Int, d_emb / 2), elu; pad = SamePad()),
+        Conv((3, 3), floor(Int, d_emb / 2) => d_emb, elu; pad = SamePad()),
     ]
-    linear1 = Dense(d_emb, d_emb, relu)
-    linear2 = Dense(d_emb, d_emb, relu)
+    linear1 = Dense(d_emb, d_emb, elu)
+    linear2 = Dense(d_emb, d_emb, elu)
     return InputOutputEncoder(convs, GlobalMaxPool(), linear1, linear2)
 end
 
@@ -415,11 +415,11 @@ function NNGuidingModel()
     input_output_encoder = InputOutputEncoder() |> todevice
     state_processor =
         Chain(
-            Dense(d_state_in, d_state_h, relu),
-            Dense(d_state_h, d_state_h, relu),
-            Dense(d_state_h, d_state_out, relu),
+            Dense(d_state_in, d_state_h, elu),
+            Dense(d_state_h, d_state_h, elu),
+            Dense(d_state_h, d_state_out, elu),
         ) |> todevice
-    decoder = Chain(Dense(d_state_out + d_emb, d_dec_h, relu), Dense(d_dec_h, 1)) |> todevice
+    decoder = Chain(Dense(d_state_out + d_emb, d_dec_h, elu), Dense(d_dec_h, 1)) |> todevice
     return NNGuidingModel(
         Preprocessor(),
         embedder,

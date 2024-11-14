@@ -1103,7 +1103,7 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
     end
 
     opt_state = Flux.setup(
-        OptimiserChain(SignDecay(0.005), WeightDecay(0.001), ClipGrad(10), Adam(0.005, (0.9, 0.999), 1e-8)),
+        OptimiserChain(SignDecay(0.001), WeightDecay(0.0001), ClipNorm(10), Adam(0.005, (0.9, 0.999), 1e-8)),
         guiding_model,
     )
 
@@ -1120,9 +1120,9 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
 
                 # Calculate the gradient of the objective
                 # with respect to the parameters within the model:
-                loss_val, grads = Flux.withgradient(guiding_model) do m
+                (loss_val, result), grads = Flux.withgradient(guiding_model) do m
                     result = m(inputs)
-                    loss(result, summaries)
+                    loss(result, summaries), result
                 end
                 if loss_val < 0
                     @warn "Negative loss is $loss_val on item $i $j"
@@ -1131,6 +1131,11 @@ function update_guiding_model(guiding_model::NNGuidingModel, traces)
                     error("Negative loss")
                 end
                 push!(losses, loss_val)
+
+                if all(sum(result[:, 1] .- result[:, k]) < 1.0f-6 for k in 1:size(result, 2))
+                    @warn "All grammar weights are the same on item $i $j"
+                    # error("All grammar weights are the same")
+                end
 
                 if !isfinite(loss_val)
                     @warn "loss is $loss_val on item $i $j"

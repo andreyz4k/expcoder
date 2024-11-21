@@ -58,6 +58,8 @@ function get_guiding_model(model)
         return DummyGuidingModel()
     elseif model == "nn"
         return NNGuidingModel()
+    elseif model == "python"
+        return PythonGuidingModel()
     end
     error("Unknown model: $model")
 end
@@ -841,56 +843,64 @@ function main(; kwargs...)
     # tasks = tasks[begin:10]
 
     try
-        if isnothing(parsed_args[:resume])
-            traces =
-                get_manual_traces(parsed_args[:domain], tasks, grammar, grammar_hash, worker_pool, guiding_model_server)
-        end
-
-        while i <= parsed_args[:iterations]
-            i += 1
-
-            new_traces = try_solve_tasks(
-                worker_pool,
-                tasks,
-                guiding_model_server,
-                grammar,
-                parsed_args[:timeout],
-                parsed_args[:program_timeout],
-                type_weights,
-                hyperparameters,
-                parsed_args[:maximum_solutions],
-                parsed_args[:verbose],
-            )
-            if !haskey(traces, grammar_hash)
-                traces[grammar_hash] = (grammar, Dict{String,Any}())
+        PythonCall.GIL.@unlock begin
+            if isnothing(parsed_args[:resume])
+                traces = get_manual_traces(
+                    parsed_args[:domain],
+                    tasks,
+                    grammar,
+                    grammar_hash,
+                    worker_pool,
+                    guiding_model_server,
+                )
             end
-            cur_traces = traces[grammar_hash][2]
-            for task_traces in new_traces
-                task_name = task_traces["task"].name
-                if !haskey(cur_traces, task_name)
-                    cur_traces[task_name] = PriorityQueue{HitResult,Float64}()
-                end
-                for (trace, cost) in task_traces["traces"]
-                    cur_traces[task_name][trace] = cost
 
-                    while length(cur_traces[task_name]) > parsed_args[:maximum_solutions]
-                        dequeue!(cur_traces[task_name])
+            while i <= parsed_args[:iterations]
+                i += 1
+
+                new_traces = try_solve_tasks(
+                    worker_pool,
+                    tasks,
+                    guiding_model_server,
+                    grammar,
+                    parsed_args[:timeout],
+                    parsed_args[:program_timeout],
+                    type_weights,
+                    hyperparameters,
+                    parsed_args[:maximum_solutions],
+                    parsed_args[:verbose],
+                )
+                if !haskey(traces, grammar_hash)
+                    traces[grammar_hash] = (grammar, Dict{String,Any}())
+                end
+                cur_traces = traces[grammar_hash][2]
+                for task_traces in new_traces
+                    task_name = task_traces["task"].name
+                    if !haskey(cur_traces, task_name)
+                        cur_traces[task_name] = PriorityQueue{HitResult,Float64}()
+                    end
+                    for (trace, cost) in task_traces["traces"]
+                        cur_traces[task_name][trace] = cost
+
+                        while length(cur_traces[task_name]) > parsed_args[:maximum_solutions]
+                            dequeue!(cur_traces[task_name])
+                        end
                     end
                 end
+
+                cur_traces, grammar = compress_traces(cur_traces, grammar)
+                grammar_hash = hash(grammar)
+                traces[grammar_hash] = (grammar, cur_traces)
+
+                @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
+                log_traces(cur_traces)
+                log_grammar(i - 1, grammar)
+
+                clear_model_cache(guiding_model)
+                guiding_model = update_guiding_model(guiding_model, traces)
+                save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
+                set_current_grammar!(guiding_model, grammar)
             end
-
-            cur_traces, grammar = compress_traces(cur_traces, grammar)
-            grammar_hash = hash(grammar)
-            traces[grammar_hash] = (grammar, cur_traces)
-
-            @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
-            log_traces(cur_traces)
-            log_grammar(i - 1, grammar)
-
-            clear_model_cache(guiding_model)
-            guiding_model = update_guiding_model(guiding_model, traces)
-            save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
-            set_current_grammar!(guiding_model, grammar)
         end
     finally
         stop(worker_pool)

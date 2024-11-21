@@ -24,3 +24,4 @@ compressed_traces/
 LocalPreferences.toml
 model_checkpoints/
 model_stats/
+.CondaPkg/

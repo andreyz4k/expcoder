@@ -329,3 +329,16 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
         @info "Sent inputs to model for branch $branch_id $model_inputs"
     end
 end
+
+function load_guiding_model(path)
+    model_info = JLD2.load(path)
+    if model_info["type"] == "nn"
+        load_guiding_model(NNGuidingModel, model_info["model_state"])
+    elseif model_info["type"] == "dummy"
+        load_guiding_model(DummyGuidingModel, model_info["model_state"])
+    elseif model_info["type"] == "python"
+        load_guiding_model(PythonGuidingModel, model_info["model_state"])
+    else
+        error("Unknown model type: $(model_info["type"])")
+    end
+end

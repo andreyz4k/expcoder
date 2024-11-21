@@ -1,0 +1,10 @@
+[deps]
+tqdm = ""
+pytorch = ""
+optimum = ""
+onnx = ""
+einops = ""
+numpy = ""
+
+[pip.deps]
+transformers = ""

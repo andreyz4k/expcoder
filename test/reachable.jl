@@ -42,6 +42,7 @@ using solver:
     receive_grammar_weights
 
 using DataStructures
+using PythonCall
 
 @testset "Reachable solutions" begin
     sample_library = Any[
@@ -1997,7 +1998,7 @@ using DataStructures
         check_reachable(task, guiding_model, grammar, target_solution)
     end
 
-    @testset "Guiding model type $model_type" for model_type in ["dummy", "nn"]
+    @testset "Guiding model type $model_type" for model_type in ["dummy", "nn", "python"]
         arc_guiding_model = get_guiding_model(model_type)
 
         function test_build_manual_trace(task, target_solution, task_grammar)
@@ -2008,17 +2009,19 @@ using DataStructures
             start_server(guiding_model_server)
 
             try
-                register_channel = guiding_model_server.worker_register_channel
-                register_response_channel = guiding_model_server.worker_register_result_channel
-                put!(register_channel, task.name)
-                task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
-                return @time build_manual_trace(
-                    task,
-                    task.name,
-                    target_solution,
-                    (request_channel, result_channel, end_tasks_channel),
-                    task_grammar,
-                )
+                PythonCall.GIL.@unlock begin
+                    register_channel = guiding_model_server.worker_register_channel
+                    register_response_channel = guiding_model_server.worker_register_result_channel
+                    put!(register_channel, task.name)
+                    task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
+                    return @time build_manual_trace(
+                        task,
+                        task.name,
+                        target_solution,
+                        (request_channel, result_channel, end_tasks_channel),
+                        task_grammar,
+                    )
+                end
             finally
                 stop_server(guiding_model_server)
                 set_current_grammar!(arc_guiding_model, grammar)

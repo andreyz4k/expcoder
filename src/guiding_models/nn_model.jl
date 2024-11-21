@@ -484,15 +484,6 @@ function save_guiding_model(m::NNGuidingModel, path)
     jldsave(path; type = "nn", model_state)
 end
 
-function load_guiding_model(path)
-    model_info = JLD2.load(path)
-    if model_info["type"] == "nn"
-        load_guiding_model(NNGuidingModel, model_info["model_state"])
-    elseif model_info["type"] == "dummy"
-        load_guiding_model(DummyGuidingModel, model_info["model_state"])
-    end
-end
-
 function load_guiding_model(::Type{NNGuidingModel}, model_state)
     m = NNGuidingModel()
     Flux.loadmodel!(m, model_state)
@@ -1077,10 +1068,6 @@ end
 using Statistics
 function loss(result, summary)
     uses, mask, N, constant = summary
-    uses = uses
-    mask = mask
-    N = N
-    constant = constant
 
     numenator = sum(result .* uses, dims = 1) .+ constant
 

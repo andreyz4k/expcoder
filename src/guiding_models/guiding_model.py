@@ -131,10 +131,11 @@ class Embedder:
         self.model = AutoModel.from_pretrained(
             "jinaai/jina-embeddings-v2-base-code", trust_remote_code=True
         ).to(device)
+        self.model.requires_grad_(False)
 
     def encode(self, batch):
         with torch.no_grad():
-            return self.model.encode(batch, convert_to_tensor=True)
+            return self.model.encode(batch, convert_to_tensor=True).detach()
 
 
 class GuidingModel(nn.Module):
@@ -163,7 +164,7 @@ class GuidingModel(nn.Module):
 
     def set_current_grammar(self, grammar):
         grammar_func_encodings = self.get_embedding(grammar)
-        grammar_encodings = torch.mean(grammar_func_encodings, dim=0)
+        grammar_encodings = torch.mean(grammar_func_encodings, dim=0).detach()
         self.grammar_cache = grammar_func_encodings, grammar_encodings
 
     def get_embedding(self, batch):

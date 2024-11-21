@@ -201,7 +201,7 @@ function run_guiding_model(guiding_model::PythonGuidingModel, model_inputs)
         result = guiding_model.py_model.predict(inputs_batch, outputs_batch, trace_val_batch, is_reversed)
 
         result = permutedims(pyconvert(Array, result), [2, 1])
-        PythonCall.GC.gc()
+        # PythonCall.GC.gc()
 
         times["run"] = time() - start
         return times, result

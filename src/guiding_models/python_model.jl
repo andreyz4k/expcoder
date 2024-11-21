@@ -74,12 +74,14 @@ function build_train_set(all_traces, guiding_model::PythonGuidingModel, batch_si
 end
 
 function update_guiding_model(guiding_model::PythonGuidingModel, traces)
-    train_set = build_train_set(traces, guiding_model, 40)
-    if isempty(train_set)
+    PythonCall.GIL.@lock begin
+        train_set = build_train_set(traces, guiding_model, 40)
+        if isempty(train_set)
+            return guiding_model
+        end
+        guiding_model.py_model.run_training(train_set)
         return guiding_model
     end
-    guiding_model.py_model.run_training(train_set)
-    return guiding_model
 end
 
 function __unfold_trace_value(val)
@@ -207,17 +209,21 @@ function run_guiding_model(guiding_model::PythonGuidingModel, model_inputs)
 end
 
 function save_guiding_model(m::PythonGuidingModel, path)
-    py_path = path * ".pt"
-    m.py_model.save(py_path)
-    model_state = Dict("py_model" => py_path)
-    jldsave(path; type = "python", model_state)
+    PythonCall.GIL.@lock begin
+        py_path = path * ".pt"
+        m.py_model.save(py_path)
+        model_state = Dict("py_model" => py_path)
+        jldsave(path; type = "python", model_state)
+    end
 end
 
 function load_guiding_model(::Type{PythonGuidingModel}, model_state)
     m = PythonGuidingModel()
     py_path = model_state["py_model"]
-    m.py_model.load(py_path)
-    return m
+    PythonCall.GIL.@lock begin
+        m.py_model.load(py_path)
+        return m
+    end
 end
 
 function get_encoded_value_length(model::PythonGuidingModel, max_summary)

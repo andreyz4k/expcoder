@@ -70,9 +70,18 @@ function _check_ended_tasks(server::GuidingModelServer)
     end
 end
 
-model_stats = DefaultDict(() -> [])
+function n_avail_c(rr::RemoteChannel, args...)
+    rid = remoteref_id(rr)
+    return if rr.where == myid()
+        Base.n_avail(Distributed.lookup_ref(rid).c, args...)
+    else
+        remotecall_fetch(rid -> Base.n_avail(Distributed.lookup_ref(rid).c, args...), rr.where, rid)
+    end
+end
 
 function _guiding_processing_loop(server::GuidingModelServer)
+    wasted_time = 0.0
+    model_stats = DefaultDict(() -> [])
     try
         while !server.stopped
             _check_ended_tasks(server)
@@ -80,6 +89,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             start = time()
             input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
             if !haskey(server.result_channels, task_name)
+                wasted_time += time() - start
                 continue
             end
             entry_ids = [entry_id]
@@ -153,6 +163,10 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 end
                 result_channel = server.result_channels[task_name]
                 worker_result = guiding_result[:, i]
+                channel_queue_size = n_avail_c(result_channel)
+                if channel_queue_size > 900
+                    @warn "Result channel almost full $channel_queue_size"
+                end
                 put!(result_channel, (task_name, entry_ids[i], batch[4][i], times, worker_result))
             end
             # @info "Skipped $skipped/$(length(batch[5]))"
@@ -173,6 +187,11 @@ function _guiding_processing_loop(server::GuidingModelServer)
                 close(result_channel)
             end
             rethrow()
+        end
+    finally
+        @info "Wasted time on fetching finished tasks: $wasted_time"
+        for (k, v) in model_stats
+            @info "Model stats $k: $(mean(v)) ± $(std(v)) total $(sum(v)) max $(maximum(v))"
         end
     end
 end
@@ -199,6 +218,10 @@ function stop_server(server::GuidingModelServer, verbose = false)
 end
 
 function send_inputs_to_model(guiding_model_channels, model_inputs)
+    channel_queue_size = n_avail_c(guiding_model_channels[1])
+    if channel_queue_size > 900
+        @warn "Request channel almost full $channel_queue_size"
+    end
     put!(guiding_model_channels[1], model_inputs)
 end
 

@@ -74,7 +74,9 @@ function build_train_set(all_traces, guiding_model::PythonGuidingModel, batch_si
 end
 
 function update_guiding_model(guiding_model::PythonGuidingModel, traces)
+    @info "Updating guiding model"
     PythonCall.GIL.@lock begin
+        @info "Got GIL"
         train_set = build_train_set(traces, guiding_model, 40)
         if isempty(train_set)
             return guiding_model

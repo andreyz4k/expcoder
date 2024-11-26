@@ -2,7 +2,9 @@ from datetime import datetime
 import itertools
 import math
 import os
+from time import time
 import torch.utils
+import torch.mps
 from tqdm import tqdm
 from transformers import AutoModel
 from torch import nn
@@ -268,12 +270,19 @@ class GuidingModel(nn.Module):
     def predict(self, inputs_batch, outputs_batch, trace_val_batch, is_reversed):
         try:
             self.eval()
+            times = {}
             with torch.no_grad():
+                start = time()
                 trace_val_embedding = self.get_trace_val_embedding(*trace_val_batch)
+                times["trace_val_embedding"] = time() - start
+
                 # inputs_batch = self.transfer_to_device(inputs_batch)
                 # outputs_batch = self.transfer_to_device(outputs_batch)
+                start = time()
                 is_reversed = self.transfer_to_device(is_reversed)
+                times["transfer"] = time() - start
 
+                start = time()
                 grammar_func_encodings, grammar_encodings = self.grammar_cache
                 result = self.forward(
                     grammar_func_encodings,
@@ -283,10 +292,14 @@ class GuidingModel(nn.Module):
                     trace_val_embedding,
                     is_reversed,
                 )
-            return result.cpu().detach().numpy()
+                times["main_forward"] = time() - start
+            return result.cpu().detach().numpy(), times
         except Exception as e:
             print(e)
             raise
+        finally:
+            if device == "mps":
+                torch.mps.empty_cache()
 
     def build_dataset(self, grammar, X_data, summaries, batch_size):
         return DataLoader(
@@ -348,6 +361,8 @@ class GuidingModel(nn.Module):
                         "model_checkpoints", f"{datetime.now().isoformat()}.pt"
                     )
                 )
+        if device == "mps":
+            torch.mps.empty_cache()
 
     def save(self, path):
         torch.save(self.state_dict(), path)

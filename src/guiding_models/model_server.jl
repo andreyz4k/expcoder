@@ -15,7 +15,7 @@ end
 function GuidingModelServer(model)
     worker_register_channel = RemoteChannel(() -> Channel{String}(20))
     worker_register_result_channel = RemoteChannel(() -> Channel{Any}(20))
-    request_channel = RemoteChannel(() -> Channel{Any}(1000))
+    request_channel = RemoteChannel(() -> Channel{Any}(10000))
     result_channels = Dict{String,RemoteChannel}()
     end_tasks_channel = RemoteChannel(() -> Channel{Any}(100))
     return GuidingModelServer(
@@ -59,7 +59,7 @@ function _registration_loop(server::GuidingModelServer)
     end
 end
 
-gpu_mem_threshold = 3 * 10^8
+gpu_mem_threshold = 7 * 10^8
 
 function _check_ended_tasks(server::GuidingModelServer)
     while isready(server.end_tasks_channel)
@@ -79,9 +79,13 @@ function n_avail_c(rr::RemoteChannel, args...)
     end
 end
 
+model_stats = DefaultDict(() -> [])
+
 function _guiding_processing_loop(server::GuidingModelServer)
     wasted_time = 0.0
-    model_stats = DefaultDict(() -> [])
+    total_skipped_early = 0
+    total_skipped_late = 0
+    total_success = 0
     try
         while !server.stopped
             _check_ended_tasks(server)
@@ -90,6 +94,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
             input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
             if !haskey(server.result_channels, task_name)
                 wasted_time += time() - start
+                total_skipped_early += 1
                 continue
             end
             entry_ids = [entry_id]
@@ -99,26 +104,30 @@ function _guiding_processing_loop(server::GuidingModelServer)
 
             mem_footprint = max(value_max_length)^2 * batch_size
 
-            while isready(server.request_channel) && batch_size * value_max_length < 4000
+            while isready(server.request_channel) && batch_size * value_max_length < 30000
                 # @info "Fetching another request"
                 _check_ended_tasks(server)
+                w_start = time()
 
                 request = fetch(server.request_channel)
                 input, output, trace_val, is_rev, entry_id, task_name, max_summary, options_count = request
 
                 if !haskey(server.result_channels, task_name)
                     take!(server.request_channel)
+                    wasted_time += time() - w_start
+                    total_skipped_early += 1
                     continue
                 end
 
-                val_max_length = get_encoded_value_length(server.model, max_summary)
+                new_val_max_length = max(value_max_length, get_encoded_value_length(server.model, max_summary))
 
-                mem_footprint = max(value_max_length, val_max_length)^2 * (batch_size + options_count)
-                if mem_footprint > gpu_mem_threshold
+                new_mem_footprint = new_val_max_length^2 * (batch_size + options_count)
+                if new_mem_footprint > gpu_mem_threshold || (batch_size + options_count) * new_val_max_length > 30000
                     break
                 end
 
-                value_max_length = max(value_max_length, val_max_length)
+                mem_footprint = new_mem_footprint
+                value_max_length = new_val_max_length
                 batch_size += options_count
 
                 take!(server.request_channel)
@@ -134,6 +143,12 @@ function _guiding_processing_loop(server::GuidingModelServer)
             # @info model_inputs
             fetch_time = time() - start
             start = time()
+            @info "Tasks count: $(length(batch[5]))"
+            @info "Batch size: $batch_size"
+            @info "Value max length: $value_max_length"
+            @info "Batch table size $(batch_size * value_max_length)"
+            @info "Memory footprint: $mem_footprint"
+            @info "Remaining queue size: $(n_avail_c(server.request_channel))"
             times, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e
@@ -159,8 +174,10 @@ function _guiding_processing_loop(server::GuidingModelServer)
             for (i, task_name) in enumerate(batch[5])
                 if !haskey(server.result_channels, task_name)
                     skipped += 1
+                    total_skipped_late += 1
                     continue
                 end
+                total_success += 1
                 result_channel = server.result_channels[task_name]
                 worker_result = guiding_result[:, i]
                 channel_queue_size = n_avail_c(result_channel)
@@ -190,6 +207,10 @@ function _guiding_processing_loop(server::GuidingModelServer)
         end
     finally
         @info "Wasted time on fetching finished tasks: $wasted_time"
+        @info "Total skipped early: $total_skipped_early"
+        @info "Total skipped late: $total_skipped_late"
+        @info "Total success: $total_success"
+        @info "Success rate: $(total_success / (total_success + total_skipped_late))"
         for (k, v) in model_stats
             @info "Model stats $k: $(mean(v)) ± $(std(v)) total $(sum(v)) max $(maximum(v))"
         end
@@ -219,7 +240,7 @@ end
 
 function send_inputs_to_model(guiding_model_channels, model_inputs)
     channel_queue_size = n_avail_c(guiding_model_channels[1])
-    if channel_queue_size > 900
+    if channel_queue_size > 9900
         @warn "Request channel almost full $channel_queue_size"
     end
     put!(guiding_model_channels[1], model_inputs)

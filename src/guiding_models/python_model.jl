@@ -200,7 +200,10 @@ function run_guiding_model(guiding_model::PythonGuidingModel, model_inputs)
 
         is_reversed = Py(permutedims(is_reversed, [2, 1])).to_numpy()
 
-        result = guiding_model.py_model.predict(inputs_batch, outputs_batch, trace_val_batch, is_reversed)
+        result, m_times = guiding_model.py_model.predict(inputs_batch, outputs_batch, trace_val_batch, is_reversed)
+        for (k, t) in m_times.items()
+            times[pyconvert(String, k)] = pyconvert(Float32, t)
+        end
 
         result = permutedims(pyconvert(Array, result), [2, 1])
         # PythonCall.GC.gc()
@@ -229,5 +232,5 @@ function load_guiding_model(::Type{PythonGuidingModel}, model_state)
 end
 
 function get_encoded_value_length(model::PythonGuidingModel, max_summary)
-    return 5000
+    sum(token_weights[tname] * count for (tname, count) in max_summary; init = 0)
 end

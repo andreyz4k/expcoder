@@ -60,6 +60,8 @@ function get_guiding_model(model)
         return NNGuidingModel()
     elseif model == "python"
         return PythonGuidingModel()
+    elseif model == "standalone"
+        return PythonStandaloneGuidingModel()
     end
     error("Unknown model: $model")
 end
@@ -552,7 +554,7 @@ function solve_task(
         while (!(enumeration_timed_out(enumeration_timeout))) &&
                   (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches)) &&
                   length(hits) < maximum_solutions
-            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
+            receive_grammar_weights(sc, guiding_model_channels, grammar)
             from_input = !from_input
             pq = from_input ? sc.pq_input : sc.pq_output
             if isempty(pq)
@@ -600,7 +602,7 @@ function solve_task(
             export_solution_context(sc, task)
         end
     finally
-        put!(guiding_model_channels[3], task_name)
+        mark_task_finished(guiding_model_channels, task_name)
     end
 
     hits
@@ -688,6 +690,50 @@ function try_solve_tasks(
                 sleep(0.01)
             end
         end
+    end
+    filter!(tr -> !isempty(tr["traces"]), new_traces)
+    @info "Got new solutions for $(length(new_traces))/$(length(tasks)) tasks"
+    return new_traces
+end
+
+function try_solve_tasks(
+    worker_pool,
+    tasks,
+    guiding_model_server::PythonGuidingModelServer,
+    grammar,
+    timeout,
+    program_timeout,
+    type_weights,
+    hyperparameters,
+    maximum_solutions,
+    verbose,
+)
+    timeout_containers = worker_pool.timeout_containers
+    redis_db = guiding_model_server.model.redis_db
+    new_traces = pmap(
+        worker_pool,
+        tasks;
+        retry_check = (s, e) -> isa(e, ProcessExitedException),
+        retry_delays = zeros(5),
+    ) do task
+        # new_traces = map(tasks) do task
+        task_name = "$(task.name)_$(randstring(6))"
+        conn = get_redis_connection(redis_db)
+        result = @time try_solve_task(
+            task,
+            task_name,
+            conn,
+            grammar,
+            timeout_containers,
+            timeout,
+            program_timeout,
+            type_weights,
+            hyperparameters,
+            maximum_solutions,
+            verbose,
+        )
+        Redis.disconnect(conn)
+        return result
     end
     filter!(tr -> !isempty(tr["traces"]), new_traces)
     @info "Got new solutions for $(length(new_traces))/$(length(tasks)) tasks"
@@ -820,9 +866,9 @@ function main(; kwargs...)
 
     @info "Parsed arguments $parsed_args"
     grammar_hash = hash(grammar)
-    set_current_grammar!(guiding_model, grammar)
     guiding_model_server = GuidingModelServer(guiding_model)
     start_server(guiding_model_server)
+    set_current_grammar!(guiding_model, grammar)
     worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
 
     type_weights = Dict{String,Any}(

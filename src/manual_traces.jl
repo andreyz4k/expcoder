@@ -41,6 +41,33 @@ function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
     return traces
 end
 
+function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServer, grammar, worker_pool)
+    solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
+    task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
+    redis_db = guiding_model_server.model.redis_db
+    new_traces = pmap(
+        worker_pool,
+        [(task, sol) for (task, sols) in task_solutions for sol in sols];
+        retry_check = (s, e) -> isa(e, ProcessExitedException),
+        retry_delays = zeros(5),
+    ) do (task, sol)
+        task_name = "$(task.name)_$(randstring(6))"
+        conn = get_redis_connection(redis_db)
+        @info "Building manual trace for $(task.name)"
+        hit, cost = @time build_manual_trace(task, task_name, sol, conn, grammar)
+        return (task.name, hit, cost)
+    end
+
+    traces = Dict{String,Any}()
+    for (task_name, hit, cost) in new_traces
+        if !haskey(traces, task_name)
+            traces[task_name] = PriorityQueue{HitResult,Float64}()
+        end
+        traces[task_name][hit] = cost
+    end
+    return traces
+end
+
 _used_vars(p::FreeVar) = [p.var_id]
 _used_vars(p::Apply) = vcat(_used_vars(p.f), _used_vars(p.x))
 _used_vars(p::Abstraction) = _used_vars(p.b)
@@ -466,7 +493,7 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
         from_input = true
 
         while (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches))
-            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
+            receive_grammar_weights(sc, guiding_model_channels, grammar)
             from_input = !from_input
             pq = from_input ? sc.pq_input : sc.pq_output
             if isempty(pq)
@@ -515,7 +542,7 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
         @error "Error in build_manual_trace" exception = (e, bt)
         rethrow()
     finally
-        put!(guiding_model_channels[3], task_name)
+        mark_task_finished(guiding_model_channels, task_name)
     end
     @info [sc.blocks[UInt64(i)] for i in 1:length(sc.blocks)]
     @error "Could not find a trace for $(task.name) with target solution $target_solution"

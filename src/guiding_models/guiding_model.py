@@ -2,6 +2,7 @@ from datetime import datetime
 import itertools
 import math
 import os
+from threading import Lock
 from time import time
 import torch.utils
 import torch.mps
@@ -140,11 +141,9 @@ class Embedder:
             return self.model.encode(batch, convert_to_tensor=True).detach()
 
 
-class GuidingModel(nn.Module):
-    def __init__(self):
-        super(GuidingModel, self).__init__()
-        self.embedder = Embedder()
-
+class GuidingModelBody(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
         self.state_processor = nn.Sequential(
             nn.Linear(d_state_in, d_state_h),
             nn.ELU(),
@@ -158,7 +157,45 @@ class GuidingModel(nn.Module):
             nn.ELU(),
             nn.Linear(d_dec_h, 1),
         )
+
+    def forward(
+        self,
+        grammar_func_encodings,
+        grammar_encodings,
+        input_encodings,
+        output_encodings,
+        trace_val_embedding,
+        is_reversed,
+    ):
+        state_embedding = torch.cat(
+            [
+                torch.tile(grammar_encodings, (input_encodings.shape[0], 1)),
+                input_encodings,
+                output_encodings,
+                trace_val_embedding,
+                is_reversed,
+            ],
+            dim=1,
+        )
+        state = self.state_processor(state_embedding)
+
+        broadcasted_state = torch.tile(
+            state, (grammar_func_encodings.shape[0], 1, 1)
+        ).permute(1, 0, 2)
+        broadcasted_f_emb = torch.tile(grammar_func_encodings, (state.shape[0], 1, 1))
+        result = self.decoder(
+            torch.cat([broadcasted_state, broadcasted_f_emb], dim=2)
+        ).squeeze(2)
+        return result
+
+
+class GuidingModel(nn.Module):
+    def __init__(self):
+        super(GuidingModel, self).__init__()
+        self.embedder = Embedder()
+
         self.input_output_encoder = InputOutputEncoder()
+        self.body = GuidingModelBody()
 
         self.grammar_cache = None
         self.inputs_cache = {}
@@ -203,7 +240,7 @@ class GuidingModel(nn.Module):
             ] = matrix
             result_batch_mask[
                 i : i + len(subbatch_mask),
-                0,
+                :,
                 0 : matrix.shape[2],
                 0 : matrix.shape[3],
             ] = mask
@@ -239,26 +276,14 @@ class GuidingModel(nn.Module):
     ):
         input_encodings = self.input_output_encoder(*inputs_batch)
         output_encodings = self.input_output_encoder(*outputs_batch)
-
-        state_embedding = torch.cat(
-            [
-                torch.tile(grammar_encodings, (input_encodings.shape[0], 1)),
-                input_encodings,
-                output_encodings,
-                trace_val_embedding,
-                is_reversed,
-            ],
-            dim=1,
+        result = self.body(
+            grammar_func_encodings,
+            grammar_encodings,
+            input_encodings,
+            output_encodings,
+            trace_val_embedding,
+            is_reversed,
         )
-        state = self.state_processor(state_embedding)
-
-        broadcasted_state = torch.tile(
-            state, (grammar_func_encodings.shape[0], 1, 1)
-        ).permute(1, 0, 2)
-        broadcasted_f_emb = torch.tile(grammar_func_encodings, (state.shape[0], 1, 1))
-        result = self.decoder(
-            torch.cat([broadcasted_state, broadcasted_f_emb], dim=2)
-        ).squeeze(2)
         return result
 
     @staticmethod
@@ -284,7 +309,7 @@ class GuidingModel(nn.Module):
 
                 start = time()
                 grammar_func_encodings, grammar_encodings = self.grammar_cache
-                result = self.forward(
+                result = self(
                     grammar_func_encodings,
                     grammar_encodings,
                     inputs_batch,
@@ -320,17 +345,18 @@ class GuidingModel(nn.Module):
 
         return torch.mean(denominator - numenator) + torch.mean(z**2 / 1000)
 
-    def run_training(self, train_set):
+    def run_training(self, train_set, lock=Lock()):
         learning_rate = 1e-3
         iterations = 5000
 
         train_set_size = sum(len(group) for group in train_set)
-        epochs = math.ceil(iterations / train_set_size)
+        epochs = min(math.ceil(iterations / train_set_size), 100)
 
         optimizer = torch.optim.Adam(
             self.parameters(), lr=learning_rate, weight_decay=1e-5
         )
 
+        print(f"Running training for {epochs} epochs")
         self.train()
         for t in range(epochs):
             losses = []
@@ -339,15 +365,19 @@ class GuidingModel(nn.Module):
                     for j, (grammar_encodings, (inputs, summaries)) in enumerate(
                         data_group
                     ):
-                        # Compute prediction and loss
-                        pred = self(*grammar_encodings, *inputs)
-                        loss = self.loss_fn(pred, summaries)
+                        with lock:
+                            # Compute prediction and loss
+                            pred = self(*grammar_encodings, *inputs)
+                            loss = self.loss_fn(pred, summaries)
+                            if torch.isnan(loss):
+                                print("NaN loss")
+                                raise Exception("NaN loss")
 
-                        # Backpropagation
-                        loss.backward()
-                        optimizer.step()
-                        optimizer.zero_grad()
-                        losses.append(loss.item())
+                            # Backpropagation
+                            loss.backward()
+                            optimizer.step()
+                            optimizer.zero_grad()
+                            losses.append(loss.item())
 
                         pbar.update()
                         pbar.set_description(f"loss: {loss.item():>7f}")

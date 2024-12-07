@@ -1,10 +1,13 @@
 [deps]
+redis-py = ""
+tqdm = ""
+optimum = ""
+onnx = ""
 einops = ""
 numpy = ""
-onnx = ""
-optimum = ""
-tqdm = ""
+orjson = ""
 
 [pip.deps]
+larch-pickle = ""
 torch = ""
 transformers = ""

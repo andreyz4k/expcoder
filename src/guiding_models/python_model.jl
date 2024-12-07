@@ -51,12 +51,13 @@ function build_train_set(all_traces, guiding_model::PythonGuidingModel, batch_si
                     if isempty(summary[2])
                         continue
                     end
+                    vals, mask = _unfold_trace_value(trace_val...)
                     push!(
                         X_data,
                         (
                             _preprocess_inputs(inputs),
                             _preprocess_output(outputs),
-                            _unfold_trace_value(trace_val...),
+                            (pylist(vals), Py(mask).to_numpy()),
                             is_rev,
                         ),
                     )
@@ -116,7 +117,7 @@ function _unfold_trace_value(tp, trace_val)
         push!(next_masks, mask)
     end
     cur_m = fill(1 / Float32(length(trace_val)), length(trace_val))
-    return pylist(output), Py(_make_next_mask(next_masks) * cur_m).to_numpy()
+    return output, _make_next_mask(next_masks) * cur_m
 end
 
 function _unfold_trace_values(model::PythonGuidingModel, trace_vals)
@@ -124,8 +125,8 @@ function _unfold_trace_values(model::PythonGuidingModel, trace_vals)
     masks = pylist()
     for (tp, value) in trace_vals
         vals, mask = _unfold_trace_value(tp, value)
-        output.extend(vals)
-        masks.append(mask)
+        output.extend(pylist(vals))
+        masks.append(Py(mask).to_numpy())
     end
     out_mask = model.py_model.combine_masks(masks)
 
@@ -140,14 +141,14 @@ function _preprocess_inputs(inputs)
     max_x = maximum(size(v, 1) for var in inputs for v in var; init = 3)
     max_y = maximum(size(v, 2) for var in inputs for v in var; init = 3)
     input_matrix = fill(10, example_count * var_count, max_x, max_y)
-    input_mask = zeros32(example_count * var_count, max_x, max_y)
+    input_mask = zeros32(example_count * var_count, 1, max_x, max_y)
 
     i = 1
     for var_examples in inputs
         for example in var_examples
             k, l = size(example)
             input_matrix[i, 1:k, 1:l] = example
-            input_mask[i, 1:k, 1:l] .= 1.0
+            input_mask[i, 1, 1:k, 1:l] .= 1.0
 
             i += 1
         end
@@ -169,11 +170,11 @@ function _preprocess_output(output)
     max_x = maximum(size(v, 1) for v in output; init = 3)
     max_y = maximum(size(v, 2) for v in output; init = 3)
     output_matrix = fill(10, example_count, max_x, max_y)
-    output_mask = zeros32(example_count, max_x, max_y)
+    output_mask = zeros32(example_count, 1, max_x, max_y)
     for (j, example) in enumerate(output)
         k, l = size(example)
         output_matrix[j, 1:k, 1:l] = example
-        output_mask[j, 1:k, 1:l] .= 1.0
+        output_mask[j, 1, 1:k, 1:l] .= 1.0
     end
     output_batch = onehotbatch(output_matrix, 0:10)[1:10, :, :, :]
     output_batch = permutedims(output_batch, [2, 1, 3, 4])

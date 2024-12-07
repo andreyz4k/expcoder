@@ -32,6 +32,10 @@ function GuidingModelServer(model)
     )
 end
 
+function GuidingModelServer(model::PythonStandaloneGuidingModel)
+    return PythonGuidingModelServer(model)
+end
+
 function _registration_loop(server::GuidingModelServer)
     try
         while !server.stopped
@@ -253,7 +257,8 @@ function _grammar_with_weights(grammar::Grammar, production_scores, log_variable
     return Grammar(log_variable, log_lambda, log_free_var, productions)
 end
 
-function receive_grammar_weights(sc::SolutionContext, receiver_channel, grammar)
+function receive_grammar_weights(sc::SolutionContext, guiding_model_channels, grammar)
+    receiver_channel = guiding_model_channels[2]
     grammar_len = length(grammar)
     while isready(receiver_channel)
         response = take!(receiver_channel)
@@ -344,6 +349,10 @@ function receive_grammar_weights(sc::SolutionContext, receiver_channel, grammar)
     end
 end
 
+function mark_task_finished(guiding_model_channels, task_name)
+    put!(guiding_model_channels[3], task_name)
+end
+
 function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, entry_id, is_known, branch_id)
     if !haskey(sc.waiting_branches, (entry_id, is_known))
         sc.waiting_branches[(entry_id, is_known)] = [branch_id]
@@ -382,6 +391,8 @@ function load_guiding_model(path)
         load_guiding_model(DummyGuidingModel, model_info["model_state"])
     elseif model_info["type"] == "python"
         load_guiding_model(PythonGuidingModel, model_info["model_state"])
+    elseif model_info["type"] == "standalone"
+        load_guiding_model(PythonStandaloneGuidingModel, model_info["model_state"])
     else
         error("Unknown model type: $(model_info["type"])")
     end

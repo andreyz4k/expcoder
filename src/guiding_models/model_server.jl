@@ -147,12 +147,12 @@ function _guiding_processing_loop(server::GuidingModelServer)
             # @info model_inputs
             fetch_time = time() - start
             start = time()
-            @info "Tasks count: $(length(batch[5]))"
-            @info "Batch size: $batch_size"
-            @info "Value max length: $value_max_length"
-            @info "Batch table size $(batch_size * value_max_length)"
-            @info "Memory footprint: $mem_footprint"
-            @info "Remaining queue size: $(n_avail_c(server.request_channel))"
+            # @info "Tasks count: $(length(batch[5]))"
+            # @info "Batch size: $batch_size"
+            # @info "Value max length: $value_max_length"
+            # @info "Batch table size $(batch_size * value_max_length)"
+            # @info "Memory footprint: $mem_footprint"
+            # @info "Remaining queue size: $(n_avail_c(server.request_channel))"
             times, guiding_result = try
                 run_guiding_model(server.model, model_inputs)
             catch e

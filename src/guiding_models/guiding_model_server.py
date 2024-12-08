@@ -1,5 +1,6 @@
 import itertools
 import os
+from queue import Empty, SimpleQueue
 from threading import Lock, Thread
 from time import sleep, time
 import sys
@@ -45,7 +46,7 @@ def current_grammar_loop(
 
 
 def fetching_loop(
-    redis_db, embeddings_cache, inputs_cache, outputs_cache, finished_tasks
+    redis_db, queues, embeddings_cache, inputs_cache, outputs_cache, finished_tasks
 ):
     redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
     it = 0
@@ -67,62 +68,62 @@ def fetching_loop(
         it += 1
 
         if new_trace_vals:
-            redis_conn.rpush(
-                "embeddings_queue",
-                *[
-                    orjson.dumps({"task_name": payload["task_name"], "trace_val": v})
-                    for v in new_trace_vals
-                ],
-            )
+            for v in new_trace_vals:
+                queues["embeddings_queue"].put(
+                    {
+                        "task_name": payload["task_name"],
+                        "trace_val": v,
+                    }
+                )
+
             out_queue = "waiting_for_embedding"
             payload["needs_embedding"] = True
 
         if payload["task_name"] not in outputs_cache:
-            redis_conn.zadd(
-                "outputs_queue",
-                {
-                    orjson.dumps(
-                        {"task_name": payload["task_name"], "output": payload["output"]}
-                    ): it
-                },
-                nx=True,
+            queues["outputs_queue"].put(
+                {"task_name": payload["task_name"], "output": payload["output"]},
             )
             out_queue = "waiting_for_outputs"
             payload["needs_outputs"] = True
 
         if payload["task_name"] not in inputs_cache:
-            redis_conn.zadd(
-                "inputs_queue",
-                {
-                    orjson.dumps(
-                        {"task_name": payload["task_name"], "inputs": payload["inputs"]}
-                    ): it
-                },
-                nx=True,
+            queues["inputs_queue"].put(
+                {"task_name": payload["task_name"], "inputs": payload["inputs"]}
             )
             out_queue = "waiting_for_inputs"
             payload["needs_inputs"] = True
 
         payload["start_time"] = start
         payload["fetch_time"] = time() - start
-        redis_conn.rpush(out_queue, orjson.dumps(payload))
+        if out_queue == "processing_queue":
+            queues[out_queue].put(payload)
+        else:
+            queues[out_queue][0].put(payload)
 
 
 def check_next_input_batches(
-    redis_conn, inputs_cache, finished_tasks, run_time, preprocessing_time, start
+    queues,
+    inputs_cache,
+    finished_tasks,
+    run_time,
+    preprocessing_time,
+    start,
 ):
     while True:
-        next_batch_str = redis_conn.lpop("waiting_for_inputs")
-        if not next_batch_str:
-            break
+        if len(queues["waiting_for_inputs"][1]) > 0:
+            payload = queues["waiting_for_inputs"][1].pop()
+        else:
+            try:
+                payload = queues["waiting_for_inputs"][0].get_nowait()
+            except Empty:
+                break
 
-        payload = orjson.loads(next_batch_str)
         task_name = payload["task_name"]
         if task_name in finished_tasks:
             continue
 
         if task_name not in inputs_cache:
-            redis_conn.lpush("waiting_for_inputs", next_batch_str)
+            queues["waiting_for_inputs"][1].append(payload)
             break
 
         if "needs_outputs" in payload:
@@ -135,7 +136,10 @@ def check_next_input_batches(
         payload["input_time"] = run_time
         payload["input_preprocessing_time"] = preprocessing_time
         payload["fetch_time"] += time() - start
-        redis_conn.rpush(next_queue, orjson.dumps(payload))
+        if next_queue == "processing_queue":
+            queues[next_queue].put(payload)
+        else:
+            queues[next_queue][0].put(payload)
 
 
 def preprocess_inputs_batch(inputs_batch):
@@ -175,28 +179,32 @@ def preprocess_inputs_batch(inputs_batch):
     return combined_batch, mask, subbatch_mask
 
 
-def inputs_loop(redis_db, model, model_lock, inputs_cache, finished_tasks):
+def inputs_loop(queues, model, model_lock, inputs_cache, finished_tasks):
     try:
-        redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
+        batch_size = 32
         while True:
             start = time()
-            inputs_batch = redis_conn.zpopmin("inputs_queue", 32)
+            inputs_batch = []
+            task_names = set()
+            while len(inputs_batch) < batch_size:
+                try:
+                    new_payload = queues["inputs_queue"].get_nowait()
+                    task_name = new_payload["task_name"]
+                    if (
+                        task_name in finished_tasks
+                        or task_name in task_names
+                        or task_name in inputs_cache
+                    ):
+                        continue
+                    task_names.add(task_name)
+                    inputs_batch.append(new_payload)
+                except Empty:
+                    break
             if not inputs_batch:
                 check_next_input_batches(
-                    redis_conn, inputs_cache, finished_tasks, 0.0, 0.0, start
+                    queues, inputs_cache, finished_tasks, 0.0, 0.0, start
                 )
                 sleep(0.001)
-                continue
-            # print("Got inputs batch")
-            inputs_batch = [orjson.loads(v[0]) for v in inputs_batch]
-            inputs_batch = [
-                v
-                for v in inputs_batch
-                if v["task_name"] not in inputs_cache
-                and v["task_name"] not in finished_tasks
-            ]
-            if not inputs_batch:
-                # print("No new inputs")
                 continue
 
             # print("Processing inputs batch")
@@ -219,7 +227,7 @@ def inputs_loop(redis_db, model, model_lock, inputs_cache, finished_tasks):
                 processing_time = time() - start_processing
             # print("Processed inputs batch")
             check_next_input_batches(
-                redis_conn,
+                queues,
                 inputs_cache,
                 finished_tasks,
                 processing_time,
@@ -231,20 +239,23 @@ def inputs_loop(redis_db, model, model_lock, inputs_cache, finished_tasks):
 
 
 def check_next_output_batches(
-    redis_conn, outputs_cache, finished_tasks, run_time, preprocessing_time, start
+    queues, outputs_cache, finished_tasks, run_time, preprocessing_time, start
 ):
     while True:
-        next_batch_str = redis_conn.lpop("waiting_for_outputs")
-        if not next_batch_str:
-            break
+        if len(queues["waiting_for_outputs"][1]) > 0:
+            payload = queues["waiting_for_outputs"][1].pop()
+        else:
+            try:
+                payload = queues["waiting_for_outputs"][0].get_nowait()
+            except Empty:
+                break
 
-        payload = orjson.loads(next_batch_str)
         task_name = payload["task_name"]
         if task_name in finished_tasks:
             continue
 
         if task_name not in outputs_cache:
-            redis_conn.lpush("waiting_for_outputs", next_batch_str)
+            queues["waiting_for_outputs"][1].append(payload)
             break
 
         if "needs_embedding" in payload:
@@ -255,7 +266,10 @@ def check_next_output_batches(
         payload["output_time"] = run_time
         payload["output_preprocessing_time"] = preprocessing_time
         payload["fetch_time"] += time() - start
-        redis_conn.rpush(next_queue, orjson.dumps(payload))
+        if next_queue == "processing_queue":
+            queues[next_queue].put(payload)
+        else:
+            queues[next_queue][0].put(payload)
 
 
 def preprocess_outputs_batch(outputs_batch):
@@ -283,29 +297,34 @@ def preprocess_outputs_batch(outputs_batch):
     return combined_batch, mask, subbatch_mask
 
 
-def outputs_loop(redis_db, model, model_lock, outputs_cache, finished_tasks):
+def outputs_loop(queues, model, model_lock, outputs_cache, finished_tasks):
     try:
-        redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
+        batch_size = 32
         while True:
             start = time()
-            outputs_batch = redis_conn.zpopmin("outputs_queue", 32)
+            outputs_batch = []
+            task_names = set()
+            while len(outputs_batch) < batch_size:
+                try:
+                    new_payload = queues["outputs_queue"].get_nowait()
+                    task_name = new_payload["task_name"]
+                    if (
+                        task_name in finished_tasks
+                        or task_name in task_names
+                        or task_name in outputs_cache
+                    ):
+                        continue
+                    task_names.add(task_name)
+                    outputs_batch.append(new_payload)
+                except Empty:
+                    break
             if not outputs_batch:
                 check_next_output_batches(
-                    redis_conn, outputs_cache, finished_tasks, 0.0, 0.0, start
+                    queues, outputs_cache, finished_tasks, 0.0, 0.0, start
                 )
                 sleep(0.001)
                 continue
-            # print("Got outputs batch")
-            outputs_batch = [orjson.loads(v[0]) for v in outputs_batch]
-            outputs_batch = [
-                v
-                for v in outputs_batch
-                if v["task_name"] not in outputs_cache
-                and v["task_name"] not in finished_tasks
-            ]
-            if not outputs_batch:
-                # print("No new outputs")
-                continue
+
             # print("Processing outputs batch")
 
             start_processing = time()
@@ -329,7 +348,7 @@ def outputs_loop(redis_db, model, model_lock, outputs_cache, finished_tasks):
                 run_time = time() - start_processing
             # print("Processed outputs batch")
             check_next_output_batches(
-                redis_conn,
+                queues,
                 outputs_cache,
                 finished_tasks,
                 run_time,
@@ -341,52 +360,55 @@ def outputs_loop(redis_db, model, model_lock, outputs_cache, finished_tasks):
 
 
 def check_next_embedding_batches(
-    redis_conn, embeddings_cache, finished_tasks, run_time, start
+    queues, embeddings_cache, finished_tasks, run_time, start
 ):
     while True:
-        next_batch_str = redis_conn.lpop("waiting_for_embedding")
-        if not next_batch_str:
-            break
+        if len(queues["waiting_for_embedding"][1]) > 0:
+            payload = queues["waiting_for_embedding"][1].pop()
+        else:
+            try:
+                payload = queues["waiting_for_embedding"][0].get_nowait()
+            except Empty:
+                break
 
-        payload = orjson.loads(next_batch_str)
         if payload["task_name"] in finished_tasks:
             continue
         trace_val = payload["trace_val"]
         if any(v not in embeddings_cache for v in trace_val[0]):
-            redis_conn.lpush("waiting_for_embedding", next_batch_str)
+            queues["waiting_for_embedding"][1].append(payload)
             break
 
         payload["embedding_time"] = run_time
         payload["fetch_time"] += time() - start
-        redis_conn.rpush("processing_queue", orjson.dumps(payload))
+        queues["processing_queue"].put(payload)
 
 
-def embedding_loop(redis_db, model, model_lock, embeddings_cache, finished_tasks):
+def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
     try:
-        redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
         batch_size = 8
 
         while True:
             start = time()
-            trace_val_batch = redis_conn.lpop("embeddings_queue", batch_size)
+            trace_val_batch = []
+            while len(trace_val_batch) < batch_size:
+                try:
+                    new_payload = queues["embeddings_queue"].get_nowait()
+                    if (
+                        new_payload["task_name"] in finished_tasks
+                        or new_payload["trace_val"] in embeddings_cache
+                    ):
+                        continue
+                    trace_val_batch.append(new_payload["trace_val"])
+                except Empty:
+                    break
             if not trace_val_batch:
                 check_next_embedding_batches(
-                    redis_conn, embeddings_cache, finished_tasks, 0.0, start
+                    queues, embeddings_cache, finished_tasks, 0.0, start
                 )
                 sleep(0.001)
                 continue
 
             # print(f"Got embeddings batch")
-            trace_val_batch = [orjson.loads(v) for v in trace_val_batch]
-            trace_val_batch = [
-                v["trace_val"]
-                for v in trace_val_batch
-                if v["task_name"] not in finished_tasks
-                and v["trace_val"] not in embeddings_cache
-            ]
-            if not trace_val_batch:
-                # print("Skipping embeddings batch")
-                continue
 
             with model_lock:
                 start_processing = time()
@@ -403,7 +425,7 @@ def embedding_loop(redis_db, model, model_lock, embeddings_cache, finished_tasks
                 embeddings_cache[trace_val] = trace_val_embedding[i, :]
 
             check_next_embedding_batches(
-                redis_conn, embeddings_cache, finished_tasks, run_time, start
+                queues, embeddings_cache, finished_tasks, run_time, start
             )
     finally:
         print("Exiting embedding loop")
@@ -411,6 +433,7 @@ def embedding_loop(redis_db, model, model_lock, embeddings_cache, finished_tasks
 
 def main_processing_loop(
     redis_db,
+    queues,
     model,
     model_lock,
     current_grammar,
@@ -421,22 +444,23 @@ def main_processing_loop(
 ):
     try:
         redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
+        batch_size = 32
         while True:
             start = time()
-            payload_strs = redis_conn.lpop("processing_queue", 32)
-            if not payload_strs:
+            payloads = []
+            while len(payloads) < batch_size:
+                try:
+                    new_payload = queues["processing_queue"].get_nowait()
+                    if new_payload["task_name"] in finished_tasks:
+                        continue
+                    payloads.append(new_payload)
+                except Empty:
+                    break
+
+            if not payloads:
                 sleep(0.001)
                 continue
             # print("Got processing batch")
-            payloads = [orjson.loads(payload_str) for payload_str in payload_strs]
-            payloads = [
-                payload
-                for payload in payloads
-                if payload["task_name"] not in finished_tasks
-            ]
-            if not payloads:
-                # print("Skipping processing batch")
-                continue
 
             start_processing = time()
             # print(f"Processing batch {len(payloads)}")
@@ -817,6 +841,15 @@ def main():
     current_grammar = [None]
     finished_tasks = set()
     embeddings_cache = EmbeddingsCache.restore_from_path("embeddings_cache")
+    queues = {
+        "embeddings_queue": SimpleQueue(),
+        "inputs_queue": SimpleQueue(),
+        "outputs_queue": SimpleQueue(),
+        "waiting_for_inputs": (SimpleQueue(), []),
+        "waiting_for_outputs": (SimpleQueue(), []),
+        "waiting_for_embedding": (SimpleQueue(), []),
+        "processing_queue": SimpleQueue(),
+    }
     inputs_cache = {}
     outputs_cache = {}
 
@@ -827,22 +860,29 @@ def main():
     set_grammar_thread.start()
     fetch_thread = Thread(
         target=fetching_loop,
-        args=(redis_db, embeddings_cache, inputs_cache, outputs_cache, finished_tasks),
+        args=(
+            redis_db,
+            queues,
+            embeddings_cache,
+            inputs_cache,
+            outputs_cache,
+            finished_tasks,
+        ),
     )
     fetch_thread.start()
     inputs_thread = Thread(
         target=inputs_loop,
-        args=(redis_db, model, model_lock, inputs_cache, finished_tasks),
+        args=(queues, model, model_lock, inputs_cache, finished_tasks),
     )
     inputs_thread.start()
     outputs_thread = Thread(
         target=outputs_loop,
-        args=(redis_db, model, model_lock, outputs_cache, finished_tasks),
+        args=(queues, model, model_lock, outputs_cache, finished_tasks),
     )
     outputs_thread.start()
     emb_thread = Thread(
         target=embedding_loop,
-        args=(redis_db, model, model_lock, embeddings_cache, finished_tasks),
+        args=(queues, model, model_lock, embeddings_cache, finished_tasks),
     )
     emb_thread.start()
     finished_tasks_thread = Thread(
@@ -853,6 +893,7 @@ def main():
         target=main_processing_loop,
         args=(
             redis_db,
+            queues,
             model,
             model_lock,
             current_grammar,

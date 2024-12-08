@@ -12,6 +12,7 @@ RUN set -eux; \
     git \
     zsh \
     vim \
+    libboost-all-dev \
     ; \
     rm -rf /var/lib/apt/lists/*
 

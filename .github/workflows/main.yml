@@ -15,14 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
-          - '1.11.0'
+          - '1.11'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Install boost
+        run: sudo apt-get install libboost-all-dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@latest
@@ -90,14 +92,16 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
-          - '1.11.0'
+          - '1.11'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Install boost
+        run: sudo apt-get install libboost-all-dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@latest
@@ -126,14 +130,16 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
-          - '1.11.0'
+          - '1.11'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Install boost
+        run: sudo apt-get install libboost-all-dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@latest

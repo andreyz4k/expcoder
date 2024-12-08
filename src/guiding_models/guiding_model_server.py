@@ -588,7 +588,7 @@ class EmbeddingsCache(dict):
             with open(os.path.join(dir_path, f"chunk_{i}.pkl"), "wb") as f:
                 pickle.dump(self.chunks[i], f)
             if len(self.chunks[i]) == 1000:
-                self.saved_chunks = i
+                self.saved_chunks = i + 1
 
         print(
             f"Saved {len(chunks_to_save)} embeddings chunks of total length {total_length} in {time() - start} seconds"

@@ -12,6 +12,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 import torch
 import numpy as np
+import wandb
 
 d_emb = 768
 d_state_in = d_emb * 4 + 1
@@ -381,6 +382,7 @@ class GuidingModel(nn.Module):
 
                         pbar.update()
                         pbar.set_description(f"loss: {loss.item():>7f}")
+                        wandb.log({"loss": loss.item()})
 
             print(
                 f"Epoch {t} finished, average loss: {np.mean(losses)}, max: {max(losses)}"

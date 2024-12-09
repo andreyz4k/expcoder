@@ -10,6 +10,8 @@ import orjson
 from larch import pickle
 import torch
 from torch.utils.data import DataLoader, Dataset
+import wandb
+
 
 import guiding_model
 
@@ -225,6 +227,14 @@ def inputs_loop(queues, model, model_lock, inputs_cache, finished_tasks):
                     inputs_cache[v["task_name"]] = input_encodings[i, :]
 
                 processing_time = time() - start_processing
+
+            wandb.log(
+                {
+                    "inputs_processing_time": processing_time,
+                    "inputs_preprocessing_time": preprocessing_time,
+                    "inputs_batch_size": len(inputs_batch),
+                }
+            )
             # print("Processed inputs batch")
             check_next_input_batches(
                 queues,
@@ -346,6 +356,14 @@ def outputs_loop(queues, model, model_lock, outputs_cache, finished_tasks):
                     outputs_cache[v["task_name"]] = output_encodings[i, :]
 
                 run_time = time() - start_processing
+
+            wandb.log(
+                {
+                    "outputs_processing_time": run_time,
+                    "outputs_preprocessing_time": preprocessing_time,
+                    "outputs_batch_size": len(outputs_batch),
+                }
+            )
             # print("Processed outputs batch")
             check_next_output_batches(
                 queues,
@@ -423,6 +441,14 @@ def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
 
             for i, trace_val in enumerate(trace_val_batch):
                 embeddings_cache[trace_val] = trace_val_embedding[i, :]
+
+            wandb.log(
+                {
+                    "embedding_processing_time": run_time,
+                    "embedding_batch_size": len(trace_val_batch),
+                    "embedding_batch_max_size": max(len(v) for v in trace_val_batch),
+                }
+            )
 
             check_next_embedding_batches(
                 queues, embeddings_cache, finished_tasks, run_time, start
@@ -511,6 +537,14 @@ def main_processing_loop(
                 run_time = time() - start_processing
             # print(result)
             # print(result.shape)
+
+            wandb.log(
+                {
+                    "processing_stacking_time": stacking_time,
+                    "processing_time": run_time,
+                    "processing_batch_size": len(payloads),
+                }
+            )
 
             for i, payload in enumerate(payloads):
                 full_run_time = time() - payload["start_time"]
@@ -852,6 +886,13 @@ def main():
     }
     inputs_cache = {}
     outputs_cache = {}
+
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="expcoder",
+        # track hyperparameters and run metadata
+        config={},
+    )
 
     set_grammar_thread = Thread(
         target=current_grammar_loop,

@@ -26,3 +26,4 @@ model_checkpoints/
 model_stats/
 .CondaPkg/
 embeddings_cache/
+wandb/

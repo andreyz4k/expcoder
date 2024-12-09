@@ -5,6 +5,7 @@ optimum = ""
 onnx = ""
 einops = ""
 numpy = ""
+wandb = ""
 orjson = ""
 
 [pip.deps]

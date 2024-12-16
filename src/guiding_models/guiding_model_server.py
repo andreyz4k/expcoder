@@ -463,7 +463,7 @@ def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
             )
 
             for i, trace_val in enumerate(trace_val_batch):
-                embeddings_cache[trace_val] = trace_val_embedding[i, :]
+                embeddings_cache[trace_val] = trace_val_embedding[i, :].clone()
 
             wandb.log(
                 {
@@ -580,7 +580,7 @@ def main_processing_loop(
                         "fetch": payload["fetch_time"] + (time() - start),
                         "processing_stacking": stacking_time,
                         "processing": run_time,
-                        "full_run": full_run_time,
+                        "run": full_run_time,
                     },
                 }
                 if "input_time" in payload:

@@ -39,10 +39,12 @@ using solver:
     GuidingModelServer,
     start_server,
     stop_server,
-    receive_grammar_weights
+    receive_grammar_weights,
+    get_redis_connection,
+    PythonGuidingModelServer,
+    mark_task_finished
 
 using DataStructures
-using PythonCall
 
 @testset "Reachable solutions" begin
     sample_library = Any[
@@ -162,7 +164,7 @@ using PythonCall
     end
 
     function _create_arc_task(filename, dir = "ARC/data/training/")
-        fname = "../data/" * dir * filename
+        fname = "data/" * dir * filename
         tp = parse_type("inp0:grid(color) -> grid(color)")
         return create_arc_task(fname, tp)
     end
@@ -715,7 +717,7 @@ using PythonCall
 
         while !isempty(sc.waiting_branches)
             sleep(0.001)
-            receive_grammar_weights(sc, guiding_model_channels[2], grammar)
+            receive_grammar_weights(sc, guiding_model_channels, grammar)
         end
 
         has_multiple_options = length([1 for b in blocks if _block_can_be_next(b, vars_mapping)]) > 1
@@ -726,10 +728,12 @@ using PythonCall
                     sc_next = deepcopy(sc)
                     sc_next.task_name = sc.task_name * "_$bl"
 
-                    put!(guiding_model_server.worker_register_channel, sc_next.task_name)
-                    task_name, request_channel, result_channel, end_tasks_channel =
-                        take!(guiding_model_server.worker_register_result_channel)
-                    guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+                    if !isa(guiding_model_server, PythonGuidingModelServer)
+                        put!(guiding_model_server.worker_register_channel, sc_next.task_name)
+                        task_name, request_channel, result_channel, end_tasks_channel =
+                            take!(guiding_model_server.worker_register_result_channel)
+                        guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+                    end
                 else
                     sc_next = sc
                 end
@@ -751,7 +755,7 @@ using PythonCall
                     )
                 finally
                     if has_multiple_options
-                        put!(end_tasks_channel, sc_next.task_name)
+                        mark_task_finished(guiding_model_channels, sc_next.task_name)
                     end
                 end
                 union!(successful, s)
@@ -767,11 +771,11 @@ using PythonCall
     end
 
     function check_reachable(task, guiding_model, task_grammar, target_solution, verbose_test = false)
-        set_current_grammar!(guiding_model, task_grammar)
         empty!(contextual_grammar_cache)
 
         guiding_model_server = GuidingModelServer(guiding_model)
-        start_server(guiding_model_server)
+        start_server(guiding_model_server, true)
+        set_current_grammar!(guiding_model, task_grammar)
 
         try
             mfp = 10
@@ -807,10 +811,15 @@ using PythonCall
                 @info vars_mapping
             end
 
-            put!(guiding_model_server.worker_register_channel, task.name)
-            task_name, request_channel, result_channel, end_tasks_channel =
-                take!(guiding_model_server.worker_register_result_channel)
-            guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+            if isa(guiding_model_server, PythonGuidingModelServer)
+                redis_db = guiding_model_server.model.redis_db
+                guiding_model_channels = get_redis_connection(redis_db)
+            else
+                put!(guiding_model_server.worker_register_channel, task.name)
+                task_name, request_channel, result_channel, end_tasks_channel =
+                    take!(guiding_model_server.worker_register_result_channel)
+                guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
+            end
 
             sc = create_starting_context(task, task.name, type_weights, hyperparameters, verbose_test)
 
@@ -870,11 +879,11 @@ using PythonCall
                     end
                 end
             finally
-                put!(end_tasks_channel, task.name)
+                mark_task_finished(guiding_model_channels, task.name)
             end
         finally
-            stop_server(guiding_model_server)
             set_current_grammar!(guiding_model, grammar)
+            stop_server(guiding_model_server)
         end
     end
 
@@ -1998,18 +2007,22 @@ using PythonCall
         check_reachable(task, guiding_model, grammar, target_solution)
     end
 
-    @testset "Guiding model type $model_type" for model_type in ["dummy", "nn", "python"]
+    @testset "Guiding model type $model_type" for model_type in ["dummy", "nn", "standalone"]
         arc_guiding_model = get_guiding_model(model_type)
 
         function test_build_manual_trace(task, target_solution, task_grammar)
-            set_current_grammar!(arc_guiding_model, task_grammar)
             empty!(contextual_grammar_cache)
 
             guiding_model_server = GuidingModelServer(arc_guiding_model)
-            start_server(guiding_model_server)
+            start_server(guiding_model_server, true)
+            set_current_grammar!(arc_guiding_model, task_grammar)
 
             try
-                PythonCall.GIL.@unlock begin
+                if model_type == "standalone"
+                    redis_db = guiding_model_server.model.redis_db
+                    conn = get_redis_connection(redis_db)
+                    return @time build_manual_trace(task, task.name, target_solution, conn, task_grammar)
+                else
                     register_channel = guiding_model_server.worker_register_channel
                     register_response_channel = guiding_model_server.worker_register_result_channel
                     put!(register_channel, task.name)
@@ -2023,8 +2036,8 @@ using PythonCall
                     )
                 end
             finally
-                stop_server(guiding_model_server)
                 set_current_grammar!(arc_guiding_model, grammar)
+                stop_server(guiding_model_server)
             end
         end
 

@@ -794,7 +794,7 @@ function log_results(sc, hits)
     @info "Total number of valid blocks $(sc.total_number_of_enumerated_programs)"
 
     if !isempty(sc.stats)
-        @info "Got $(length(sc.stats["full_run"])) guidance responses"
+        @info "Got $(length(sc.stats["run"])) guidance responses"
     end
     for (k, ts) in sc.stats
         @info "Average model $k time $(mean(ts))"

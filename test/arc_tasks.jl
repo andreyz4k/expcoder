@@ -10,7 +10,7 @@ using solver:
 
 @testset "Arc tasks" begin
     function _create_arc_task(filename, dir = "ARC/data/training/")
-        fname = "../data/" * dir * filename
+        fname = "data/" * dir * filename
         tp = parse_type("inp0:grid(color) -> grid(color)")
         return create_arc_task(fname, tp)
     end

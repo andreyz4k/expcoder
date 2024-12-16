@@ -27,6 +27,9 @@ jobs:
       - name: Install boost
         run: sudo apt-get install libboost-all-dev
 
+      - name: Setup redis
+        uses: zhulik/redis-action@1.1.0
+
       - name: Setup Julia
         uses: julia-actions/setup-julia@latest
         with:
@@ -180,6 +183,9 @@ jobs:
 
       - name: Install boost
         run: sudo apt-get install libboost-all-dev
+
+      - name: Setup redis
+        uses: zhulik/redis-action@1.1.0
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@latest

@@ -614,13 +614,15 @@ def finished_tasks_loop(redis_db, finished_tasks):
 
 
 class EmbeddingsCache(dict):
+    max_chunk_size = 1000
+
     def __init__(self, chunks=None):
         if not chunks:
             self.chunks = [{}]
             self.saved_chunks = 0
         else:
             self.chunks = chunks
-            if len(self.chunks[-1]) == 1000:
+            if len(self.chunks[-1]) == self.max_chunk_size:
                 self.saved_chunks = len(self.chunks)
             else:
                 self.saved_chunks = len(self.chunks) - 1
@@ -643,7 +645,7 @@ class EmbeddingsCache(dict):
             if key in chunk:
                 return
         else:  # key not found
-            if len(self.chunks[-1]) < 1000:
+            if len(self.chunks[-1]) < self.max_chunk_size:
                 self.chunks[-1][key] = value
             else:
                 self.chunks.append({key: value})
@@ -669,7 +671,7 @@ class EmbeddingsCache(dict):
             total_length += len(self.chunks[i])
             with open(os.path.join(dir_path, f"chunk_{i}.pkl"), "wb") as f:
                 pickle.dump(self.chunks[i], f)
-            if len(self.chunks[i]) == 1000:
+            if len(self.chunks[i]) == self.max_chunk_size:
                 self.saved_chunks = i + 1
 
         print(

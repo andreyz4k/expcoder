@@ -120,6 +120,7 @@ function start_server(server::PythonGuidingModelServer, is_test = false)
     if is_test
         cmd = addenv(cmd, "WANDB_MODE" => "offline")
     end
+    @info pwd()
     server.model.process = run(pipeline(cmd, stdout = stdout, stderr = stderr); wait = false)
     if !isnothing(server.model.load_path)
         Redis.set(server.model.redis_conn, "load_model", server.model.load_path)

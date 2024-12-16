@@ -403,20 +403,39 @@ def check_next_embedding_batches(
 
 def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
     try:
-        batch_size = 8
+        gpu_mem_threshold = 10**9
+        max_batch_size = 128
+        pending_payload = None
 
         while True:
             start = time()
             trace_val_batch = []
-            while len(trace_val_batch) < batch_size:
+            max_value_length = 0
+            mem_footprint = 0
+            while len(trace_val_batch) < max_batch_size:
                 try:
-                    new_payload = queues["embeddings_queue"].get_nowait()
+                    if pending_payload:
+                        new_payload = pending_payload
+                        pending_payload = None
+                    else:
+                        new_payload = queues["embeddings_queue"].get_nowait()
                     if (
                         new_payload["task_name"] in finished_tasks
                         or new_payload["trace_val"] in embeddings_cache
                     ):
                         continue
+                    new_val_max_length = max(
+                        max_value_length, len(new_payload["trace_val"])
+                    )
+                    new_mem_footprint = new_val_max_length**2 * (
+                        len(trace_val_batch) + 1
+                    )
+                    if new_mem_footprint > gpu_mem_threshold:
+                        pending_payload = new_payload
+                        break
                     trace_val_batch.append(new_payload["trace_val"])
+                    max_value_length = new_val_max_length
+                    mem_footprint = new_mem_footprint
                 except Empty:
                     break
             if not trace_val_batch:
@@ -430,14 +449,18 @@ def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
 
             with model_lock:
                 start_processing = time()
-                # print(
-                #     f"Processing embeddings batch {len(trace_val_batch)} {max(len(v) for v in trace_val_batch)}"
-                # )
+                print(
+                    f"Processing embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint}"
+                )
                 trace_val_embedding = model.get_embedding(trace_val_batch).cpu()
                 if guiding_model.device == "mps":
                     torch.mps.empty_cache()
                 # print("Processed embeddings batch")
                 run_time = time() - start_processing
+
+            print(
+                f"Processed embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint} in {run_time} seconds"
+            )
 
             for i, trace_val in enumerate(trace_val_batch):
                 embeddings_cache[trace_val] = trace_val_embedding[i, :]
@@ -446,7 +469,8 @@ def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
                 {
                     "embedding_processing_time": run_time,
                     "embedding_batch_size": len(trace_val_batch),
-                    "embedding_batch_max_size": max(len(v) for v in trace_val_batch),
+                    "embedding_batch_max_size": max_value_length,
+                    "embedding_batch_mem_footprint": mem_footprint,
                 }
             )
 

@@ -17,8 +17,9 @@ import wandb
 d_emb = 768
 d_state_in = d_emb * 4 + 1
 d_state_h = 512
-d_state_out = 384
-d_dec_h = 64
+d_state_out = 512
+d_dec_h = 512
+d_dec_h2 = 256
 
 hidden_channels = 32
 
@@ -150,13 +151,19 @@ class GuidingModelBody(nn.Module):
             nn.ELU(),
             nn.Linear(d_state_h, d_state_h),
             nn.ELU(),
+            nn.Linear(d_state_h, d_state_h),
+            nn.ELU(),
             nn.Linear(d_state_h, d_state_out),
             nn.ELU(),
         )
         self.decoder = nn.Sequential(
             nn.Linear(d_state_out + d_emb, d_dec_h),
             nn.ELU(),
-            nn.Linear(d_dec_h, 1),
+            nn.Linear(d_dec_h, d_dec_h),
+            nn.ELU(),
+            nn.Linear(d_dec_h, d_dec_h2),
+            nn.ELU(),
+            nn.Linear(d_dec_h2, 1),
         )
 
     def forward(

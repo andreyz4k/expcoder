@@ -4,6 +4,11 @@ SHELL ["/bin/bash", "-c"]
 
 RUN set -eux; \
     apt-get update; \
+    apt-get install lsb-release curl gpg; \
+    curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg; \
+    chmod 644 /usr/share/keyrings/redis-archive-keyring.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list; \
+    apt-get update; \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     # ERROR: no download agent available; install curl, wget, or fetch
@@ -13,6 +18,7 @@ RUN set -eux; \
     zsh \
     vim \
     libboost-all-dev \
+    redis \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -30,9 +36,6 @@ RUN curl -fsSL https://install.julialang.org | sh -s -- -y
 ENV JULIA_PATH=/root/.juliaup
 ENV CARGO_PATH=/root/.cargo
 ENV PATH=$JULIA_PATH/bin:$CARGO_PATH/bin:$PATH
-
-RUN juliaup add 1.11.0
-RUN juliaup default 1.11.0
 
 RUN julia -e 'using Pkg; Pkg.add(["Revise", "TestEnv", "OhMyREPL", "TerminalExtensions"])'
 

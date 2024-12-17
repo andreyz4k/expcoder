@@ -403,7 +403,7 @@ def check_next_embedding_batches(
 
 def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
     try:
-        gpu_mem_threshold = 10**9
+        gpu_mem_threshold = 5 * 10**7
         max_batch_size = 128
         pending_payload = None
 
@@ -430,7 +430,10 @@ def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
                     new_mem_footprint = new_val_max_length**2 * (
                         len(trace_val_batch) + 1
                     )
-                    if new_mem_footprint > gpu_mem_threshold:
+                    if (
+                        new_mem_footprint > gpu_mem_threshold
+                        and len(trace_val_batch) > 0
+                    ):
                         pending_payload = new_payload
                         break
                     trace_val_batch.append(new_payload["trace_val"])
@@ -494,7 +497,7 @@ def main_processing_loop(
 ):
     try:
         redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
-        batch_size = 32
+        batch_size = 128
         while True:
             start = time()
             payloads = []
@@ -843,7 +846,7 @@ def update_model_loop(redis_db, model, model_lock, embeddings_cache):
     redis_conn = redis.Redis(
         host="localhost", port=6379, db=redis_db, decode_responses=True
     )
-    batch_size = 32
+    batch_size = 64
     while True:
         update_groups_count = redis_conn.get("update_model")
         if not update_groups_count:
@@ -897,6 +900,10 @@ def main():
     print("Starting guiding model server...")
     redis_db = sys.argv[1]
     model = guiding_model.create_model()
+
+    load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
+    load_model_thread.start()
+
     model_lock = Lock()
     current_grammar = [None]
     finished_tasks = set()
@@ -981,8 +988,6 @@ def main():
     update_model_thread.start()
     save_model_thread = Thread(target=save_model_loop, args=(redis_db, model))
     save_model_thread.start()
-    load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
-    load_model_thread.start()
 
 
 if __name__ == "__main__":

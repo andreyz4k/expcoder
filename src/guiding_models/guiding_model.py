@@ -277,8 +277,8 @@ class GuidingModel(nn.Module):
         self,
         grammar_func_encodings,
         grammar_encodings,
-        inputs_batch,
-        outputs_batch,
+        inputs_batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        outputs_batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         trace_val_embedding,
         is_reversed,
     ):
@@ -341,7 +341,11 @@ class GuidingModel(nn.Module):
             collate_fn=Combiner(grammar, self),
         )
 
-    def loss_fn(self, pred, summaries):
+    def loss_fn(
+        self,
+        pred,
+        summaries: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    ):
         uses, mask, N, constant = summaries
 
         numenator = torch.sum(pred * uses, dim=1) + constant
@@ -363,6 +367,9 @@ class GuidingModel(nn.Module):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=learning_rate, weight_decay=1e-5
         )
+
+        if not os.path.exists("model_checkpoints"):
+            os.mkdir("model_checkpoints")
 
         print(f"Running training for {epochs} epochs")
         self.train()

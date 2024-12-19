@@ -151,6 +151,10 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         # @info all_blocks
         missing_blocks = []
         for (var_id, blocks) in in_blocks
+            if !haskey(inner_mapping, var_id)
+                append!(missing_blocks, [(block, var_id) for block in blocks])
+                continue
+            end
             inner_var_id = inner_mapping[var_id]
             for block in blocks
                 if isa(block, ReverseProgramBlock)
@@ -162,7 +166,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                         all_blocks,
                     )
                     if isempty(matching_blocks)
-                        push!(missing_blocks, block)
+                        push!(missing_blocks, (block, var_id))
                     end
                 else
                     dest_var_id = inner_mapping[block.output_var]
@@ -175,12 +179,16 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                         all_blocks,
                     )
                     if isempty(matching_blocks)
-                        push!(missing_blocks, block)
+                        push!(missing_blocks, (block, var_id))
                     end
                 end
             end
         end
         for (var_id, blocks) in out_blocks
+            if !haskey(inner_mapping, var_id)
+                append!(missing_blocks, [(block, var_id) for block in blocks])
+                continue
+            end
             inner_var_id = inner_mapping[var_id]
             for block in blocks
                 matching_blocks = filter(
@@ -192,13 +200,13 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 # @info block
                 # @info matching_blocks
                 if isempty(matching_blocks)
-                    push!(missing_blocks, block)
+                    push!(missing_blocks, (block, var_id))
                 end
             end
         end
         if !isempty(missing_blocks)
             @info "Missing blocks"
-            @info missing_blocks
+            @info [(bl, rev_vars_mapping[var_id]) for (bl, var_id) in missing_blocks]
             error("Could not find all blocks")
         end
 

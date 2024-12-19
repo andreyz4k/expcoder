@@ -334,7 +334,8 @@ parse_let_rev_clause =
     _parse_program |> (v -> LetRevClause(v[1], v[2], v[3], v[4]))
 
 julia_type_def = Delayed()
-julia_type_def.matcher = parse_token | (parse_token + e"{" + (julia_type_def+e",")[0:end] + julia_type_def + e"}")
+julia_type_def.matcher =
+    parse_token | (parse_token + e"{" + (julia_type_def+e","+parse_whitespace)[0:end] + julia_type_def + e"}")
 
 parse_object = Delayed()
 parse_object.matcher =

@@ -266,7 +266,7 @@ Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type_id == v2.type_id && v1.va
 
 function matching_with_unknown_candidates(sc, entry::EitherEntry, branch_id)
     results = []
-    types = get_super_types(sc.types, entry.type_id)
+    types = get_sub_types(sc.types, entry.type_id)
     var_id = sc.branch_vars[branch_id]
 
     for tp_id in types
@@ -449,28 +449,33 @@ function matching_with_unknown_candidates(sc, entry::PatternEntry, branch_id)
     results = []
     var_id = sc.branch_vars[branch_id]
 
-    for known_branch_id in get_connected_to(sc.branch_types, entry.type_id)
-        if !sc.branch_is_not_copy[known_branch_id]
-            continue
+    types = get_sub_types(sc.types, entry.type_id)
+    # @info "Sub types for $(sc.types[entry.type_id]) are $([sc.types[t] for t in types])"
+
+    for tp_id in types
+        for known_branch_id in get_connected_to(sc.branch_types, tp_id)
+            if !sc.branch_is_not_copy[known_branch_id]
+                continue
+            end
+            if known_branch_id == sc.target_branch_id
+                continue
+            end
+            if sc.complexities[known_branch_id] == 0
+                continue
+            end
+            known_var_id = sc.branch_vars[known_branch_id]
+            known_entry_id = sc.branch_entries[known_branch_id]
+            if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
+                # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
+                continue
+            end
+            tp = sc.types[tp_id]
+            prev_matches_count = _get_prev_matches_count(sc, var_id, known_entry_id)
+            push!(
+                results,
+                (FreeVar(tp, known_var_id, nothing), Dict(known_var_id => known_branch_id), tp, prev_matches_count),
+            )
         end
-        if known_branch_id == sc.target_branch_id
-            continue
-        end
-        if sc.complexities[known_branch_id] == 0
-            continue
-        end
-        known_var_id = sc.branch_vars[known_branch_id]
-        known_entry_id = sc.branch_entries[known_branch_id]
-        if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
-            # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
-            continue
-        end
-        tp = sc.types[entry.type_id]
-        prev_matches_count = _get_prev_matches_count(sc, var_id, known_entry_id)
-        push!(
-            results,
-            (FreeVar(tp, known_var_id, nothing), Dict(known_var_id => known_branch_id), tp, prev_matches_count),
-        )
     end
     results
 end
@@ -543,28 +548,31 @@ function matching_with_unknown_candidates(sc, entry::AbductibleEntry, branch_id)
     results = []
     var_id = sc.branch_vars[branch_id]
 
-    for known_branch_id in get_connected_to(sc.branch_types, entry.type_id)
-        if !sc.branch_is_not_copy[known_branch_id]
-            continue
+    types = get_sub_types(sc.types, entry.type_id)
+    for tp_id in types
+        for known_branch_id in get_connected_to(sc.branch_types, tp_id)
+            if !sc.branch_is_not_copy[known_branch_id]
+                continue
+            end
+            if known_branch_id == sc.target_branch_id
+                continue
+            end
+            if sc.complexities[known_branch_id] == 0
+                continue
+            end
+            known_var_id = sc.branch_vars[known_branch_id]
+            known_entry_id = sc.branch_entries[known_branch_id]
+            if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
+                # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
+                continue
+            end
+            tp = sc.types[tp_id]
+            prev_matches_count = _get_prev_matches_count(sc, var_id, known_entry_id)
+            push!(
+                results,
+                (FreeVar(tp, known_var_id, nothing), Dict(known_var_id => known_branch_id), tp, prev_matches_count),
+            )
         end
-        if known_branch_id == sc.target_branch_id
-            continue
-        end
-        if sc.complexities[known_branch_id] == 0
-            continue
-        end
-        known_var_id = sc.branch_vars[known_branch_id]
-        known_entry_id = sc.branch_entries[known_branch_id]
-        if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
-            # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
-            continue
-        end
-        tp = sc.types[entry.type_id]
-        prev_matches_count = _get_prev_matches_count(sc, var_id, known_entry_id)
-        push!(
-            results,
-            (FreeVar(tp, known_var_id, nothing), Dict(known_var_id => known_branch_id), tp, prev_matches_count),
-        )
     end
     results
 end

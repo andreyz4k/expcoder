@@ -6,7 +6,7 @@ function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
     register_response_channel = guiding_model_server.worker_register_result_channel
     new_traces = pmap(
         worker_pool,
-        [(task, sol) for (task, sols) in task_solutions for sol in sols];
+        [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols];
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
@@ -47,7 +47,7 @@ function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServ
     redis_db = guiding_model_server.model.redis_db
     new_traces = pmap(
         worker_pool,
-        [(task, sol) for (task, sols) in task_solutions for sol in sols];
+        [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols];
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
@@ -463,12 +463,7 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
     try
         enqueue_updates(sc, guiding_model_channels, grammar)
 
-        branches = Dict()
-        for br_id in 1:sc.branches_count[]
-            branches[sc.branch_vars[br_id]] = br_id
-        end
         if verbose_test
-            @info branches
             @info in_blocks
             @info out_blocks
         end

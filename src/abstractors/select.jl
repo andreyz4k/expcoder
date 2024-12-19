@@ -33,7 +33,7 @@ _is_reversible_selector(p::Program, is_top_index) = 0
 
 function _is_reversible_selector(p::Apply, is_top_index)
     if is_top_index
-        if isa(p.x, Hole)
+        if isa(p.x, Hole) || isa(p.x, FreeVar)
             if isa(p.f, Apply) && p.f.f == every_primitive["eq?"]
                 return _is_reversible_selector(p.f.x, false)
             else
@@ -138,9 +138,9 @@ function reverse_rev_select()
                 options_others[option_hash] = results_others
             end
 
-            if length(options_selector) < 2
-                error("All elements are equal according to selector")
-            end
+            # if length(options_selector) < 2
+            #     error("All elements are equal according to selector")
+            # end
 
             out_selector = EitherOptions(options_selector)
             out_base = EitherOptions(options_base)
@@ -175,10 +175,10 @@ function reverse_rev_select()
                     results_others[i] = value[i]
                 end
             end
-            if all(v == results_others[1] for v in results_others)
-                return false, value, context
-                # error("All elements are equal according to selector")
-            end
+            # if all(v == results_others[1] for v in results_others)
+            #     return false, value, context
+            #     # error("All elements are equal according to selector")
+            # end
             return true,
             value,
             ReverseRunContext(
@@ -254,10 +254,10 @@ function reverse_rev_select_set()
                 options_others[option_hash] = results_others
             end
 
-            if length(options_selector) < 2
-                return false, value, context
-                # error("All elements are equal according to selector")
-            end
+            # if length(options_selector) < 2
+            #     return false, value, context
+            #     # error("All elements are equal according to selector")
+            # end
 
             out_selector = EitherOptions(options_selector)
             out_base = EitherOptions(options_base)
@@ -289,10 +289,10 @@ function reverse_rev_select_set()
                     push!(results_others, v)
                 end
             end
-            if isempty(results_base) || isempty(results_others)
-                return false, value, context
-                # error("All elements are equal according to selector")
-            end
+            # if isempty(results_base) || isempty(results_others)
+            #     return false, value, context
+            #     # error("All elements are equal according to selector")
+            # end
             return true,
             value,
             ReverseRunContext(

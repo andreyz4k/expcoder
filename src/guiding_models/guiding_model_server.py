@@ -623,12 +623,15 @@ class EmbeddingsCache(dict):
         if not chunks:
             self.chunks = [{}]
             self.saved_chunks = 0
+            self.last_chunk_saved_size = 0
         else:
             self.chunks = chunks
             if len(self.chunks[-1]) == self.max_chunk_size:
                 self.saved_chunks = len(self.chunks)
+                self.last_chunk_saved_size = 0
             else:
                 self.saved_chunks = len(self.chunks) - 1
+                self.last_chunk_saved_size = len(self.chunks[-1])
 
     def __contains__(self, key):
         result = any(key in chunk for chunk in self.chunks)
@@ -671,15 +674,21 @@ class EmbeddingsCache(dict):
         chunks_to_save = range(self.saved_chunks, len(self.chunks))
         total_length = 0
         for i in chunks_to_save:
+            if i == len(self.chunks) - 1:
+                if len(self.chunks[i]) == self.last_chunk_saved_size:
+                    continue
+                else:
+                    self.last_chunk_saved_size = len(self.chunks[i])
             total_length += len(self.chunks[i])
             with open(os.path.join(dir_path, f"chunk_{i}.pkl"), "wb") as f:
                 pickle.dump(self.chunks[i], f)
             if len(self.chunks[i]) == self.max_chunk_size:
                 self.saved_chunks = i + 1
 
-        print(
-            f"Saved {len(chunks_to_save)} embeddings chunks of total length {total_length} in {time() - start} seconds"
-        )
+        if total_length > 0:
+            print(
+                f"Saved {len(chunks_to_save)} embeddings chunks of total length {total_length} in {time() - start} seconds"
+            )
 
 
 def save_embeddings_cache_loop(embeddings_cache):
@@ -816,7 +825,9 @@ class BatchCombiner:
                     # print(mask[i])
                     merged_mask[i, :, : len(n)] = mask[i]
 
-                merged_mask = torch.tensor(merged_mask).to(device)
+                merged_mask = (
+                    torch.tensor(merged_mask).nan_to_num_(nan=-torch.inf).to(device)
+                )
                 merged_N = torch.tensor(merged_N).to(device)
 
                 constant = torch.utils.data.default_collate(
@@ -846,7 +857,10 @@ def update_model_loop(redis_db, model, model_lock, embeddings_cache):
     redis_conn = redis.Redis(
         host="localhost", port=6379, db=redis_db, decode_responses=True
     )
-    batch_size = 64
+    if device == "mps":
+        batch_size = 32
+    else:
+        batch_size = 64
     while True:
         update_groups_count = redis_conn.get("update_model")
         if not update_groups_count:
@@ -854,20 +868,24 @@ def update_model_loop(redis_db, model, model_lock, embeddings_cache):
             continue
 
         train_set = []
-        for i in range(int(update_groups_count)):
-            group_payload = redis_conn.lpop("train_set")
-            train_set.append(
-                build_dataset(
-                    redis_db,
-                    model,
-                    model_lock,
-                    group_payload,
-                    embeddings_cache,
-                    batch_size,
+        try:
+            for i in range(int(update_groups_count)):
+                group_payload = redis_conn.lpop("train_set")
+                train_set.append(
+                    build_dataset(
+                        redis_db,
+                        model,
+                        model_lock,
+                        group_payload,
+                        embeddings_cache,
+                        batch_size,
+                    )
                 )
-            )
-        model.run_training(train_set, model_lock)
-        redis_conn.delete("update_model")
+            model.run_training(train_set, model_lock)
+        except Exception as e:
+            print(e)
+        finally:
+            redis_conn.delete("update_model")
 
 
 def save_model_loop(redis_db, model):

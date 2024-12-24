@@ -36,9 +36,7 @@ function remove_timeout(container::TimeoutContainer)
     if need_wait
         @warn "Waiting for interrupt to arrive"
         flush(stdout)
-        while true
-            sleep(1)
-        end
+        sleep(10)
     end
 end
 

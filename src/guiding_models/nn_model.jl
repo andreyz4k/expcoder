@@ -803,7 +803,7 @@ function _preprocess_summary(summary::LikelihoodSummary, grammar_length)
     for (i, count) in summary.uses
         uses[i] = count
     end
-    mask = fill(-1.0f38, grammar_length, length(summary.normalizers))
+    mask = fill(-Inf32, grammar_length, length(summary.normalizers))
     N = zeros(Float32, length(summary.normalizers))
     for (i, (norm_set, count)) in enumerate(summary.normalizers)
         N[i] = count

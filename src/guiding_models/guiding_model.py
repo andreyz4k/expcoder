@@ -355,7 +355,8 @@ class GuidingModel(nn.Module):
 
         denominator = torch.sum(N * z, dim=1)
 
-        return torch.mean(denominator - numenator) + torch.mean(z**2 / 1000)
+        result = torch.mean(denominator - numenator), torch.mean(z**2 / 1000)
+        return result
 
     def run_training(self, train_set, lock=Lock()):
         learning_rate = 1e-3
@@ -372,9 +373,12 @@ class GuidingModel(nn.Module):
             os.mkdir("model_checkpoints")
 
         print(f"Running training for {epochs} epochs")
+        # torch.set_printoptions(profile="full")
         self.train()
         for t in range(epochs):
             losses = []
+            mean_losses = []
+            aux_losses = []
             with tqdm(total=train_set_size) as pbar:
                 for i, data_group in enumerate(train_set):
                     for j, (grammar_encodings, (inputs, summaries)) in enumerate(
@@ -383,23 +387,44 @@ class GuidingModel(nn.Module):
                         with lock:
                             # Compute prediction and loss
                             pred = self(*grammar_encodings, *inputs)
-                            loss = self.loss_fn(pred, summaries)
+                            mean_loss, aux_loss = self.loss_fn(pred, summaries)
+                            loss = mean_loss + aux_loss
                             if torch.isnan(loss):
-                                print("NaN loss")
+                                print(f"NaN loss {mean_loss.item()} {aux_loss.item()}")
+                                print(i, j)
+                                print(pred)
+                                print(summaries)
                                 raise Exception("NaN loss")
+
+                            if loss.item() > 1e6:
+                                print(
+                                    f"Large loss {mean_loss.item()} {aux_loss.item()}"
+                                )
+                                print(i, j)
+                                print(pred)
+                                print(summaries)
+                                raise Exception("Large loss")
 
                             # Backpropagation
                             loss.backward()
                             optimizer.step()
                             optimizer.zero_grad()
                             losses.append(loss.item())
+                            mean_losses.append(mean_loss.item())
+                            aux_losses.append(aux_loss.item())
 
                         pbar.update()
                         pbar.set_description(f"loss: {loss.item():>7f}")
-                        wandb.log({"loss": loss.item()})
+                        wandb.log(
+                            {
+                                "loss": loss.item(),
+                                "mean_loss": mean_loss.item(),
+                                "aux_loss": aux_loss.item(),
+                            }
+                        )
 
             print(
-                f"Epoch {t} finished, average loss: {np.mean(losses)}, max: {max(losses)}"
+                f"Epoch {t} finished, average loss: {np.mean(losses):>7f} {np.mean(mean_losses):>7f} {np.mean(aux_losses):>7f}, max: {max(losses):>7f} {max(mean_losses):>7f} {max(aux_losses):>7f}"
             )
             if t % 10 == 0:
                 self.save(

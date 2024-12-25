@@ -164,6 +164,7 @@ class GuidingModelBody(nn.Module):
             nn.Linear(d_dec_h, d_dec_h2),
             nn.ELU(),
             nn.Linear(d_dec_h2, 1),
+            nn.LogSoftmax(dim=1),
         )
 
     def forward(
@@ -350,12 +351,18 @@ class GuidingModel(nn.Module):
 
         numenator = torch.sum(pred * uses, dim=1) + constant
 
-        z = mask + pred.reshape(*pred.shape, 1)
-        z = torch.logsumexp(z, dim=1)
+        z_full = mask + pred.reshape(*pred.shape, 1)
+        z = torch.logsumexp(z_full, dim=1)
 
         denominator = torch.sum(N * z, dim=1)
 
-        result = torch.mean(denominator - numenator), torch.mean(z**2 / 1000)
+        result = (
+            torch.mean(denominator - numenator),
+            torch.mean(z**2 / 1000),
+            torch.mean(torch.std(pred, dim=1)),
+            torch.mean(torch.mean(pred, dim=1)),
+            torch.mean(z),
+        )
         return result
 
     def run_training(self, train_set, lock=Lock()):
@@ -366,7 +373,7 @@ class GuidingModel(nn.Module):
         epochs = min(math.ceil(iterations / train_set_size), 100)
 
         optimizer = torch.optim.Adam(
-            self.parameters(), lr=learning_rate, weight_decay=1e-5
+            self.parameters(), lr=learning_rate, weight_decay=1e-3
         )
 
         if not os.path.exists("model_checkpoints"):
@@ -379,6 +386,9 @@ class GuidingModel(nn.Module):
             losses = []
             mean_losses = []
             aux_losses = []
+            val_stds = []
+            val_means = []
+            z_means = []
             with tqdm(total=train_set_size) as pbar:
                 for i, data_group in enumerate(train_set):
                     for j, (grammar_encodings, (inputs, summaries)) in enumerate(
@@ -387,7 +397,9 @@ class GuidingModel(nn.Module):
                         with lock:
                             # Compute prediction and loss
                             pred = self(*grammar_encodings, *inputs)
-                            mean_loss, aux_loss = self.loss_fn(pred, summaries)
+                            mean_loss, aux_loss, val_std, val_mean, z_mean = (
+                                self.loss_fn(pred, summaries)
+                            )
                             loss = mean_loss + aux_loss
                             if torch.isnan(loss):
                                 print(f"NaN loss {mean_loss.item()} {aux_loss.item()}")
@@ -406,15 +418,18 @@ class GuidingModel(nn.Module):
                                 raise Exception("Large loss")
 
                             # Backpropagation
-                            loss.backward()
+                            mean_loss.backward()
                             optimizer.step()
                             optimizer.zero_grad()
                             losses.append(loss.item())
                             mean_losses.append(mean_loss.item())
                             aux_losses.append(aux_loss.item())
+                            val_stds.append(val_std.item())
+                            val_means.append(val_mean.item())
+                            z_means.append(z_mean.item())
 
                         pbar.update()
-                        pbar.set_description(f"loss: {loss.item():>7f}")
+                        pbar.set_description(f"loss: {mean_loss.item():>7f}")
                         wandb.log(
                             {
                                 "loss": loss.item(),
@@ -426,6 +441,12 @@ class GuidingModel(nn.Module):
             print(
                 f"Epoch {t} finished, average loss: {np.mean(losses):>7f} {np.mean(mean_losses):>7f} {np.mean(aux_losses):>7f}, max: {max(losses):>7f} {max(mean_losses):>7f} {max(aux_losses):>7f}"
             )
+            print(
+                f"Val std {np.mean(val_stds):>7f} {min(val_stds):>7f} {max(val_stds):>7f}, mean {np.mean(val_means):>7f} {np.mean(z_means):>7f}"
+            )
+            # print(
+            #     f"Epoch {t} finished, average loss: {np.mean(losses):>7f}, max: {max(losses):>7f}"
+            # )
             if t % 10 == 0:
                 self.save(
                     os.path.join(

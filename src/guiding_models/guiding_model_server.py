@@ -4,6 +4,7 @@ from queue import Empty, SimpleQueue
 from threading import Lock, Thread
 from time import sleep, time
 import sys
+import traceback
 import numpy as np
 import redis
 import orjson
@@ -883,7 +884,7 @@ def update_model_loop(redis_db, model, model_lock, embeddings_cache):
                 )
             model.run_training(train_set, model_lock)
         except Exception as e:
-            print(e)
+            traceback.print_exc()
         finally:
             redis_conn.delete("update_model")
 

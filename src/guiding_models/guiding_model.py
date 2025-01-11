@@ -10,6 +10,7 @@ from tqdm import tqdm
 from transformers import AutoModel
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
+import torch.nn.functional as F
 import torch
 import numpy as np
 import wandb
@@ -227,36 +228,47 @@ class GuidingModel(nn.Module):
 
     def process_input_output_batch(self, batch):
         batch_size = len(batch)
-        example_count = sum(len(m[2]) for m in batch)
+        example_count = sum(len(m[0]) for m in batch)
 
         result_subbatch_mask = np.zeros((example_count, batch_size), dtype=np.float32)
 
-        max_x = max(max(v.shape[2] for (v, _, _) in batch), 3)
-        max_y = max(max(v.shape[3] for (v, _, _) in batch), 3)
-        result_batch_matrix = np.zeros(
-            (example_count, 10, max_x, max_y), dtype=np.float32
-        )
+        max_x = max(max(v.shape[0] for (grids, _) in batch for v in grids), 3)
+        max_y = max(max(v.shape[1] for (grids, _) in batch for v in grids), 3)
+        result_batch_matrix = np.zeros((example_count, max_x, max_y), dtype=np.int64)
         result_batch_mask = np.zeros((example_count, 1, max_x, max_y), dtype=np.float32)
 
         i = 0
-        for j, (matrix, mask, subbatch_mask) in enumerate(batch):
+        j = 0
+        for grids, subbatch_mask in batch:
             result_subbatch_mask[i : i + len(subbatch_mask), j : j + 1] = subbatch_mask
-            result_batch_matrix[
-                i : i + len(subbatch_mask),
-                :,
-                0 : matrix.shape[2],
-                0 : matrix.shape[3],
-            ] = matrix
-            result_batch_mask[
-                i : i + len(subbatch_mask),
-                :,
-                0 : matrix.shape[2],
-                0 : matrix.shape[3],
-            ] = mask
             i += len(subbatch_mask)
+            for matrix in grids:
+                result_batch_matrix[
+                    j,
+                    0 : matrix.shape[0],
+                    0 : matrix.shape[1],
+                ] = matrix
+                result_batch_mask[
+                    j,
+                    :,
+                    0 : matrix.shape[0],
+                    0 : matrix.shape[1],
+                ] = 1
+                j += 1
+        result_batch_tensor = torch.tensor(result_batch_matrix, device=device)
+        result_batch_tensor = (
+            F.one_hot(result_batch_tensor, 10)
+            .permute(0, 3, 1, 2)
+            .to(dtype=torch.float32)
+        )
+
+        result_batch_mask = torch.tensor(
+            result_batch_mask, dtype=torch.float32, device=device
+        )
+        result_batch_tensor = torch.mul(result_batch_tensor, result_batch_mask)
         return (
-            torch.tensor(result_batch_matrix, dtype=torch.float32, device=device),
-            torch.tensor(result_batch_mask, dtype=torch.float32, device=device),
+            result_batch_tensor,
+            result_batch_mask,
             torch.tensor(result_subbatch_mask, dtype=torch.float32, device=device),
         )
 

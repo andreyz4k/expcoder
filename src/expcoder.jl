@@ -599,7 +599,7 @@ function solve_task(
 
         need_export = false
         if need_export
-            export_solution_context(sc, task)
+            export_solution_context(sc, task.name)
         end
     finally
         mark_task_finished(guiding_model_channels, task_name)
@@ -639,7 +639,7 @@ function try_solve_task(
         )
     catch e
         bt = catch_backtrace()
-        @error "Failed to solve task" exception = (e, bt)
+        @error "Failed to solve task $(task.name)" exception = (e, bt)
         rethrow()
     end
     return Dict("task" => task, "traces" => traces)
@@ -902,8 +902,6 @@ function main(; kwargs...)
             end
 
             while i <= parsed_args[:iterations]
-                i += 1
-
                 new_traces = try_solve_tasks(
                     worker_pool,
                     tasks,
@@ -940,12 +938,13 @@ function main(; kwargs...)
 
                 @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
                 log_traces(cur_traces)
-                log_grammar(i - 1, grammar)
+                log_grammar(i, grammar)
 
                 clear_model_cache(guiding_model)
                 guiding_model = update_guiding_model(guiding_model, traces)
                 save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
                 set_current_grammar!(guiding_model, grammar)
+                i += 1
             end
         end
     finally

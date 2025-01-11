@@ -145,41 +145,23 @@ def check_next_input_batches(
             queues[next_queue][0].put(payload)
 
 
-def preprocess_inputs_batch(inputs_batch):
+def preprocess_inputs_entry(inputs_entry):
     input_grids = [
-        [[np.array(example) for example in var] for var in v["inputs"]]
-        for v in inputs_batch
+        [np.array(example) for example in var] for var in inputs_entry["inputs"]
     ]
 
-    max_x = max(
-        example.shape[0] for entry in input_grids for var in entry for example in var
-    )
-    max_y = max(
-        example.shape[1] for entry in input_grids for var in entry for example in var
-    )
-    example_count = sum(len(var) for entry in input_grids for var in entry)
-    combined_batch = np.zeros((example_count, 10, max_x, max_y), dtype=np.float32)
-    mask = np.zeros((example_count, 1, max_x, max_y), dtype=np.float32)
-    subbatch_mask = np.zeros((example_count, len(input_grids)), dtype=np.float32)
+    example_count = sum(len(var) for var in input_grids)
+    combined_batch = []
+    subbatch_mask = np.zeros((example_count, 1), dtype=np.float32)
 
-    i = 0
-    for j, entry in enumerate(input_grids):
-        entry_size = sum(len(var) for var in entry)
-        entry_mask = np.zeros((entry_size, len(entry)), dtype=np.float32)
-        m = 0
-        for k, var in enumerate(entry):
-            for example in var:
-                combined_batch[i, example, : example.shape[0], : example.shape[1]] = 1
-                mask[i, 0, : example.shape[0], : example.shape[1]] = 1
-                i += 1
-            entry_mask[m : m + len(var), k] = 1 / len(var)
-            m += len(var)
+    m = 0
+    for k, var in enumerate(input_grids):
+        for example in var:
+            combined_batch.append(example)
+        subbatch_mask[m : m + len(var), k] = 1 / (len(var) * len(input_grids))
+        m += len(var)
 
-        subbatch_mask[i - entry_size : i, j] = np.matmul(
-            entry_mask, np.repeat(1 / len(entry), len(entry))
-        )
-
-    return combined_batch, mask, subbatch_mask
+    return combined_batch, subbatch_mask
 
 
 def inputs_loop(queues, model, model_lock, inputs_cache, finished_tasks):
@@ -213,13 +195,17 @@ def inputs_loop(queues, model, model_lock, inputs_cache, finished_tasks):
             # print("Processing inputs batch")
             start_processing = time()
 
-            combined_inputs_batch = preprocess_inputs_batch(inputs_batch)
+            combined_inputs_batch = [
+                preprocess_inputs_entry(inputs) for inputs in inputs_batch
+            ]
 
             preprocessing_time = time() - start_processing
 
             with model_lock:
                 start_processing = time()
-                combined_inputs_batch = model.transfer_to_device(combined_inputs_batch)
+                combined_inputs_batch = model.process_input_output_batch(
+                    combined_inputs_batch
+                )
 
                 with torch.no_grad():
                     input_encodings = model.input_output_encoder(*combined_inputs_batch)
@@ -283,29 +269,16 @@ def check_next_output_batches(
             queues[next_queue][0].put(payload)
 
 
-def preprocess_outputs_batch(outputs_batch):
-    output_grids = [
-        [np.array(example) for example in v["output"]] for v in outputs_batch
-    ]
+def preprocess_outputs_entry(outputs_entry):
+    output_grids = [np.array(example) for example in outputs_entry["output"]]
 
-    max_x = max(example.shape[0] for entry in output_grids for example in entry)
-    max_y = max(example.shape[1] for entry in output_grids for example in entry)
-    example_count = sum(len(entry) for entry in output_grids)
+    example_count = len(output_grids)
 
-    combined_batch = np.zeros((example_count, 10, max_x, max_y), dtype=np.float32)
-    mask = np.zeros((example_count, 1, max_x, max_y), dtype=np.float32)
-    subbatch_mask = np.zeros((example_count, len(output_grids)), dtype=np.float32)
+    subbatch_mask = np.repeat(1 / example_count, example_count).reshape(
+        (example_count, 1)
+    )
 
-    i = 0
-    for j, entry in enumerate(output_grids):
-        for example in entry:
-            combined_batch[i, example, : example.shape[0], : example.shape[1]] = 1
-            mask[i, 0, : example.shape[0], : example.shape[1]] = 1
-            i += 1
-
-        subbatch_mask[i - len(entry) : i, j] = 1 / len(entry)
-
-    return combined_batch, mask, subbatch_mask
+    return output_grids, subbatch_mask
 
 
 def outputs_loop(queues, model, model_lock, outputs_cache, finished_tasks):
@@ -340,12 +313,14 @@ def outputs_loop(queues, model, model_lock, outputs_cache, finished_tasks):
 
             start_processing = time()
 
-            combined_outputs_batch = preprocess_outputs_batch(outputs_batch)
+            combined_outputs_batch = [
+                preprocess_outputs_entry(outputs) for outputs in outputs_batch
+            ]
 
             preprocessing_time = time() - start_processing
             with model_lock:
                 start_processing = time()
-                combined_outputs_batch = model.transfer_to_device(
+                combined_outputs_batch = model.process_input_output_batch(
                     combined_outputs_batch
                 )
                 with torch.no_grad():
@@ -721,8 +696,8 @@ class GuidingRedisDataset(Dataset):
             # print(data_str)
             data = orjson.loads(data_str)
             # print(data)
-            inputs = preprocess_inputs_batch([data])
-            outputs = preprocess_outputs_batch([data])
+            inputs = preprocess_inputs_entry(data)
+            outputs = preprocess_outputs_entry(data)
 
             trace_vals, trace_mask = data["trace_val"]
             new_trace_vals = list(

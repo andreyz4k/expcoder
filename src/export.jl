@@ -179,7 +179,7 @@ function sort_vars_and_blocks(sc::SolutionContext)
     return out_var_depths, out_block_depths
 end
 
-function export_solution_context(sc::SolutionContext, task)
+function export_solution_context(sc::SolutionContext, task_name)
     data = MetaGraph(
         DiGraph();  # underlying graph structure
         label_type = String,  # branch id
@@ -291,7 +291,7 @@ function export_solution_context(sc::SolutionContext, task)
 
     # @info data
     # filename = "solution_dumps/$(replace(task.name, " " => "_"))_p_$(sc.hyperparameters["path_cost_power"])_c_$(sc.hyperparameters["complexity_power"])_set_$(sc.type_weights["set"])_tuple_$(sc.type_weights["tuple2"])_list_$(sc.type_weights["list"])_any_$(sc.type_weights["any"])_$(now()).dot"
-    filename = "solution_dumps/$(replace(task.name, " " => "_"))_$(now()).dot"
+    filename = "solution_dumps/$(replace(task_name, " " => "_"))_$(now()).dot"
     # mkdir("solution_dumps")
     savegraph(filename, data, DOTFormat())
     @info filename

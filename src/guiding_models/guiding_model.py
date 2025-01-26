@@ -46,24 +46,37 @@ class InputOutputEncoder(nn.Module):
                 nn.Conv2d(int(d_emb / 2), d_emb, kernel_size=(3, 3), padding=1),
             ]
         )
+        self.norms = nn.ModuleList(
+            [
+                nn.BatchNorm2d(hidden_channels),
+                nn.BatchNorm2d(hidden_channels * 2),
+                nn.BatchNorm2d(int(d_emb / 2)),
+                nn.BatchNorm2d(d_emb),
+            ]
+        )
         self.linear1 = nn.Linear(d_emb, d_emb)
+        self.lin_norm1 = nn.LayerNorm(d_emb)
         self.linear2 = nn.Linear(d_emb, d_emb)
-        self.pooler = nn.AdaptiveAvgPool2d((1, 1))
+        self.lin_norm2 = nn.LayerNorm(d_emb)
+        # self.pooler = nn.AdaptiveAvgPool2d((1, 1))
         self.activation = nn.ELU()
 
     def forward(self, inputs, mask, subbatch_mask):
         val = inputs
-        for conv in self.convs:
+        for conv, norm in zip(self.convs, self.norms):
             val = conv(val)
+            val = torch.mul(val, mask)
+            val = norm(val)
             val = self.activation(val)
 
-            val = torch.mul(val, mask)
-
         pooled = torch.mean(val, dim=(2, 3))
-        l1 = self.linear1(pooled)
+        l1 = self.lin_norm1(self.linear1(pooled))
+        l1 = self.activation(l1)
 
         batched = torch.matmul(l1.H, subbatch_mask).H
-        return self.linear2(batched)
+        l2 = self.lin_norm2(self.linear2(batched))
+        l2 = self.activation(l2)
+        return l2
 
 
 class GuidingDataset(Dataset):
@@ -149,20 +162,27 @@ class GuidingModelBody(nn.Module):
         super().__init__()
         self.state_processor = nn.Sequential(
             nn.Linear(d_state_in, d_state_h),
+            nn.LayerNorm(d_state_h),
             nn.ELU(),
             nn.Linear(d_state_h, d_state_h),
+            nn.LayerNorm(d_state_h),
             nn.ELU(),
             nn.Linear(d_state_h, d_state_h),
+            nn.LayerNorm(d_state_h),
             nn.ELU(),
             nn.Linear(d_state_h, d_state_out),
+            nn.LayerNorm(d_state_out),
             nn.ELU(),
         )
         self.decoder = nn.Sequential(
             nn.Linear(d_state_out + d_emb, d_dec_h),
+            nn.LayerNorm(d_dec_h),
             nn.ELU(),
             nn.Linear(d_dec_h, d_dec_h),
+            nn.LayerNorm(d_dec_h),
             nn.ELU(),
             nn.Linear(d_dec_h, d_dec_h2),
+            nn.LayerNorm(d_dec_h2),
             nn.ELU(),
             nn.Linear(d_dec_h2, 1),
             nn.LogSoftmax(dim=1),
@@ -431,6 +451,8 @@ class GuidingModel(nn.Module):
 
                             # Backpropagation
                             mean_loss.backward()
+                            torch.nn.utils.clip_grad_norm_(self.parameters(), 1)
+
                             optimizer.step()
                             optimizer.zero_grad()
                             losses.append(loss.item())

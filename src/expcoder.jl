@@ -811,7 +811,8 @@ using Serialization
 function save_checkpoint(parsed_args, iteration, traces, grammar, guiding_model)
     path = get_checkpoint_path(parsed_args[:domain])
     Serialization.serialize(joinpath(path, "args.jls"), (parsed_args, iteration))
-    Serialization.serialize(joinpath(path, "traces.jls"), traces)
+    traces_to_save = Dict{UInt64,Any}(h => ([string(p) for p in g], t) for (h, (g, t)) in traces)
+    Serialization.serialize(joinpath(path, "traces.jls"), traces_to_save)
     Serialization.serialize(joinpath(path, "grammar.jls"), grammar)
     save_guiding_model(guiding_model, joinpath(path, "guiding_model.jld2"))
     @info "Saved checkpoint for iteration $(iteration-1) to $path"
@@ -821,7 +822,8 @@ function load_checkpoint(path)
     args, iteration = Serialization.deserialize(joinpath(path, "args.jls"))
     loaded_traces = Serialization.deserialize(joinpath(path, "traces.jls"))
     traces = Dict{UInt64,Any}()
-    for (grammar, gr_traces) in values(loaded_traces)
+    for (grammar_strs, gr_traces) in values(loaded_traces)
+        grammar = [parse_program(p_str) for p_str in grammar_strs]
         grammar_hash = hash(grammar)
         traces[grammar_hash] = (grammar, gr_traces)
     end

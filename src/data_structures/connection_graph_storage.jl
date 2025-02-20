@@ -330,6 +330,39 @@ function Base.deleteat!(storage::ConnectionGraphStorage, i::UInt64, j::UInt64)
     storage
 end
 
+function Base.deleteat!(storage::ConnectionGraphStorage, i::UInt64, js::Union{Vector{UInt64},Set{UInt64}})
+    ensure_stack_depth(storage)
+    if storage.transaction_depth == 0
+        rows = storage.rows
+        columns = storage.columns
+    else
+        rows, columns, deleted = storage.updates_stack[storage.transaction_depth]
+    end
+    if haskey(rows, i)
+        to_del = setdiff(js, rows[i])
+        setdiff!(rows[i], js)
+        if isempty(rows[i])
+            delete!(rows, i)
+        end
+    else
+        to_del = js
+    end
+    if storage.transaction_depth > 0
+        for c in to_del
+            push!(deleted, (i, c))
+        end
+    end
+    for j in js
+        if haskey(columns, j)
+            delete!(columns[j], i)
+            if isempty(columns[j])
+                delete!(columns, j)
+            end
+        end
+    end
+    storage
+end
+
 function Base.deleteat!(
     storage::ConnectionGraphStorage,
     is::Union{Vector{UInt64},Set{UInt64}},

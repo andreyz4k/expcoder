@@ -214,7 +214,7 @@ function receive_grammar_weights(sc::SolutionContext, redis_conn::Redis.RedisCon
         end
 
         for (branch_id) in sc.waiting_branches[(entry_id, is_rev)]
-            var_id = sc.branch_vars[branch_id]
+            var_id = first(get_connected_from(sc.branch_vars, branch_id))
             entry = sc.entries[entry_id]
             type_id = first(get_connected_from(sc.branch_types, branch_id))
             type = sc.types[type_id]

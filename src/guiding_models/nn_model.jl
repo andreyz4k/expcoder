@@ -521,7 +521,9 @@ function _extract_program_blocks(p::LetRevClause, blocks)
 end
 
 function _extract_program_blocks(p::LetClause, blocks)
-    push!(blocks, (p.var_id, p.v, false))
+    if !isa(p.v, FreeVar)
+        push!(blocks, (p.var_id, p.v, false))
+    end
     return _extract_program_blocks(p.b, blocks)
 end
 

@@ -66,7 +66,7 @@ function block_prototype(pr, inputs, output_var_id, output_branch_id, output_typ
 end
 
 function get_candidates_for_unknown_var(sc, branch_id, guiding_model_channels, grammar)::Vector{BlockPrototype}
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
     type_id = first(get_connected_from(sc.branch_types, branch_id))
     type = sc.types[type_id]
     entry_id = sc.branch_entries[branch_id]
@@ -106,7 +106,7 @@ end
 
 function get_candidates_for_known_var(sc, branch_id, guiding_model_channels, grammar)
     prototypes = []
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
     entry_id = sc.branch_entries[branch_id]
     entry = sc.entries[entry_id]
     if !isnothing(sc.explained_min_path_costs[branch_id]) && entry.complexity > 0

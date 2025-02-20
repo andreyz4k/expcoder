@@ -361,7 +361,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, path,
                 get_complexity(sc, complexity_summary),
             )
         end
-        if new_entry == out_entry
+        if !sc.traced && new_entry == out_entry
             throw(EnumerationException())
         end
         push!(new_entries, (var_id, new_entry))
@@ -386,10 +386,36 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, path,
 
     for (var_id, entry) in new_entries
         entry_index = push!(sc.entries, entry)
-        branch_id = increment!(sc.branches_count)
-        sc.branch_entries[branch_id] = entry_index
-        sc.branch_vars[branch_id] = var_id
-        sc.branch_types[branch_id, entry.type_id] = true
+        exact_match, parents_children = find_related_branches(sc, var_id, entry, entry_index)
+
+        if !isnothing(exact_match)
+            branch_id = exact_match
+        else
+            branch_id = increment!(sc.branches_count)
+            sc.branch_entries[branch_id] = entry_index
+            sc.branch_vars[branch_id, var_id] = true
+            sc.branch_types[branch_id, entry.type_id] = true
+            if sc.verbose
+                @info "Created new branch $branch_id $entry"
+                @info "Parents children $parents_children"
+            end
+            for (parent, children) in parents_children
+                if isnothing(parent)
+                    # @info "Root branch $root_branch_id"
+                    # @info "old branch $old_br_entry"
+                    # @info "new branch $entry"
+                    # @info "Children $children"
+                    # @info "Children parents $([(c, get_connected_to(sc.branch_children, c)) for c in children])"
+                    # @info "Children entries $([(c, sc.entries[sc.branch_entries[c]]) for c in children])"
+                    # @info "Parents children $parents_children"
+                else
+                    deleteat!(sc.branch_children, [parent], children)
+                    sc.branch_children[parent, branch_id] = true
+                end
+                sc.branch_children[branch_id, children] = true
+            end
+        end
+
         if is_known
             sc.explained_min_path_costs[branch_id] = cost + sc.explained_min_path_costs[output_branch_id]
             sc.explained_complexity_factors[branch_id] = complexity_factor
@@ -482,7 +508,7 @@ function try_run_function(f::Function, xs)
             @error(xs)
             rethrow()
         else
-            # @error e
+            # @error "Error while running $f with $xs" exception = (e, catch_backtrace())
             throw(EnumerationException())
         end
     end
@@ -670,7 +696,7 @@ function try_run_block_with_downstream(
     # @info fixed_branches
     block = sc.blocks[block_id]
 
-    out_branches, is_new_next_block, allow_fails, next_blocks, set_explained, block_created_paths =
+    out_branches, is_new_out_branch, is_new_next_block, allow_fails, next_blocks, set_explained, block_created_paths =
         try_run_block(sc, block, block_id, fixed_branches, target_output, is_new_block, created_paths)
     # @info target_output
     # @info out_branches
@@ -682,7 +708,7 @@ function try_run_block_with_downstream(
     end
     new_paths = merge(created_paths, block_created_paths)
 
-    if is_new_block
+    if is_new_block || is_new_out_branch
         _save_block_branch_connections(sc, block_id, block, fixed_branches, UInt64[b_id for (_, b_id) in out_branches])
     end
     if is_new_block || set_explained
@@ -730,9 +756,9 @@ function add_new_block(sc::SolutionContext, block_id, inputs, target_output)
     end
     update_prev_follow_vars(sc, block_id)
     if all(sc.branch_is_explained[branch_id] for (var_id, branch_id) in inputs)
-        if length(inputs) > 1
-            error("Not implemented, fix active constraints")
-        end
+        # if length(inputs) > 1
+        #     error("Not implemented, fix active constraints")
+        # end
         try_run_block_with_downstream(sc, block_id, inputs, target_output, true, Dict())
         # assert_context_consistency(sc)
     else
@@ -777,7 +803,7 @@ function log_results(sc, hits)
                 length(v),
                 length(unique(v)),
                 br_id,
-                sc.branch_vars[br_id],
+                first(get_connected_from(sc.branch_vars, br_id)),
                 sc.branch_entries[br_id],
                 sc.entries[sc.branch_entries[br_id]],
                 [sc.blocks[b_id] for (_, b_id) in get_connected_from(sc.branch_incoming_blocks, br_id)],

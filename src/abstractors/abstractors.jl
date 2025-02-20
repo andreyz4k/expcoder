@@ -147,12 +147,12 @@ _get_custom_arg_checkers(p::Index) = []
 _get_custom_arg_checkers(p::FreeVar) = []
 
 function _get_custom_arg_checkers(p::Invented)
-    checkers, indices_checkers = __get_custom_arg_chekers(p, nothing, Dict())
+    checkers, indices_checkers = __get_custom_arg_checkers(p, nothing, Dict())
     @assert isempty(indices_checkers)
     return checkers
 end
 
-function __get_custom_arg_chekers(p::Primitive, checker::Nothing, indices_checkers::Dict)
+function __get_custom_arg_checkers(p::Primitive, checker::Nothing, indices_checkers::Dict)
     if haskey(all_abstractors, p)
         [CombinedArgChecker([c[2]]) for c in all_abstractors[p][1]], indices_checkers
     else
@@ -160,7 +160,7 @@ function __get_custom_arg_chekers(p::Primitive, checker::Nothing, indices_checke
     end
 end
 
-function __get_custom_arg_chekers(p::Primitive, checker, indices_checkers::Dict)
+function __get_custom_arg_checkers(p::Primitive, checker, indices_checkers::Dict)
     arg_count = length(arguments_of_type(p.t))
     custom_checkers = _get_custom_arg_checkers(p)
     out_checkers = []
@@ -180,29 +180,29 @@ function __get_custom_arg_chekers(p::Primitive, checker, indices_checkers::Dict)
     out_checkers, indices_checkers
 end
 
-function __get_custom_arg_chekers(p::SetConst, checker, indices_checkers::Dict)
+function __get_custom_arg_checkers(p::SetConst, checker, indices_checkers::Dict)
     [], indices_checkers
 end
 
-function __get_custom_arg_chekers(p::Invented, checker, indices_checkers::Dict)
-    return __get_custom_arg_chekers(p.b, checker, indices_checkers)
+function __get_custom_arg_checkers(p::Invented, checker, indices_checkers::Dict)
+    return __get_custom_arg_checkers(p.b, checker, indices_checkers)
 end
 
-function __get_custom_arg_chekers(p::Apply, checker, indices_checkers::Dict)
-    checkers, indices_checkers = __get_custom_arg_chekers(p.f, checker, indices_checkers)
+function __get_custom_arg_checkers(p::Apply, checker, indices_checkers::Dict)
+    checkers, indices_checkers = __get_custom_arg_checkers(p.f, checker, indices_checkers)
     if !isempty(checkers)
-        _, indices_checkers = __get_custom_arg_chekers(p.x, checkers[1], indices_checkers)
+        _, indices_checkers = __get_custom_arg_checkers(p.x, checkers[1], indices_checkers)
     else
-        _, indices_checkers = __get_custom_arg_chekers(p.x, nothing, indices_checkers)
+        _, indices_checkers = __get_custom_arg_checkers(p.x, nothing, indices_checkers)
     end
     return checkers[2:end], indices_checkers
 end
 
-function __get_custom_arg_chekers(p::Index, checker::Nothing, indices_checkers::Dict)
+function __get_custom_arg_checkers(p::Index, checker::Nothing, indices_checkers::Dict)
     return [], indices_checkers
 end
 
-function __get_custom_arg_chekers(p::Index, checker, indices_checkers::Dict)
+function __get_custom_arg_checkers(p::Index, checker, indices_checkers::Dict)
     current_checker = step_arg_checker(checker, p)
     if !isnothing(current_checker)
         if haskey(indices_checkers, p.n)
@@ -215,8 +215,8 @@ function __get_custom_arg_chekers(p::Index, checker, indices_checkers::Dict)
     return [], indices_checkers
 end
 
-function __get_custom_arg_chekers(p::Abstraction, checker, indices_checkers::Dict)
-    chekers, indices_checkers = __get_custom_arg_chekers(
+function __get_custom_arg_checkers(p::Abstraction, checker, indices_checkers::Dict)
+    chekers, indices_checkers = __get_custom_arg_checkers(
         p.b,
         isnothing(checker) ? checker : step_arg_checker(checker, ArgTurn(t0)),
         Dict(i + 1 => c for (i, c) in indices_checkers),
@@ -511,7 +511,7 @@ function _run_in_reverse(p_info, output, context, splitter::EitherOptions)
     out_filled_indices = Dict()
     out_filled_vars = Dict()
 
-    # @info arguments_options
+    # @info "Arguments options $arguments_options"
     for args_options in arguments_options
         push!(out_args, _preprocess_options(args_options, output))
     end
@@ -573,7 +573,7 @@ function __run_in_reverse(p_info::PrimitiveInfo, @nospecialize(output::Any), con
 end
 
 function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     success, calculated_output, new_context = try
         all_abstractors[p_info.p][2](output, context)
     catch e
@@ -613,7 +613,7 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
 end
 
 function __run_in_reverse(p_info::PrimitiveInfo, output::PatternWrapper, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     success, calculated_output, new_context = __run_in_reverse(p_info, output.value, context)
     if !success
         # @info "Failed to run in reverse $(p_info.p) $output $context"
@@ -626,11 +626,10 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::PatternWrapper, context
 end
 
 function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject}, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     success, calculated_output, new_context = try
         all_abstractors[p_info.p][2](output, context)
     catch e
-        # @info e
         # bt = catch_backtrace()
         # @error e exception = (e, bt)
         if isa(e, InterruptException)
@@ -658,7 +657,7 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject
 end
 
 function __run_in_reverse(p_info::ApplyInfo, output::AbductibleValue, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     env = Any[nothing for _ in 1:maximum(keys(context.filled_indices); init = -1)+1]
     for (i, v) in context.filled_indices
         env[end-i] = v
@@ -777,13 +776,13 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
         # @info "arg_target2 $arg_target"
         # @info "arg_calculated_output2 $arg_calculated_output"
     end
-    # @info "Calculated output for $p $calculated_output"
+    # @info "Calculated output for $(p_info.p) $calculated_output"
     # @info "Out context for $(p_info.p) $out_context"
     return true, calculated_output, out_context
 end
 
 function __run_in_reverse(p_info::FreeVarInfo, output, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     if haskey(context.filled_vars, p_info.p.var_id)
         found, unified_v = _try_unify_values(context.filled_vars[p_info.p.var_id], output, false)
         if !found
@@ -799,7 +798,7 @@ function __run_in_reverse(p_info::FreeVarInfo, output, context)
 end
 
 function __run_in_reverse(p_info::IndexInfo, output, context)
-    # @info "Running in reverse $p $output $context"
+    # @info "Running in reverse $(p_info.p) $output $context"
     if haskey(context.filled_indices, p_info.p.n)
         found, unified_v = _try_unify_values(context.filled_indices[p_info.p.n], output, false)
         if !found

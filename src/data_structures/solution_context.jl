@@ -16,7 +16,7 @@ mutable struct SolutionContext
     branch_is_not_const::VectorStorage{Bool}
 
     branch_entries::VectorStorage{UInt64}
-    branch_vars::VectorStorage{UInt64}
+    branch_vars::ConnectionGraphStorage
 
     "[branch_id x type_id] -> {false, true}"
     branch_types::ConnectionGraphStorage
@@ -91,9 +91,17 @@ mutable struct SolutionContext
     verbose::Bool
     transaction_depth::Int
     stats::DefaultDict
+    traced::Bool
 end
 
-function create_starting_context(task::Task, task_name, type_weights, hyperparameters, verbose)::SolutionContext
+function create_starting_context(
+    task::Task,
+    task_name,
+    type_weights,
+    hyperparameters,
+    verbose,
+    traced = false,
+)::SolutionContext
     argument_types = arguments_of_type(task.task_type)
     example_count = length(task.train_outputs)
     sc = SolutionContext(
@@ -107,7 +115,7 @@ function create_starting_context(task::Task, task_name, type_weights, hyperparam
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
         VectorStorage{UInt64}(),
-        VectorStorage{UInt64}(),
+        ConnectionGraphStorage(),
         ConnectionGraphStorage(),
         IndexedStorage{AbstractProgramBlock}(),
         CountStorage(),
@@ -153,6 +161,7 @@ function create_starting_context(task::Task, task_name, type_weights, hyperparam
         verbose,
         0,
         DefaultDict(() -> []),
+        traced,
     )
     start_transaction!(sc, 1)
     for (key, t) in argument_types
@@ -174,7 +183,7 @@ function create_starting_context(task::Task, task_name, type_weights, hyperparam
         branch_id = increment!(sc.branches_count)
 
         sc.branch_entries[branch_id] = entry_id
-        sc.branch_vars[branch_id] = var_id
+        sc.branch_vars[branch_id, var_id] = true
         sc.branch_types[branch_id, type_id] = true
         sc.branch_is_explained[branch_id] = true
         sc.branch_is_not_copy[branch_id] = true
@@ -207,7 +216,7 @@ function create_starting_context(task::Task, task_name, type_weights, hyperparam
     branch_id = increment!(sc.branches_count)
 
     sc.branch_entries[branch_id] = entry_id
-    sc.branch_vars[branch_id] = var_id
+    sc.branch_vars[branch_id, var_id] = true
     sc.branch_types[branch_id, type_id] = true
     sc.branch_is_unknown[branch_id] = true
     sc.branch_unknown_from_output[branch_id] = true
@@ -832,7 +841,10 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ProgramBlock, 
             in_complexity += sc.complexities[inp_branch_id]
             added_upstream_complexity += sc.added_upstream_complexities[inp_branch_id]
             related_brs = get_connected_from(sc.related_explained_complexity_branches, inp_branch_id)
-            merge!(related_branches, Dict(b_id => sc.branch_vars[b_id] for b_id in related_brs))
+            merge!(
+                related_branches,
+                Dict(b_id => first(get_connected_from(sc.branch_vars, b_id)) for b_id in related_brs),
+            )
         end
 
         for path in get_new_paths(sc.incoming_paths, out_branch_id)
@@ -886,7 +898,7 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ReverseProgram
     for out_var_id in bl.output_vars
         out_branch_id = output_branches[out_var_id]
         related_brs = get_connected_from(sc.related_explained_complexity_branches, out_branch_id)
-        related_branches = Dict(b_id => sc.branch_vars[b_id] for b_id in related_brs)
+        related_branches = Dict(b_id => first(get_connected_from(sc.branch_vars, b_id)) for b_id in related_brs)
         for path in get_new_paths(sc.incoming_paths, out_branch_id)
             filtered_related_branches =
                 UInt64[b_id for (b_id, var_id) in related_branches if !path_sets_var(path, var_id)]

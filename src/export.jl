@@ -30,7 +30,7 @@ function check_following_blocks(
             block_outputs = get_connected_to(sc.branch_incoming_blocks, block_copy_id)
             following_blocks_depths[block_id] = depth
             for (output_branch_id, _) in block_outputs
-                output_var_id = sc.branch_vars[output_branch_id]
+                output_var_id = first(get_connected_from(sc.branch_vars, output_branch_id))
                 if haskey(following_vars_depths, output_var_id)
                     continue
                 end
@@ -58,7 +58,7 @@ end
 
 function do_sorting_step(sc::SolutionContext, queue, visited_branches, remaining_vars, vars_depths, blocks_depths)
     branch_id = pop!(queue)
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
     if !in(var_id, remaining_vars)
         return
     end
@@ -105,8 +105,8 @@ function do_sorting_step(sc::SolutionContext, queue, visited_branches, remaining
             end
             new_depth = vars_depths[var_id] + inputs_depths + 1
             for (input_branch_id, _) in block_inputs
-                if !haskey(vars_depths, sc.branch_vars[input_branch_id])
-                    vars_depths[sc.branch_vars[input_branch_id]] = new_depth
+                if !haskey(vars_depths, first(get_connected_from(sc.branch_vars, input_branch_id)))
+                    vars_depths[first(get_connected_from(sc.branch_vars, input_branch_id))] = new_depth
                 else
                     # vars_depths[sc.branch_vars[input_branch_id]] =
                     #     max(vars_depths[sc.branch_vars[input_branch_id]], new_depth)
@@ -121,7 +121,7 @@ end
 
 function sort_vars_and_blocks(sc::SolutionContext)
     remaining_vars = Set(1:sc.vars_count[])
-    output_var = sc.branch_vars[sc.target_branch_id]
+    output_var = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
     vars_depths = Dict{UInt64,Int}(output_var => 0)
     blocks_depths = Dict{UInt64,Int}()
     visited_branches = Set()
@@ -194,7 +194,7 @@ function export_solution_context(sc::SolutionContext, task_name)
         entry = sc.entries[sc.branch_entries[branch_id]]
         vertex_dict = Dict(
             "_kind" => "branch",
-            "_var_id" => sc.branch_vars[branch_id],
+            "_var_id" => first(get_connected_from(sc.branch_vars, branch_id)),
             "_is_unknown" => sc.branch_is_unknown[branch_id],
             "_is_explained" => sc.branch_is_explained[branch_id],
             "_is_not_copy" => sc.branch_is_not_copy[branch_id],
@@ -209,7 +209,7 @@ function export_solution_context(sc::SolutionContext, task_name)
             "_unmatched_complexity" => sc.unmatched_complexities[branch_id],
             "_added_upstream_complexity" => sc.added_upstream_complexities[branch_id],
             "_unused_explained_complexity" => sc.unused_explained_complexities[branch_id],
-            "_depth" => get(vars_depths, sc.branch_vars[branch_id], -200) + rand(),
+            "_depth" => get(vars_depths, first(get_connected_from(sc.branch_vars, branch_id)), -200) + rand(),
             "_related_explained_branches" =>
                 string(get_connected_from(sc.related_explained_complexity_branches, branch_id)),
             "_related_unknown_branches" =>
@@ -244,7 +244,9 @@ function export_solution_context(sc::SolutionContext, task_name)
         end
         filter!(kv -> !isnothing(kv[2]), vertex_dict)
         add_vertex!(data, string(branch_id), vertex_dict)
+    end
 
+    for branch_id in 1:sc.branches_count[]
         for parent_id in get_connected_to(sc.branch_children, branch_id)
             add_edge!(data, string(parent_id), string(branch_id), Dict("_type" => "child"))
         end

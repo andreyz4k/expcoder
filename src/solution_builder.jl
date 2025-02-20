@@ -58,8 +58,8 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
 
     start_time = time()
 
-    # verbose_test = true
-    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test)
+    # verbose_test = false
+    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test, true)
 
     try
         enqueue_updates(sc, guiding_model_channels, grammar)
@@ -81,8 +81,8 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 end
             end
         end
-        inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
-        rev_inner_mapping[sc.branch_vars[sc.target_branch_id]] = vars_mapping["out"]
+        inner_mapping[vars_mapping["out"]] = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+        rev_inner_mapping[first(get_connected_from(sc.branch_vars, sc.target_branch_id))] = vars_mapping["out"]
         if verbose_test
             @info inner_mapping
         end
@@ -104,7 +104,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
             bp = dequeue!(q)
 
             target_blocks_group = from_input ? in_blocks : out_blocks
-            var_id = sc.branch_vars[br_id]
+            var_id = first(get_connected_from(sc.branch_vars, br_id))
             if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
                 if haskey(rev_inner_mapping, var_id) && haskey(rev_vars_mapping, rev_inner_mapping[var_id])
                     orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
@@ -169,6 +169,10 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                         push!(missing_blocks, (block, var_id))
                     end
                 else
+                    if !haskey(inner_mapping, block.output_var)
+                        push!(missing_blocks, (block, var_id))
+                        continue
+                    end
                     dest_var_id = inner_mapping[block.output_var]
                     matching_blocks = filter(
                         b ->
@@ -215,7 +219,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         unused_known_vars = Dict{UInt64,Any}()
         unused_unknown_vars = DefaultDict{UInt64,Any}(() -> UInt64[])
         for branch_id in 1:sc.branches_count[]
-            var_id = sc.branch_vars[branch_id]
+            var_id = first(get_connected_from(sc.branch_vars, branch_id))
 
             out_blocks = get_connected_from(sc.branch_outgoing_blocks, branch_id)
             if !isempty(out_blocks)

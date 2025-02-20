@@ -231,10 +231,25 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
             t_id = push!(sc.types, t)
             entry = NoDataEntry(t_id)
             entry_index = push!(sc.entries, entry)
-            branch_id = increment!(sc.branches_count)
-            sc.branch_entries[branch_id] = entry_index
-            sc.branch_vars[branch_id] = var_id
-            sc.branch_types[branch_id, t_id] = true
+
+            exact_match, parents_children = find_related_branches(sc, var_id, entry, entry_index)
+
+            if !isnothing(exact_match)
+                branch_id = exact_match
+            else
+                branch_id = increment!(sc.branches_count)
+                sc.branch_entries[branch_id] = entry_index
+                sc.branch_vars[branch_id, var_id] = true
+                sc.branch_types[branch_id, entry.type_id] = true
+                for (parent, children) in parents_children
+                    if !isnothing(parent)
+                        deleteat!(sc.branch_children, [parent], children)
+                        sc.branch_children[parent, branch_id] = true
+                    end
+                    sc.branch_children[branch_id, children] = true
+                end
+            end
+
             sc.branch_is_unknown[branch_id] = true
             sc.branch_unknown_from_output[branch_id] = sc.branch_unknown_from_output[output_branch_id]
             sc.unknown_min_path_costs[branch_id] = min_path_cost
@@ -740,10 +755,15 @@ function try_solve_tasks(
     return new_traces
 end
 
-function get_manual_traces(domain, tasks, grammar, grammar_hash, worker_pool, guiding_model_server)
-    traces = Dict{UInt64,Any}()
+function get_manual_traces(domain, tasks, grammar, grammar_hash, worker_pool, guiding_model_server, traces)
     if domain == "arc"
-        tr = build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
+        @info "Getting manual traces"
+        if haskey(traces, grammar_hash)
+            tr = build_manual_traces(tasks, guiding_model_server, grammar, worker_pool, traces[grammar_hash][2])
+        else
+            tr = build_manual_traces(tasks, guiding_model_server, grammar, worker_pool, nothing)
+        end
+        log_traces(tr)
         traces[grammar_hash] = (grammar, tr)
     end
     return traces
@@ -865,6 +885,7 @@ function main(; kwargs...)
         grammar = get_starting_grammar()
         guiding_model = get_guiding_model(parsed_args[:model])
         i = 1
+        traces = Dict{UInt64,Any}()
     end
 
     @info "Parsed arguments $parsed_args"
@@ -893,7 +914,7 @@ function main(; kwargs...)
 
     try
         PythonCall.GIL.@unlock begin
-            if isnothing(parsed_args[:resume])
+            while i <= parsed_args[:iterations]
                 traces = get_manual_traces(
                     parsed_args[:domain],
                     tasks,
@@ -901,10 +922,15 @@ function main(; kwargs...)
                     grammar_hash,
                     worker_pool,
                     guiding_model_server,
+                    traces,
                 )
-            end
+                # Serialization.serialize(
+                #     "manual_traces_$(i).jls",
+                #     Dict{UInt64,Any}(h => ([string(p) for p in g], t) for (h, (g, t)) in traces),
+                # )
+                # guiding_model = update_guiding_model(guiding_model, traces)
+                # @info "Finished updating model with manual traces"
 
-            while i <= parsed_args[:iterations]
                 new_traces = try_solve_tasks(
                     worker_pool,
                     tasks,
@@ -944,10 +970,10 @@ function main(; kwargs...)
                 log_grammar(i, grammar)
 
                 clear_model_cache(guiding_model)
+                i += 1
                 guiding_model = update_guiding_model(guiding_model, traces)
                 save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
                 set_current_grammar!(guiding_model, grammar)
-                i += 1
             end
         end
     finally

@@ -21,7 +21,7 @@ function store_precompressed_traces(traces, grammar)
         mkdir(traces_dir)
     end
     fname = joinpath(traces_dir, string(Dates.now()))
-    Serialization.serialize(fname, (traces, grammar))
+    Serialization.serialize(fname, (traces, [string(p) for p in grammar]))
     @info "Stored precompressed traces to $fname"
 end
 

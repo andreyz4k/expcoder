@@ -27,3 +27,4 @@ model_stats/
 .CondaPkg/
 embeddings_cache/
 wandb/
+solution_dumps/

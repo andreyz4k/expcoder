@@ -1,34 +1,17 @@
 
-function _find_relatives_for_type(sc, t, branch_id, branch_type)
-    if branch_type == t && sc.branch_is_unknown[branch_id]
-        return branch_id, UInt64[], UInt64[]
+function _find_type_branches_between(sc, old_branch_id, new_branch_id, old_type, new_type)
+    if old_type == new_type
+        return UInt64[]
     end
-    if sc.branch_is_explained[branch_id]
-        if is_subtype(t, branch_type)
-            return nothing, get_connected_to(sc.branch_children, branch_id), Int[branch_id]
-        else
-            return nothing, UInt64[], UInt64[]
+    out_branches = UInt64[]
+    if is_subtype(old_type, new_type)
+        push!(out_branches, old_branch_id)
+        for child_id in get_connected_from(sc.branch_children, old_branch_id)
+            child_type = sc.types[first(get_connected_from(sc.branch_types, child_id))]
+            union!(out_branches, _find_type_branches_between(sc, child_id, new_branch_id, child_type, new_type))
         end
     end
-    parents = UInt64[]
-    children = UInt64[]
-    for child_id in get_connected_from(sc.branch_children, branch_id)
-        child_type = sc.types[first(get_connected_from(sc.branch_types, child_id))]
-        if is_subtype(child_type, t)
-            exact_match, parents_, children_ = _find_relatives_for_type(sc, t, child_id, child_type)
-            if !isnothing(exact_match)
-                return exact_match, UInt64[], UInt64[]
-            end
-            union!(parents, parents_)
-            union!(children, children_)
-        elseif is_subtype(t, child_type)
-            push!(children, child_id)
-        end
-    end
-    if isempty(parents)
-        push!(parents, branch_id)
-    end
-    return nothing, parents, children
+    return out_branches
 end
 
 function _tighten_constraint(
@@ -52,32 +35,42 @@ function _tighten_constraint(
         error("Cannot unify types $(sc.types[old_entry.type_id]) and $new_type")
     end
 
+    unknown_old_branches = UInt64[]
+
     for (var_id, branch_id) in constrained_branches
         if var_id == new_var_id
+            union!(
+                unknown_old_branches,
+                _find_type_branches_between(sc, branch_id, new_branch_id, sc.types[old_entry.type_id], new_type),
+            )
             out_branches[branch_id] = new_branch_id
             new_branches[branch_id] = new_branch_id
         else
             branch_type = sc.types[first(get_connected_from(sc.branch_types, branch_id))]
             context, new_type = apply_context(context, branch_type)
 
-            exact_match, parents, children = _find_relatives_for_type(sc, new_type, branch_id, branch_type)
+            new_type_id = push!(sc.types, new_type)
+            new_entry = NoDataEntry(new_type_id)
+            new_entry_id = push!(sc.entries, new_entry)
+            exact_match, parents_children = find_related_branches(sc, var_id, new_entry, new_entry_id)
             if !isnothing(exact_match)
                 if is_polymorphic(new_type)
                     out_constrained_branches[var_id] = exact_match
                 end
                 out_branches[branch_id] = exact_match
+                union!(unknown_old_branches, get_all_parents(sc, exact_match))
             else
-                new_type_id = push!(sc.types, new_type)
-                new_entry = NoDataEntry(new_type_id)
-                entry_id = push!(sc.entries, new_entry)
-
                 created_branch_id = increment!(sc.branches_count)
-                sc.branch_entries[created_branch_id] = entry_id
-                sc.branch_vars[created_branch_id] = var_id
+                sc.branch_entries[created_branch_id] = new_entry_id
+                sc.branch_vars[created_branch_id, var_id] = true
                 sc.branch_types[created_branch_id, new_type_id] = true
-                deleteat!(sc.branch_children, parents, children)
-                sc.branch_children[parents, created_branch_id] = true
-                sc.branch_children[created_branch_id, children] = true
+
+                for (parent, children) in parents_children
+                    deleteat!(sc.branch_children, parent, children)
+                    sc.branch_children[parent, created_branch_id] = true
+                    sc.branch_children[created_branch_id, children] = true
+                end
+                union!(unknown_old_branches, get_all_parents(sc, created_branch_id))
 
                 sc.branch_is_unknown[created_branch_id] = true
                 sc.branch_unknown_from_output[created_branch_id] = sc.branch_unknown_from_output[branch_id]
@@ -95,14 +88,23 @@ function _tighten_constraint(
         end
     end
 
-    unknown_old_branches = UInt64[br_id for (br_id, _) in new_branches]
-    next_blocks = merge([get_connected_from(sc.branch_outgoing_blocks, br_id) for br_id in unknown_old_branches]...)
-    for (b_copy_id, b_id) in next_blocks
-        inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
-        inputs = Dict(sc.branch_vars[b] => haskey(out_branches, b) ? out_branches[b] : b for b in inp_branches)
-        out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
-        target_branches = UInt64[haskey(out_branches, b) ? out_branches[b] : b for b in out_block_branches]
-        _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
+    visited_b_copy_ids = Set{UInt64}()
+    for br_id in unknown_old_branches
+        for (b_copy_id, b_id) in get_connected_from(sc.branch_outgoing_blocks, br_id)
+            if in(b_copy_id, visited_b_copy_ids)
+                continue
+            end
+            push!(visited_b_copy_ids, b_copy_id)
+
+            inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
+            inputs = Dict(
+                first(get_connected_from(sc.branch_vars, b)) => haskey(out_branches, b) ? out_branches[b] : b for
+                b in inp_branches
+            )
+            out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
+            target_branches = UInt64[haskey(out_branches, b) ? out_branches[b] : b for b in out_block_branches]
+            _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
+        end
     end
 
     if length(out_constrained_branches) > 1
@@ -121,7 +123,7 @@ function tighten_constraint(sc, constraint_id, new_branch_id, old_branch_id)
         sc,
         constrained_branches,
         constrained_context_id,
-        sc.branch_vars[new_branch_id],
+        first(get_connected_from(sc.branch_vars, new_branch_id)),
         new_branch_id,
         old_entry,
     )
@@ -155,79 +157,33 @@ end
 
 function _fix_option_hashes(sc, fixed_hashes, entry::EitherEntry)
     out_values = _fix_option_hashes(fixed_hashes, entry.values)
-    return _make_entry(sc, entry.type_id, out_values)
+    return make_entry(sc, entry.type_id, out_values)
 end
 
-function _make_entry(sc, type_id, values)
-    complexity_summary, max_summary, options_count = get_complexity_summary(values, sc.types[type_id])
-    if any(isa(v, EitherOptions) for v in values)
-        return EitherEntry(
-            type_id,
-            values,
-            complexity_summary,
-            max_summary,
-            options_count,
-            get_complexity(sc, complexity_summary),
-        )
-    elseif any(isa(v, AbductibleValue) for v in values)
-        return AbductibleEntry(
-            type_id,
-            values,
-            complexity_summary,
-            max_summary,
-            options_count,
-            get_complexity(sc, complexity_summary),
-        )
-    elseif any(isa(v, PatternWrapper) for v in values)
-        return PatternEntry(
-            type_id,
-            values,
-            complexity_summary,
-            max_summary,
-            options_count,
-            get_complexity(sc, complexity_summary),
-        )
-    else
-        return ValueEntry(
-            type_id,
-            values,
-            complexity_summary,
-            max_summary,
-            options_count,
-            get_complexity(sc, complexity_summary),
-        )
-    end
-end
-
-function _find_relatives_for_either(sc, new_entry, branch_id, old_entry)
+function _find_either_branches_between(sc, old_branch_id, new_branch_id, old_entry, new_entry)
     if old_entry == new_entry
-        return branch_id, Tuple{Union{UInt64,Nothing},Vector{UInt64}}[]
+        return UInt64[]
     end
-
-    outputs = Tuple{Union{UInt64,Nothing},Vector{UInt64}}[]
-    children = UInt64[]
-    for child_id in get_connected_from(sc.branch_children, branch_id)
-        child_entry = sc.entries[sc.branch_entries[child_id]]
-        if child_entry == new_entry
-            return child_id, Tuple{Union{UInt64,Nothing},Vector{UInt64}}[]
-        end
-        if all(is_subeither(new_val, child_val) for (child_val, new_val) in zip(child_entry.values, new_entry.values))
-            push!(children, child_id)
-        else
-            exact_match, outputs_ = _find_relatives_for_either(sc, new_entry, child_id, child_entry)
-            if !isnothing(exact_match)
-                return exact_match, outputs_
-            end
-            union!(outputs, outputs_)
-        end
-    end
-
+    out_branches = UInt64[]
     if all(is_subeither(old_val, new_val) for (old_val, new_val) in zip(old_entry.values, new_entry.values))
-        push!(outputs, (branch_id, children))
-    elseif !isempty(children)
-        push!(outputs, (nothing, children))
+        push!(out_branches, old_branch_id)
+        for child_id in get_connected_from(sc.branch_children, old_branch_id)
+            child_entry = sc.entries[sc.branch_entries[child_id]]
+            union!(out_branches, _find_either_branches_between(sc, child_id, new_branch_id, child_entry, new_entry))
+        end
     end
-    return nothing, outputs
+    return out_branches
+end
+
+function get_either_parents(sc, branch_id)
+    parents = get_connected_to(sc.branch_children, branch_id)
+    for parent_id in parents
+        parent_entry = sc.entries[sc.branch_entries[parent_id]]
+        if !isa(parent_entry, EitherEntry)
+            parents = union(parents, get_either_parents(sc, parent_id))
+        end
+    end
+    return parents
 end
 
 function _tighten_constraint(
@@ -248,8 +204,14 @@ function _tighten_constraint(
     fixed_hashes = [get_fixed_hashes(old_entry.values[j], new_entry.values[j]) for j in 1:sc.example_count]
     # @info fixed_hashes
 
+    unknown_old_branches = UInt64[]
+
     for (var_id, branch_id) in constrained_branches
         if var_id == new_var_id
+            union!(
+                unknown_old_branches,
+                _find_either_branches_between(sc, branch_id, new_branch_id, old_entry, new_entry),
+            )
             out_branches[branch_id] = new_branch_id
             new_branches[branch_id] = new_branch_id
         else
@@ -258,21 +220,27 @@ function _tighten_constraint(
             if !isa(old_br_entry, EitherEntry)
                 error("Non-either branch $branch_id $(sc.branch_entries[branch_id]) $old_br_entry in either constraint")
             end
-            new_br_entry = _fix_option_hashes(sc, fixed_hashes, old_br_entry)
+            new_br_entry, new_entry_index = _fix_option_hashes(sc, fixed_hashes, old_br_entry)
             # @info new_br_entry
-            exact_match, parents_children = _find_relatives_for_either(sc, new_br_entry, branch_id, old_br_entry)
+            exact_match, parents_children = find_related_branches(sc, var_id, new_br_entry, new_entry_index)
             if !isnothing(exact_match)
                 if isa(new_br_entry, EitherEntry)
                     out_either_branches[var_id] = exact_match
                 end
                 out_branches[branch_id] = exact_match
+                union!(
+                    unknown_old_branches,
+                    _find_either_branches_between(sc, branch_id, exact_match, old_entry, new_br_entry),
+                )
+                if !isa(new_br_entry, EitherEntry)
+                    union!(unknown_old_branches, get_either_parents(sc, exact_match))
+                end
             else
-                entry_index = push!(sc.entries, new_br_entry)
                 # @info entry_index
 
                 created_branch_id = increment!(sc.branches_count)
-                sc.branch_entries[created_branch_id] = entry_index
-                sc.branch_vars[created_branch_id] = var_id
+                sc.branch_entries[created_branch_id] = new_entry_index
+                sc.branch_vars[created_branch_id, var_id] = true
                 sc.branch_types[created_branch_id, new_br_entry.type_id] = true
                 if sc.branch_is_unknown[branch_id]
                     sc.branch_is_unknown[created_branch_id] = true
@@ -301,6 +269,12 @@ function _tighten_constraint(
                     sc.branch_children[created_branch_id, children] = true
                 end
 
+                union!(
+                    unknown_old_branches,
+                    _find_either_branches_between(sc, branch_id, created_branch_id, old_entry, new_br_entry),
+                )
+                union!(unknown_old_branches, get_either_parents(sc, created_branch_id))
+
                 original_path_cost = sc.unknown_min_path_costs[branch_id]
                 if !isnothing(original_path_cost)
                     sc.unknown_min_path_costs[created_branch_id] = original_path_cost
@@ -326,8 +300,6 @@ function _tighten_constraint(
         end
     end
 
-    unknown_old_branches = UInt64[br_id for (br_id, _) in new_branches]
-
     visited_b_copy_ids = Set{UInt64}()
     for br_id in unknown_old_branches
         for (b_copy_id, b_id) in get_connected_from(sc.branch_outgoing_blocks, br_id)
@@ -336,7 +308,10 @@ function _tighten_constraint(
             end
             push!(visited_b_copy_ids, b_copy_id)
             inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
-            inputs = Dict(sc.branch_vars[b] => haskey(out_branches, b) ? out_branches[b] : b for b in inp_branches)
+            inputs = Dict(
+                first(get_connected_from(sc.branch_vars, b)) => haskey(out_branches, b) ? out_branches[b] : b for
+                b in inp_branches
+            )
             out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
             target_branches = UInt64[haskey(out_branches, b) ? out_branches[b] : b for b in out_block_branches]
 
@@ -351,7 +326,14 @@ function _tighten_constraint(
             new_b_copy_id = _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
             if any(isa(sc.entries[e], AbductibleEntry) for e in input_entries)
                 b = first(b for b in inp_branches if haskey(out_branches, b))
-                _abduct_next_block(sc, new_b_copy_id, b_id, new_branch_id, sc.branch_vars[b], b)
+                _abduct_next_block(
+                    sc,
+                    new_b_copy_id,
+                    b_id,
+                    new_branch_id,
+                    first(get_connected_from(sc.branch_vars, b)),
+                    b,
+                )
             end
             for target_branch in target_branches
                 update_complexity_factors_unknown(sc, inputs, target_branch)

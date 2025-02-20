@@ -78,7 +78,16 @@ function reverse_fix_param()
         body = context.arguments[end]
         param = context.arguments[end-1].p
         fixer = context.arguments[end-2]
-        fixer_value = try_evaluate_program(fixer.p, [value], Dict())
+
+        env = Any[missing for _ in 1:maximum(keys(context.filled_indices); init = -1)+1]
+        for (i, v) in context.filled_indices
+            env[end-i] = v
+        end
+        fixer_func = fixer.p(env, context.filled_vars)
+
+        # fixer_value = try_evaluate_program(fixer.p, [value], Dict())
+        fixer_value = try_run_function(fixer_func, [value])
+
         if isa(fixer_value, EitherOptions) || isa(fixer_value, PatternWrapper) || isa(fixer_value, AbductibleValue)
             return false, value, context
             # error("Fixer value cannot be wildcard")

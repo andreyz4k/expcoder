@@ -23,7 +23,7 @@ function matching_with_unknown_candidates(sc, entry::ValueEntry, branch_id)
     unknown_entry_id = sc.branch_entries[branch_id]
 
     branches = get_connected_to(sc.branch_types, entry.type_id)
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
 
     for known_branch_id in branches
         if !sc.branch_is_not_copy[known_branch_id]
@@ -32,7 +32,7 @@ function matching_with_unknown_candidates(sc, entry::ValueEntry, branch_id)
         if known_branch_id == sc.target_branch_id
             continue
         end
-        known_var_id = sc.branch_vars[known_branch_id]
+        known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
         if vars_in_loop(sc, known_var_id, var_id)
             # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
             continue
@@ -71,7 +71,7 @@ function matching_with_unknown_candidates(sc, entry::NoDataEntry, branch_id)
     if sc.verbose
         @info "Sub types for $(sc.types[entry.type_id]) are $([sc.types[t] for t in types])"
     end
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
     for tp_id in types
         for known_branch_id in get_connected_to(sc.branch_types, tp_id)
             if !sc.branch_is_not_copy[known_branch_id]
@@ -83,7 +83,7 @@ function matching_with_unknown_candidates(sc, entry::NoDataEntry, branch_id)
             if sc.complexities[known_branch_id] == 0
                 continue
             end
-            known_var_id = sc.branch_vars[known_branch_id]
+            known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
             if vars_in_loop(sc, known_var_id, var_id)
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
                 continue
@@ -118,14 +118,14 @@ function matching_with_known_candidates(sc, entry::ValueEntry, known_branch_id)
     end
     entry_type = sc.types[entry.type_id]
 
-    known_var_id = sc.branch_vars[known_branch_id]
+    known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
     known_entry_id = sc.branch_entries[known_branch_id]
     for tp_id in types
         for unknown_branch_id in get_connected_to(sc.branch_types, tp_id)
             if !sc.branch_is_unknown[unknown_branch_id]
                 continue
             end
-            unknown_var_id = sc.branch_vars[unknown_branch_id]
+            unknown_var_id = first(get_connected_from(sc.branch_vars, unknown_branch_id))
             if vars_in_loop(sc, known_var_id, unknown_var_id)
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
                 continue
@@ -267,7 +267,7 @@ Base.:(==)(v1::EitherEntry, v2::EitherEntry) = v1.type_id == v2.type_id && v1.va
 function matching_with_unknown_candidates(sc, entry::EitherEntry, branch_id)
     results = []
     types = get_sub_types(sc.types, entry.type_id)
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
 
     for tp_id in types
         for known_branch_id in get_connected_to(sc.branch_types, tp_id)
@@ -280,7 +280,7 @@ function matching_with_unknown_candidates(sc, entry::EitherEntry, branch_id)
             if sc.complexities[known_branch_id] == 0
                 continue
             end
-            known_var_id = sc.branch_vars[known_branch_id]
+            known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
             known_entry_id = sc.branch_entries[known_branch_id]
             if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -339,7 +339,7 @@ end
 
 is_subeither(wide::EitherOptions, narrow) = any(is_subeither(op, narrow) for (h, op) in wide.options)
 is_subeither(wide, narrow::EitherOptions) = false
-is_subeither(wide, narrow) = wide == narrow
+is_subeither(wide, narrow) = _match_value(wide, narrow)
 
 function is_subeither(wide::EitherOptions, narrow::EitherOptions)
     check_level = any(haskey(wide.options, k) for k in keys(narrow.options))
@@ -348,6 +348,10 @@ function is_subeither(wide::EitherOptions, narrow::EitherOptions)
     else
         any(is_subeither(op, narrow) for op in wide.options)
     end
+end
+
+function is_subeither(wide::Union{PatternWrapper,AbductibleValue}, narrow::EitherOptions)
+    return all(is_subeither(wide, op) for op in narrow.options)
 end
 
 struct PatternEntry <: Entry
@@ -447,7 +451,7 @@ match_with_entry(sc, entry::NoDataEntry, other::PatternEntry) =
 
 function matching_with_unknown_candidates(sc, entry::PatternEntry, branch_id)
     results = []
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
 
     types = get_sub_types(sc.types, entry.type_id)
     # @info "Sub types for $(sc.types[entry.type_id]) are $([sc.types[t] for t in types])"
@@ -463,7 +467,7 @@ function matching_with_unknown_candidates(sc, entry::PatternEntry, branch_id)
             if sc.complexities[known_branch_id] == 0
                 continue
             end
-            known_var_id = sc.branch_vars[known_branch_id]
+            known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
             known_entry_id = sc.branch_entries[known_branch_id]
             if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -489,13 +493,13 @@ function matching_with_known_candidates(sc, entry::PatternEntry, known_branch_id
     entry_type = sc.types[entry.type_id]
     known_entry_id = sc.branch_entries[known_branch_id]
 
-    known_var_id = sc.branch_vars[known_branch_id]
+    known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
     for tp_id in types
         for unknown_branch_id in get_connected_to(sc.branch_types, tp_id)
             if !sc.branch_is_unknown[unknown_branch_id]
                 continue
             end
-            unknown_var_id = sc.branch_vars[unknown_branch_id]
+            unknown_var_id = first(get_connected_from(sc.branch_vars, unknown_branch_id))
             if vars_in_loop(sc, known_var_id, unknown_var_id)
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
                 continue
@@ -546,7 +550,7 @@ end
 
 function matching_with_unknown_candidates(sc, entry::AbductibleEntry, branch_id)
     results = []
-    var_id = sc.branch_vars[branch_id]
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
 
     types = get_sub_types(sc.types, entry.type_id)
     for tp_id in types
@@ -560,7 +564,7 @@ function matching_with_unknown_candidates(sc, entry::AbductibleEntry, branch_id)
             if sc.complexities[known_branch_id] == 0
                 continue
             end
-            known_var_id = sc.branch_vars[known_branch_id]
+            known_var_id = first(get_connected_from(sc.branch_vars, known_branch_id))
             known_entry_id = sc.branch_entries[known_branch_id]
             if vars_in_loop(sc, known_var_id, var_id) || !match_with_entry(sc, entry, sc.entries[known_entry_id])
                 # || !is_branch_compatible(unknown_branch.key, unknown_branch, [input_branch])
@@ -816,4 +820,47 @@ function _try_unify_values(v1::Set, v2::Set, check_pattern)
     else
         return true, EitherOptions(Dict(rand(UInt64) => option for option in options))
     end
+end
+
+function make_entry(sc, type_id, values)
+    complexity_summary, max_summary, options_count = get_complexity_summary(values, sc.types[type_id])
+    if any(isa(v, EitherOptions) for v in values)
+        new_entry = EitherEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
+    elseif any(isa(v, AbductibleValue) for v in values)
+        new_entry = AbductibleEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
+    elseif any(isa(v, PatternWrapper) for v in values)
+        new_entry = PatternEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
+    else
+        new_entry = ValueEntry(
+            type_id,
+            values,
+            complexity_summary,
+            max_summary,
+            options_count,
+            get_complexity(sc, complexity_summary),
+        )
+    end
+    new_entry_index = push!(sc.entries, new_entry)
+    return new_entry, new_entry_index
 end

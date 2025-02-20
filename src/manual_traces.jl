@@ -1,12 +1,17 @@
 
-function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
-    solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
-    task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
+function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool, traces)
+    if isnothing(traces)
+        solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
+        task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
+        sols = [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols]
+    else
+        sols = [(task, hit.hit_program) for task in tasks for hit in keys(traces[task.name])]
+    end
     register_channel = guiding_model_server.worker_register_channel
     register_response_channel = guiding_model_server.worker_register_result_channel
     new_traces = pmap(
         worker_pool,
-        [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols];
+        sols;
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
@@ -41,13 +46,19 @@ function build_manual_traces(tasks, guiding_model_server, grammar, worker_pool)
     return traces
 end
 
-function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServer, grammar, worker_pool)
-    solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
-    task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
+function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServer, grammar, worker_pool, traces)
+    if isnothing(traces)
+        solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "manual_solutions.json"))
+        task_solutions = [(task, solutions[task.name]) for task in tasks if haskey(solutions, task.name)]
+        sols = [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols]
+    else
+        tasks_to_check = [t for t in tasks if haskey(traces, t.name)]
+        sols = [(t, hit.hit_program) for t in tasks_to_check for hit in keys(traces[t.name])]
+    end
     redis_db = guiding_model_server.model.redis_db
     new_traces = pmap(
         worker_pool,
-        [(task, join(sol, " ")) for (task, sols) in task_solutions for sol in sols];
+        sols;
         retry_check = (s, e) -> isa(e, ProcessExitedException),
         retry_delays = zeros(5),
     ) do (task, sol)
@@ -100,12 +111,12 @@ function _extract_blocks(task, target_program, verbose = false)
                 @info p.v
                 @info vars
             end
-            in_vars = []
+            in_vars = UInt64[]
             for v in vars
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                     push!(in_vars, vars_mapping[v])
-                elseif v in vars_from_input
+                elseif v in vars_from_input && !isa(p.v, FreeVar)
                     copied_vars += 1
                     push!(in_vars, length(vars_mapping) + copied_vars)
                     copy_block = ProgramBlock(
@@ -128,10 +139,17 @@ function _extract_blocks(task, target_program, verbose = false)
                 vars_mapping[p.var_id] = length(vars_mapping) + copied_vars + 1
             end
             bl = ProgramBlock(p.v, t0, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
-            if !haskey(out_blocks, vars_mapping[p.var_id])
-                out_blocks[vars_mapping[p.var_id]] = []
+            if isa(p.v, FreeVar)
+                if !haskey(in_blocks, in_vars[1])
+                    in_blocks[in_vars[1]] = []
+                end
+                push!(in_blocks[in_vars[1]], bl)
+            else
+                if !haskey(out_blocks, vars_mapping[p.var_id])
+                    out_blocks[vars_mapping[p.var_id]] = []
+                end
+                push!(out_blocks[vars_mapping[p.var_id]], bl)
             end
-            push!(out_blocks[vars_mapping[p.var_id]], bl)
             p = p.b
         elseif p isa LetRevClause
             if !haskey(vars_mapping, p.inp_var_id)
@@ -155,10 +173,10 @@ function _extract_blocks(task, target_program, verbose = false)
         elseif p isa FreeVar
             in_var = vars_mapping[p.var_id]
             bl = ProgramBlock(FreeVar(t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
-            if !haskey(in_blocks, vars_mapping[in_var])
-                in_blocks[vars_mapping[in_var]] = []
+            if !haskey(in_blocks, in_var)
+                in_blocks[in_var] = []
             end
-            push!(in_blocks[vars_mapping[in_var]], bl)
+            push!(in_blocks[in_var], bl)
             break
         else
             vars = _used_vars(p)
@@ -241,8 +259,8 @@ function is_var_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verb
     if !haskey(vars_mapping, bl.output_var) || vars_mapping[bl.output_var] != bp.output_var[1]
         return false
     end
-    if haskey(vars_mapping, bl.p.var_id)
-        bp.skeleton.var_id == vars_mapping[bl.p.var_id]
+    if haskey(vars_mapping, bl.input_vars[1])
+        bp.skeleton.var_id == vars_mapping[bl.input_vars[1]]
     else
         true
     end
@@ -250,7 +268,7 @@ end
 
 function is_bp_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verbose = false)
     if isa(bl.p, FreeVar)
-        is_var_on_path(bp, bl, vars_mapping)
+        is_var_on_path(bp, bl, vars_mapping, verbose)
     else
         is_on_path(bp.skeleton, bl.p, Dict(), verbose)
     end
@@ -284,7 +302,7 @@ function enumeration_iteration_finished_traced(
         new_block_result, unfinished_prototypes = enumeration_iteration_finished_input(sc, bp)
     end
     found_solutions = []
-    filtered_target_blocks = filter(bl -> is_bp_on_path(bp, bl, vars_mapping), target_blocks)
+    filtered_target_blocks = filter(bl -> is_bp_on_path(bp, bl, vars_mapping, sc.verbose), target_blocks)
     if isempty(filtered_target_blocks)
         if sc.verbose
             @info "No target blocks for $bp"
@@ -425,8 +443,14 @@ function enumeration_iteration_traced(
     return found_solutions
 end
 
-function build_manual_trace(task::Task, task_name, target_solution, guiding_model_channels, grammar)
-    verbose_test = false
+function build_manual_trace(
+    task::Task,
+    task_name,
+    target_solution,
+    guiding_model_channels,
+    grammar,
+    verbose_test = false,
+)
     max_free_parameters = 10
     run_context = Dict{String,Any}("program_timeout" => 1, "timeout" => 40)
 
@@ -446,21 +470,21 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
 
     hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
 
-    target_program = parse_program(target_solution)
-
-    ll = task.log_likelihood_checker(task, target_program)
-    if isnothing(ll) || isinf(ll)
-        error("Invalid target program $target_program for task $task")
-    end
-
-    in_blocks, out_blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
-
-    start_time = time()
-
-    # verbose_test = true
-    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test)
-
     try
+        target_program = parse_program(target_solution)
+
+        ll = task.log_likelihood_checker(task, target_program)
+        if isnothing(ll) || isinf(ll)
+            error("Invalid target program $target_program for task $task")
+        end
+
+        in_blocks, out_blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
+
+        start_time = time()
+
+        # verbose_test = true
+        sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test, true)
+
         enqueue_updates(sc, guiding_model_channels, grammar)
 
         if verbose_test
@@ -479,8 +503,8 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
                 end
             end
         end
-        inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
-        rev_inner_mapping[sc.branch_vars[sc.target_branch_id]] = vars_mapping["out"]
+        inner_mapping[vars_mapping["out"]] = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+        rev_inner_mapping[first(get_connected_from(sc.branch_vars, sc.target_branch_id))] = vars_mapping["out"]
         if verbose_test
             @info inner_mapping
         end
@@ -500,7 +524,7 @@ function build_manual_trace(task::Task, task_name, target_solution, guiding_mode
             bp = dequeue!(q)
 
             target_blocks_group = from_input ? in_blocks : out_blocks
-            var_id = sc.branch_vars[br_id]
+            var_id = first(get_connected_from(sc.branch_vars, br_id))
             if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
                 update_branch_priority(sc, br_id, is_explained)
                 continue

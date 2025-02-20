@@ -470,11 +470,11 @@ using DataStructures
                     created_block_copy_id = first(keys(in_blocks))
                     in_branches = keys(get_connected_to(sc.branch_outgoing_blocks, created_block_copy_id))
                     for in_branch in in_branches
-                        updated_branches[sc.branch_vars[in_branch]] = in_branch
+                        updated_branches[first(get_connected_from(sc.branch_vars, in_branch))] = in_branch
                     end
                     out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
                     for out_branch in out_branches
-                        updated_branches[sc.branch_vars[out_branch]] = out_branch
+                        updated_branches[first(get_connected_from(sc.branch_vars, out_branch))] = out_branch
                     end
                     updated_branches = _fetch_branches_children(sc, updated_branches)
                     if verbose
@@ -627,7 +627,7 @@ using DataStructures
 
                             out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
                             for out_branch in out_branches
-                                updated_branches[sc.branch_vars[out_branch]] = out_branch
+                                updated_branches[first(get_connected_from(sc.branch_vars, out_branch))] = out_branch
                             end
                             updated_branches = _fetch_branches_children(sc, updated_branches)
                             if verbose
@@ -827,7 +827,7 @@ using DataStructures
                 enqueue_updates(sc, guiding_model_channels, task_grammar)
                 branches = Dict()
                 for br_id in 1:sc.branches_count[]
-                    branches[sc.branch_vars[br_id]] = br_id
+                    branches[first(get_connected_from(sc.branch_vars, br_id))] = br_id
                 end
                 if verbose_test
                     @info branches
@@ -842,7 +842,7 @@ using DataStructures
                         end
                     end
                 end
-                inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
+                inner_mapping[vars_mapping["out"]] = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
                 if verbose_test
                     @info inner_mapping
                 end
@@ -2010,7 +2010,7 @@ using DataStructures
     @testset "Guiding model type $model_type" for model_type in ["dummy", "nn", "standalone"]
         arc_guiding_model = get_guiding_model(model_type)
 
-        function test_build_manual_trace(task, target_solution, task_grammar)
+        function test_build_manual_trace(task, target_solution, task_grammar, verbose_test = false)
             empty!(contextual_grammar_cache)
 
             guiding_model_server = GuidingModelServer(arc_guiding_model)
@@ -2021,7 +2021,7 @@ using DataStructures
                 if model_type == "standalone"
                     redis_db = guiding_model_server.model.redis_db
                     conn = get_redis_connection(redis_db)
-                    return @time build_manual_trace(task, task.name, target_solution, conn, task_grammar)
+                    return @time build_manual_trace(task, task.name, target_solution, conn, task_grammar, verbose_test)
                 else
                     register_channel = guiding_model_server.worker_register_channel
                     register_response_channel = guiding_model_server.worker_register_result_channel
@@ -2033,6 +2033,7 @@ using DataStructures
                         target_solution,
                         (request_channel, result_channel, end_tasks_channel),
                         task_grammar,
+                        verbose_test,
                     )
                 end
             finally

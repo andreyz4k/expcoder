@@ -80,7 +80,7 @@ using DataStructures
 
     function initial_state(sc, branch_id, grammar)
         target_type_id = first(get_connected_from(sc.branch_types, branch_id))
-        var_id = sc.branch_vars[branch_id]
+        var_id = first(get_connected_from(sc.branch_vars, branch_id))
         target_type = sc.types[target_type_id]
         context, target_type = instantiate(target_type, empty_context)
         entry_id = sc.branch_entries[branch_id]
@@ -323,7 +323,7 @@ using DataStructures
         first_block_known_copy_id = new_block_copy_id + 1
 
         @test sc.branch_entries[conn_child_id] == sc.branch_entries[inp_branch_id]
-        @test sc.branch_vars[conn_child_id] == connection_var_id
+        @test first(get_connected_from(sc.branch_vars, conn_child_id)) == connection_var_id
         @test get_connected_from(sc.branch_types, conn_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
         @test sc.incoming_paths[conn_child_id] ==
               Set([Path(OrderedDict(connection_var_id => new_block_id), Dict(), 0.0)])
@@ -408,7 +408,7 @@ using DataStructures
         @test sc.constrained_contexts[constraint_id] === nothing
 
         @test sc.branch_entries[v1_branch_id] == 3
-        @test sc.branch_vars[v1_branch_id] == v1_var_id
+        @test first(get_connected_from(sc.branch_vars, v1_branch_id)) == v1_var_id
         @test get_connected_from(sc.branch_types, v1_branch_id) == get_connected_from(sc.branch_types, inp_branch_id)
         @test isempty(get_connected_from(sc.branch_children, v1_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v1_branch_id))
@@ -430,7 +430,7 @@ using DataStructures
         @test sc.related_unknown_complexity_branches[v1_branch_id, v2_branch_id] == true
 
         @test sc.branch_entries[v2_branch_id] == 4
-        @test sc.branch_vars[v2_branch_id] == v2_var_id
+        @test first(get_connected_from(sc.branch_vars, v2_branch_id)) == v2_var_id
         @test get_connected_from(sc.branch_types, v2_branch_id) == get_connected_from(sc.branch_types, inp_branch_id)
         @test isempty(get_connected_from(sc.branch_children, v2_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v2_branch_id))
@@ -472,7 +472,7 @@ using DataStructures
         v1_child_id = first(v1_children)
 
         @test sc.branch_entries[v2_child_id] == sc.branch_entries[inp_branch_id]
-        @test sc.branch_vars[v2_child_id] == v2_var_id
+        @test first(get_connected_from(sc.branch_vars, v2_child_id)) == v2_var_id
         @test get_connected_from(sc.branch_types, v2_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
         @test isempty(get_connected_from(sc.branch_children, v2_child_id))
         @test length(get_connected_to(sc.branch_children, v2_child_id)) == 1
@@ -497,7 +497,7 @@ using DataStructures
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, v2_child_id))
 
         @test sc.branch_entries[v1_child_id] == 5
-        @test sc.branch_vars[v1_child_id] == v1_var_id
+        @test first(get_connected_from(sc.branch_vars, v1_child_id)) == v1_var_id
         @test get_connected_from(sc.branch_types, v1_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
         @test isempty(get_connected_from(sc.branch_children, v1_child_id))
         @test length(get_connected_to(sc.branch_children, v1_child_id)) == 1

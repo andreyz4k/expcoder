@@ -363,7 +363,7 @@ function updated_branches(
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
-            entry,
+            new_entry,
             possible_result,
             block_id,
             is_new_block,
@@ -426,7 +426,7 @@ function updated_branches(
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
-            entry,
+            new_entry,
             possible_result,
             block_id,
             is_new_block,
@@ -477,7 +477,7 @@ function updated_branches(
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
-            entry,
+            new_entry,
             possible_result,
             block_id,
             is_new_block,
@@ -684,7 +684,7 @@ function updated_branches(
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
-            entry,
+            new_entry,
             possible_result,
             block_id,
             is_new_block,

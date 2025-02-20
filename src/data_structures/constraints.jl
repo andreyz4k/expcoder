@@ -212,6 +212,9 @@ function _tighten_constraint(
                 unknown_old_branches,
                 _find_either_branches_between(sc, branch_id, new_branch_id, old_entry, new_entry),
             )
+            if !isa(new_entry, EitherEntry)
+                union!(unknown_old_branches, get_either_parents(sc, new_branch_id))
+            end
             out_branches[branch_id] = new_branch_id
             new_branches[branch_id] = new_branch_id
         else

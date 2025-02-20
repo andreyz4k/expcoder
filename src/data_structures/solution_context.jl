@@ -821,8 +821,12 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ProgramBlock, 
             else
                 best_parent = nothing
                 for parent in parents
-                    if isnothing(best_parent) ||
-                       sc.unknown_complexity_factors[parent] > sc.unknown_complexity_factors[best_parent]
+                    if sc.branch_is_unknown[parent] &&
+                       !isnothing(sc.complexities[parent]) &&
+                       (
+                           isnothing(best_parent) ||
+                           sc.unknown_complexity_factors[parent] > sc.unknown_complexity_factors[best_parent]
+                       )
                         best_parent = parent
                     end
                 end

@@ -13,7 +13,8 @@ using solver:
     set_current_grammar!,
     GuidingModelServer,
     start_server,
-    stop_server
+    stop_server,
+    parse_program
 
 @testset "Enumeration" begin
     type_weights = Dict{String,Any}(
@@ -36,7 +37,34 @@ using solver:
     verbose = false
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
     guiding_model = get_guiding_model("dummy")
-    grammar = get_starting_grammar()
+    grammar_strs = [
+        "map",
+        "unfold",
+        "range",
+        "index",
+        "fold",
+        "length",
+        "if",
+        "+",
+        "-",
+        "empty",
+        "cons",
+        "car",
+        "cdr",
+        "empty?",
+        "0",
+        "1",
+        "*",
+        "mod",
+        "gt?",
+        "eq?",
+        "is-prime",
+        "is-square",
+        "repeat",
+        "concat",
+        "rev_fix_param",
+    ]
+    grammar = [parse_program(s) for s in grammar_strs]
     set_current_grammar!(guiding_model, grammar)
 
     guiding_model.log_lambda = -10.0

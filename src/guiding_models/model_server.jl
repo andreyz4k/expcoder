@@ -85,6 +85,8 @@ end
 
 model_stats = DefaultDict(() -> [])
 
+using Statistics
+
 function _guiding_processing_loop(server::GuidingModelServer)
     wasted_time = 0.0
     total_skipped_early = 0
@@ -385,12 +387,8 @@ end
 
 function load_guiding_model(path)
     model_info = JLD2.load(path)
-    if model_info["type"] == "nn"
-        load_guiding_model(NNGuidingModel, model_info["model_state"])
-    elseif model_info["type"] == "dummy"
+    if model_info["type"] == "dummy"
         load_guiding_model(DummyGuidingModel, model_info["model_state"])
-    elseif model_info["type"] == "python"
-        load_guiding_model(PythonGuidingModel, model_info["model_state"])
     elseif model_info["type"] == "standalone"
         load_guiding_model(PythonStandaloneGuidingModel, model_info["model_state"])
     else

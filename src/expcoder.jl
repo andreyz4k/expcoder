@@ -56,10 +56,6 @@ end
 function get_guiding_model(model)
     if model == "dummy"
         return DummyGuidingModel()
-    elseif model == "nn"
-        return NNGuidingModel()
-    elseif model == "python"
-        return PythonGuidingModel()
     elseif model == "standalone"
         return PythonStandaloneGuidingModel()
     end
@@ -921,68 +917,66 @@ function main(; kwargs...)
     # tasks = tasks[begin:10]
 
     try
-        PythonCall.GIL.@unlock begin
-            while i <= parsed_args[:iterations]
-                traces = get_manual_traces(
-                    parsed_args[:domain],
-                    tasks,
-                    grammar,
-                    grammar_hash,
-                    worker_pool,
-                    guiding_model_server,
-                    traces,
-                )
-                # Serialization.serialize(
-                #     "manual_traces_$(i).jls",
-                #     Dict{UInt64,Any}(h => ([string(p) for p in g], t) for (h, (g, t)) in traces),
-                # )
-                # guiding_model = update_guiding_model(guiding_model, traces)
-                # @info "Finished updating model with manual traces"
+        while i <= parsed_args[:iterations]
+            traces = get_manual_traces(
+                parsed_args[:domain],
+                tasks,
+                grammar,
+                grammar_hash,
+                worker_pool,
+                guiding_model_server,
+                traces,
+            )
+            # Serialization.serialize(
+            #     "manual_traces_$(i).jls",
+            #     Dict{UInt64,Any}(h => ([string(p) for p in g], t) for (h, (g, t)) in traces),
+            # )
+            # guiding_model = update_guiding_model(guiding_model, traces)
+            # @info "Finished updating model with manual traces"
 
-                new_traces = try_solve_tasks(
-                    worker_pool,
-                    tasks,
-                    guiding_model_server,
-                    grammar,
-                    parsed_args[:timeout],
-                    parsed_args[:program_timeout],
-                    type_weights,
-                    hyperparameters,
-                    parsed_args[:maximum_solutions],
-                    parsed_args[:verbose],
-                )
-                if !haskey(traces, grammar_hash)
-                    traces[grammar_hash] = (grammar, Dict{String,Any}())
-                end
-                cur_traces = traces[grammar_hash][2]
-                for task_traces in new_traces
-                    task_name = task_traces["task"].name
-                    if !haskey(cur_traces, task_name)
-                        cur_traces[task_name] = PriorityQueue{HitResult,Float64}()
-                    end
-                    for (trace, cost) in task_traces["traces"]
-                        cur_traces[task_name][trace] = cost
-
-                        while length(cur_traces[task_name]) > parsed_args[:maximum_solutions]
-                            dequeue!(cur_traces[task_name])
-                        end
-                    end
-                end
-
-                cur_traces, grammar = compress_traces(cur_traces, grammar)
-                grammar_hash = hash(grammar)
-                traces[grammar_hash] = (grammar, cur_traces)
-
-                @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
-                log_traces(cur_traces)
-                log_grammar(i, grammar)
-
-                clear_model_cache(guiding_model)
-                i += 1
-                guiding_model = update_guiding_model(guiding_model, traces)
-                save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
-                set_current_grammar!(guiding_model, grammar)
+            new_traces = try_solve_tasks(
+                worker_pool,
+                tasks,
+                guiding_model_server,
+                grammar,
+                parsed_args[:timeout],
+                parsed_args[:program_timeout],
+                type_weights,
+                hyperparameters,
+                parsed_args[:maximum_solutions],
+                parsed_args[:verbose],
+            )
+            if !haskey(traces, grammar_hash)
+                traces[grammar_hash] = (grammar, Dict{String,Any}())
             end
+            cur_traces = traces[grammar_hash][2]
+            for task_traces in new_traces
+                task_name = task_traces["task"].name
+                if !haskey(cur_traces, task_name)
+                    cur_traces[task_name] = PriorityQueue{HitResult,Float64}()
+                end
+                for (trace, cost) in task_traces["traces"]
+                    cur_traces[task_name][trace] = cost
+
+                    while length(cur_traces[task_name]) > parsed_args[:maximum_solutions]
+                        dequeue!(cur_traces[task_name])
+                    end
+                end
+            end
+
+            cur_traces, grammar = compress_traces(cur_traces, grammar)
+            grammar_hash = hash(grammar)
+            traces[grammar_hash] = (grammar, cur_traces)
+
+            @info "Got total solutions for $(length(cur_traces))/$(length(tasks)) tasks"
+            log_traces(cur_traces)
+            log_grammar(i, grammar)
+
+            clear_model_cache(guiding_model)
+            i += 1
+            guiding_model = update_guiding_model(guiding_model, traces)
+            save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
+            set_current_grammar!(guiding_model, grammar)
         end
     finally
         stop(worker_pool)

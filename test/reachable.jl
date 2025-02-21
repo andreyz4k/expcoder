@@ -2007,7 +2007,7 @@ using DataStructures
         check_reachable(task, guiding_model, grammar, target_solution)
     end
 
-    @testset "Guiding model type $model_type" for model_type in ["dummy", "nn", "standalone"]
+    @testset "Guiding model type $model_type" for model_type in ["dummy", "standalone"]
         arc_guiding_model = get_guiding_model(model_type)
 
         function test_build_manual_trace(task, target_solution, task_grammar, verbose_test = false)

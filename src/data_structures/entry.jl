@@ -198,7 +198,7 @@ function _get_fixed_hashes(options::EitherOptions, value)
 end
 
 function _get_fixed_hashes(options, value)
-    _try_unify_values(options, value, false)[1], Set()
+    _try_unify_values(options, value, false, rand(UInt64))[1], Set()
 end
 
 function get_fixed_hashes(options, value)
@@ -581,92 +581,92 @@ function matching_with_unknown_candidates(sc, entry::AbductibleEntry, branch_id)
     results
 end
 
-_try_unify_values(v1, v2::AnyObject, check_pattern) = true, v1
-_try_unify_values(v1::AnyObject, v2, check_pattern) = true, v2
-_try_unify_values(v1::AnyObject, v2::AnyObject, check_pattern) = true, v2
+_try_unify_values(v1, v2::AnyObject, check_pattern, block_id) = true, v1
+_try_unify_values(v1::AnyObject, v2, check_pattern, block_id) = true, v2
+_try_unify_values(v1::AnyObject, v2::AnyObject, check_pattern, block_id) = true, v2
 
-function _try_unify_values(v1::PatternWrapper, v2, check_pattern)
-    found, res = _try_unify_values(v1.value, v2, true)
+function _try_unify_values(v1::PatternWrapper, v2, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2, true, block_id)
     if !found
         return found, res
     end
     return found, _wrap_wildcard(res)
 end
 
-function _try_unify_values(v1, v2::PatternWrapper, check_pattern)
-    found, res = _try_unify_values(v1, v2.value, true)
+function _try_unify_values(v1, v2::PatternWrapper, check_pattern, block_id)
+    found, res = _try_unify_values(v1, v2.value, true, block_id)
     if !found
         return found, res
     end
     return found, _wrap_wildcard(res)
 end
 
-function _try_unify_values(v1::PatternWrapper, v2::PatternWrapper, check_pattern)
-    found, res = _try_unify_values(v1.value, v2.value, true)
+function _try_unify_values(v1::PatternWrapper, v2::PatternWrapper, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2.value, true, block_id)
     if !found
         return found, res
     end
     return found, _wrap_wildcard(res)
 end
 
-_try_unify_values(v1::PatternWrapper, v2::AnyObject, check_pattern) = true, v1
-_try_unify_values(v1::AnyObject, v2::PatternWrapper, check_pattern) = true, v2
+_try_unify_values(v1::PatternWrapper, v2::AnyObject, check_pattern, block_id) = true, v1
+_try_unify_values(v1::AnyObject, v2::PatternWrapper, check_pattern, block_id) = true, v2
 
-function _try_unify_values(v1::AbductibleValue, v2, check_pattern)
-    found, res = _try_unify_values(v1.value, v2, true)
+function _try_unify_values(v1::AbductibleValue, v2, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2, true, block_id)
     if !found
         return found, res
     end
     found, _wrap_abductible(res)
 end
 
-function _try_unify_values(v1, v2::AbductibleValue, check_pattern)
-    found, res = _try_unify_values(v1, v2.value, true)
+function _try_unify_values(v1, v2::AbductibleValue, check_pattern, block_id)
+    found, res = _try_unify_values(v1, v2.value, true, block_id)
     if !found
         return found, res
     end
     found, _wrap_abductible(res)
 end
 
-function _try_unify_values(v1::AbductibleValue, v2::AbductibleValue, check_pattern)
-    found, res = _try_unify_values(v1.value, v2.value, true)
+function _try_unify_values(v1::AbductibleValue, v2::AbductibleValue, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2.value, true, block_id)
     if !found
         return found, res
     end
     found, _wrap_abductible(res)
 end
 
-_try_unify_values(v1::AbductibleValue, v2::AnyObject, check_pattern) = true, v1
-_try_unify_values(v1::AnyObject, v2::AbductibleValue, check_pattern) = true, v2
+_try_unify_values(v1::AbductibleValue, v2::AnyObject, check_pattern, block_id) = true, v1
+_try_unify_values(v1::AnyObject, v2::AbductibleValue, check_pattern, block_id) = true, v2
 
-function _try_unify_values(v1::AbductibleValue, v2::PatternWrapper, check_pattern)
-    found, res = _try_unify_values(v1.value, v2.value, true)
+function _try_unify_values(v1::AbductibleValue, v2::PatternWrapper, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2.value, true, block_id)
     if !found
         return found, res
     end
     found, _wrap_abductible(res)
 end
 
-function _try_unify_values(v1::PatternWrapper, v2::AbductibleValue, check_pattern)
-    found, res = _try_unify_values(v1.value, v2.value, true)
+function _try_unify_values(v1::PatternWrapper, v2::AbductibleValue, check_pattern, block_id)
+    found, res = _try_unify_values(v1.value, v2.value, true, block_id)
     if !found
         return found, res
     end
     found, _wrap_abductible(res)
 end
 
-function _try_unify_values(v1::EitherOptions, v2::PatternWrapper, check_pattern)
-    @invoke _try_unify_values(v1::EitherOptions, v2::Any, check_pattern)
+function _try_unify_values(v1::EitherOptions, v2::PatternWrapper, check_pattern, block_id)
+    @invoke _try_unify_values(v1::EitherOptions, v2::Any, check_pattern, block_id)
 end
 
-function _try_unify_values(v1::EitherOptions, v2::AbductibleValue, check_pattern)
-    @invoke _try_unify_values(v1::EitherOptions, v2::Any, check_pattern)
+function _try_unify_values(v1::EitherOptions, v2::AbductibleValue, check_pattern, block_id)
+    @invoke _try_unify_values(v1::EitherOptions, v2::Any, check_pattern, block_id)
 end
 
-function _try_unify_values(v1::EitherOptions, v2, check_pattern)
+function _try_unify_values(v1::EitherOptions, v2, check_pattern, block_id)
     options = Dict()
     for (h, v) in v1.options
-        found, unified_v = _try_unify_values(v, v2, check_pattern)
+        found, unified_v = _try_unify_values(v, v2, check_pattern, block_id)
         if found
             options[h] = unified_v
         end
@@ -677,18 +677,18 @@ function _try_unify_values(v1::EitherOptions, v2, check_pattern)
     return true, EitherOptions(options)
 end
 
-function _try_unify_values(v1::PatternWrapper, v2::EitherOptions, check_pattern)
-    @invoke _try_unify_values(v1::Any, v2::EitherOptions, check_pattern)
+function _try_unify_values(v1::PatternWrapper, v2::EitherOptions, check_pattern, block_id)
+    @invoke _try_unify_values(v1::Any, v2::EitherOptions, check_pattern, block_id)
 end
 
-function _try_unify_values(v1::AbductibleValue, v2::EitherOptions, check_pattern)
-    @invoke _try_unify_values(v1::Any, v2::EitherOptions, check_pattern)
+function _try_unify_values(v1::AbductibleValue, v2::EitherOptions, check_pattern, block_id)
+    @invoke _try_unify_values(v1::Any, v2::EitherOptions, check_pattern, block_id)
 end
 
-function _try_unify_values(v1, v2::EitherOptions, check_pattern)
+function _try_unify_values(v1, v2::EitherOptions, check_pattern, block_id)
     options = Dict()
     for (h, v) in v2.options
-        found, unified_v = _try_unify_values(v1, v, check_pattern)
+        found, unified_v = _try_unify_values(v1, v, check_pattern, block_id)
         if found
             options[h] = unified_v
         end
@@ -699,11 +699,11 @@ function _try_unify_values(v1, v2::EitherOptions, check_pattern)
     return true, EitherOptions(options)
 end
 
-function _try_unify_values(v1::EitherOptions, v2::EitherOptions, check_pattern)
+function _try_unify_values(v1::EitherOptions, v2::EitherOptions, check_pattern, block_id)
     options = Dict()
     for (h, v) in v1.options
         if haskey(v2.options, h)
-            found, unified_v = _try_unify_values(v, v2.options[h], check_pattern)
+            found, unified_v = _try_unify_values(v, v2.options[h], check_pattern, block_id)
             if found
                 options[h] = unified_v
             else
@@ -717,17 +717,17 @@ function _try_unify_values(v1::EitherOptions, v2::EitherOptions, check_pattern)
     return true, EitherOptions(options)
 end
 
-_try_unify_values(v1::EitherOptions, v2::AnyObject, check_pattern) = true, v1
-_try_unify_values(v1::AnyObject, v2::EitherOptions, check_pattern) = true, v2
+_try_unify_values(v1::EitherOptions, v2::AnyObject, check_pattern, block_id) = true, v1
+_try_unify_values(v1::AnyObject, v2::EitherOptions, check_pattern, block_id) = true, v2
 
-function _try_unify_values(v1, v2, check_pattern)
+function _try_unify_values(v1, v2, check_pattern, block_id)
     if v1 == v2
         return true, v1
     end
     return false, nothing
 end
 
-function _try_unify_values(v1::Array, v2::Array, check_pattern)
+function _try_unify_values(v1::Array, v2::Array, check_pattern, block_id)
     if length(v1) != length(v2)
         return false, nothing
     end
@@ -739,7 +739,7 @@ function _try_unify_values(v1::Array, v2::Array, check_pattern)
     end
     res = []
     for i in 1:length(v1)
-        found, unified_v = _try_unify_values(v1[i], v2[i], check_pattern)
+        found, unified_v = _try_unify_values(v1[i], v2[i], check_pattern, block_id)
         if !found
             return false, nothing
         end
@@ -748,7 +748,7 @@ function _try_unify_values(v1::Array, v2::Array, check_pattern)
     return true, res
 end
 
-function _try_unify_values(v1::Tuple, v2::Tuple, check_pattern)
+function _try_unify_values(v1::Tuple, v2::Tuple, check_pattern, block_id)
     if length(v1) != length(v2)
         return false, nothing
     end
@@ -760,7 +760,7 @@ function _try_unify_values(v1::Tuple, v2::Tuple, check_pattern)
     end
     res = []
     for i in 1:length(v1)
-        found, unified_v = _try_unify_values(v1[i], v2[i], check_pattern)
+        found, unified_v = _try_unify_values(v1[i], v2[i], check_pattern, block_id)
         if !found
             return false, nothing
         end
@@ -769,7 +769,7 @@ function _try_unify_values(v1::Tuple, v2::Tuple, check_pattern)
     return true, Tuple(res)
 end
 
-function _try_unify_values(v1::Set, v2::Set, check_pattern)
+function _try_unify_values(v1::Set, v2::Set, check_pattern, block_id)
     if length(v1) != length(v2)
         return false, nothing
     end
@@ -782,7 +782,7 @@ function _try_unify_values(v1::Set, v2::Set, check_pattern)
     options = []
     f_v = first(v1)
     if in(f_v, v2)
-        found, rest = _try_unify_values(setdiff(v1, Set([f_v])), setdiff(v2, Set([f_v])), check_pattern)
+        found, rest = _try_unify_values(setdiff(v1, Set([f_v])), setdiff(v2, Set([f_v])), check_pattern, block_id)
         if !found
             return false, nothing
         end
@@ -796,11 +796,11 @@ function _try_unify_values(v1::Set, v2::Set, check_pattern)
         end
     else
         for v in v2
-            found, unified_v = _try_unify_values(f_v, v, check_pattern)
+            found, unified_v = _try_unify_values(f_v, v, check_pattern, block_id)
             if !found
                 continue
             end
-            found, rest = _try_unify_values(setdiff(v1, Set([f_v])), setdiff(v2, Set([v])), check_pattern)
+            found, rest = _try_unify_values(setdiff(v1, Set([f_v])), setdiff(v2, Set([v])), check_pattern, block_id)
             if !found
                 continue
             end
@@ -818,7 +818,7 @@ function _try_unify_values(v1::Set, v2::Set, check_pattern)
     elseif length(options) == 1
         return true, options[1]
     else
-        return true, EitherOptions(Dict(rand(UInt64) => option for option in options))
+        return true, EitherOptions(Dict(hash(option, block_id) => option for option in options))
     end
 end
 

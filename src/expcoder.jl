@@ -217,7 +217,15 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
        !isa(output_entry, AbductibleEntry) &&
        !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
         # @info "Try get reversed for $bp"
-        p, input_vars = try_get_reversed_inputs(sc, p, bp.context, bp.path, output_branch_id, bp.cost)
+        p, input_vars = try_get_reversed_inputs(
+            sc,
+            p,
+            bp.context,
+            bp.path,
+            output_branch_id,
+            bp.cost,
+            isnothing(block_id) ? UInt64(length(sc.blocks) + 1) : block_id,
+        )
         var_locations = collect_var_locations(p)
         for (var_id, locations) in var_locations
             sc.unknown_var_locations[var_id] = collect(locations)
@@ -383,7 +391,7 @@ function create_reversed_block(
     input_type,
 )
     new_p, output_vars, either_var_ids, abductible_var_ids, either_branch_ids, abductible_branch_ids =
-        try_get_reversed_values(sc, p, context, path, input_var[2], cost, true)
+        try_get_reversed_values(sc, p, context, path, input_var[2], cost, true, UInt64(length(sc.blocks) + 1))
     if isempty(output_vars)
         throw(EnumerationException())
     end

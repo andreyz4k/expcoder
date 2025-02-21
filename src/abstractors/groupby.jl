@@ -36,6 +36,7 @@ function reverse_rev_groupby()
         return true,
         groups,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, [new_groups, v, SkipArg()]),
             context.calculated_arguments,

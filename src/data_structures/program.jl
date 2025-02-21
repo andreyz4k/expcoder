@@ -492,7 +492,7 @@ function (p::LetClause)(environment, workspace)
 end
 
 function (p::LetRevClause)(environment, workspace)
-    vals = run_in_reverse(p.v, workspace[p.inp_var_id])
+    vals = run_in_reverse(p.v, workspace[p.inp_var_id], rand(UInt64))
     for (k, v) in vals
         if isa(v, EitherOptions) || isa(v, AbductibleValue)
             @error p.v

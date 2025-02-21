@@ -1,5 +1,5 @@
 
-function reverse_rows_to_grid(value)::Vector{Any}
+function reverse_rows_to_grid(block_id, value)::Vector{Any}
     [[value[i, :] for i in (1:size(value, 1))]]
 end
 
@@ -17,7 +17,7 @@ end
     reverse_rows_to_grid
 )
 
-function reverse_columns_to_grid(value)::Vector{Any}
+function reverse_columns_to_grid(block_id, value)::Vector{Any}
     [[value[:, i] for i in (1:size(value, 2))]]
 end
 
@@ -28,14 +28,14 @@ end
     reverse_columns_to_grid
 )
 
-function reverse_rows(value)::Vector{Any}
+function reverse_rows(block_id, value)::Vector{Any}
     if isempty(value)
         return [Array{Any}(undef, 0, 0)]
     end
     [vcat([permutedims(r) for r in value]...)]
 end
 
-function reverse_columns(value)::Vector{Any}
+function reverse_columns(block_id, value)::Vector{Any}
     if isempty(value)
         return [Array{Any}(undef, 0, 0)]
     end

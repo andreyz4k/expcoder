@@ -1,5 +1,5 @@
 
-function list_elements(value)
+function list_elements(block_id, value)
     elements = Set()
     n = length(value)
     for i in 1:n
@@ -22,7 +22,7 @@ function collect_elements(elements, len)
     return output
 end
 
-function grid_elements(value)
+function grid_elements(block_id, value)
     elements = Set()
     n, m = size(value)
     for i in 1:n
@@ -60,7 +60,7 @@ end
     grid_elements
 )
 
-function reverse_collect(value)
+function reverse_collect(block_id, value)
     result = Set(value)
     if length(result) != length(value)
         error("Duplicate elements")
@@ -70,7 +70,7 @@ end
 
 @define_reverse_primitive("collect", arrow(tset(t0), tlist(t0)), collect, reverse_collect)
 
-function reverse_empty(value)
+function reverse_empty(block_id, value)
     if isempty(value)
         return []
     else

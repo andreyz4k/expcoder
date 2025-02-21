@@ -1,5 +1,5 @@
 
-function reverse_cons(value)::Vector{Any}
+function reverse_cons(block_id, value)::Vector{Any}
     if isempty(value)
         error("List is empty")
     end

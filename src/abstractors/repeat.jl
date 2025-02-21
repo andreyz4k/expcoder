@@ -1,5 +1,5 @@
 
-function reverse_repeat(value)::Vector{Any}
+function reverse_repeat(block_id, value)::Vector{Any}
     template_item = first(v for v in value if v !== any_object)
     if any(v != template_item && v != any_object for v in value)
         error("Elements are not equal")
@@ -11,7 +11,7 @@ end
     x -> (n -> n > 1000 ? error("Array is too big") : fill(x, n))
 ) reverse_repeat
 
-function reverse_repeat_grid(value)::Vector{Any}
+function reverse_repeat_grid(block_id, value)::Vector{Any}
     template_item = first(v for v in value if v !== any_object)
     if any(v != template_item && v != any_object for v in value)
         error("Elements are not equal")

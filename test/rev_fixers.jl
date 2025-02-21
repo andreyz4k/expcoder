@@ -70,7 +70,7 @@ using solver:
         p = parse_program("(* \$v1 \$v2)")
         @test is_reversible(p)
         @test compare_options(
-            run_in_reverse(p, 6),
+            run_in_reverse(p, 6, rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -100,7 +100,7 @@ using solver:
         )
         wrapped_p = parse_program("(rev_fix_param (* \$v1 \$v2) \$v1 (lambda 1))")
         @test is_reversible(wrapped_p)
-        @test run_in_reverse(wrapped_p, 6) == Dict(UInt64(1) => 1, UInt64(2) => 6)
+        @test run_in_reverse(wrapped_p, 6, rand(UInt64)) == Dict(UInt64(1) => 1, UInt64(2) => 6)
         @test run_with_arguments(wrapped_p, [], Dict(UInt64(1) => 1, UInt64(2) => 6)) == 6
         @test run_with_arguments(wrapped_p, [], Dict(UInt64(1) => 2, UInt64(2) => 3)) == 6
     end
@@ -110,13 +110,13 @@ using solver:
             "(map (lambda (fold (lambda (lambda (+ \$v3 (+ \$v3 (- \$0 \$1))))) (cons (rev_fix_param (+ \$v3 \$0) \$v3 (lambda (car (index 0 (cons empty empty))))) empty) (+ \$v4 1))) \$v5)",
         )
         @test is_reversible(p)
-        @test_throws ErrorException run_in_reverse(p, [20, 20, 11, 26, 26, 27, 17, 12, 13, 21, 28, 24])
+        @test_throws ErrorException run_in_reverse(p, [20, 20, 11, 26, 26, 27, 17, 12, 13, 21, 28, 24], rand(UInt64))
     end
 
     @testcase_log "Fix fold with mult" begin
         p = parse_program("(rev_fix_param (fold (lambda (lambda (* \$1 \$0))) \$v5 \$v6) \$v6 (lambda 0))")
         @test is_reversible(p)
         # TODO: Find a way to evade traversing many unnecessary options
-        @test_throws ErrorException run_in_reverse(p, 0)
+        @test_throws ErrorException run_in_reverse(p, 0, rand(UInt64))
     end
 end

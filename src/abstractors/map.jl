@@ -43,7 +43,7 @@ function reshape_arg(arg, is_set, dims)
     end
 end
 
-function unfold_map_options(output_options, dims)
+function unfold_map_options(block_id, output_options, dims)
     all_options = Set()
     for output_option in output_options
         predicted_arguments = output_option[1]
@@ -66,7 +66,7 @@ function unfold_map_options(output_options, dims)
             end
             options = new_options
         end
-        hashed_options = Dict(rand(UInt64) => option for option in options)
+        hashed_options = Dict(hash(option, block_id) => option for option in options)
         option_args = [
             EitherOptions(Dict(h => reshape_arg(option[1][i], false, dims) for (h, option) in hashed_options)) for
             i in 1:length(predicted_arguments[1])
@@ -77,7 +77,7 @@ function unfold_map_options(output_options, dims)
     if length(all_options) == 1
         return first(all_options)
     else
-        hashed_out_options = Dict(rand(UInt64) => option for option in all_options)
+        hashed_out_options = Dict(hash(option, block_id) => option for option in all_options)
         result_args = [
             EitherOptions(Dict(h => option[1][i] for (h, option) in hashed_out_options)) for
             i in 1:length(first(all_options)[1])
@@ -167,7 +167,14 @@ function reverse_map(n)
             success, calculated_item, new_context = _run_in_reverse(
                 f,
                 item,
-                ReverseRunContext([], [], reverse(calculated_arguments), copy(option[3]), copy(option[4])),
+                ReverseRunContext(
+                    context.block_id,
+                    [],
+                    [],
+                    reverse(calculated_arguments),
+                    copy(option[3]),
+                    copy(option[4]),
+                ),
             )
 
             if !success
@@ -235,7 +242,7 @@ function reverse_map(n)
             return false, value, context
         else
             computed_outputs, calculated_value, filled_indices, filled_vars = try
-                unfold_map_options(output_options, size(value))
+                unfold_map_options(context.block_id, output_options, size(value))
             catch e
                 if isa(e, TooManyOptionsException)
                     return false, value, context
@@ -253,6 +260,7 @@ function reverse_map(n)
         return true,
         calculated_value,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, computed_outputs, [SkipArg()]),
             context.calculated_arguments,
@@ -264,7 +272,7 @@ function reverse_map(n)
     return [(_is_reversible_subfunction, IsPossibleSubfunction())], _reverse_map
 end
 
-function unfold_map_set_options(output_options)
+function unfold_map_set_options(block_id, output_options)
     all_options = Set()
     for output_option in output_options
         predicted_arguments = output_option[1]
@@ -289,7 +297,7 @@ function unfold_map_set_options(output_options)
                 end
                 options = new_options
             end
-            hashed_options = Dict(rand(UInt64) => option for option in options)
+            hashed_options = Dict(hash(option, block_id) => option for option in options)
             option_args =
                 [EitherOptions(Dict(h => reshape_arg(option[1][1], true, nothing) for (h, option) in hashed_options))]
             option_output =
@@ -300,7 +308,7 @@ function unfold_map_set_options(output_options)
     if length(all_options) == 1
         return first(all_options)
     else
-        hashed_out_options = Dict(rand(UInt64) => option for option in all_options)
+        hashed_out_options = Dict(hash(option, block_id) => option for option in all_options)
         result_args = [
             EitherOptions(Dict(h => option[1][i] for (h, option) in hashed_out_options)) for
             i in 1:length(first(all_options)[1])
@@ -357,7 +365,14 @@ function reverse_map_set()
                 success, calculated_item, new_context = _run_in_reverse(
                     f,
                     item,
-                    ReverseRunContext([], [], [calculated_arg_option], copy(option[3]), copy(option[4])),
+                    ReverseRunContext(
+                        context.block_id,
+                        [],
+                        [],
+                        [calculated_arg_option],
+                        copy(option[3]),
+                        copy(option[4]),
+                    ),
                 )
 
                 if !success
@@ -445,7 +460,7 @@ function reverse_map_set()
             return false, value, context
         else
             computed_outputs, calculated_value, filled_indices, filled_vars = try
-                unfold_map_set_options(output_options)
+                unfold_map_set_options(context.block_id, output_options)
             catch e
                 if isa(e, TooManyOptionsException)
                     return false, value, context
@@ -463,6 +478,7 @@ function reverse_map_set()
         return true,
         calculated_value,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, computed_outputs, [SkipArg()]),
             context.calculated_arguments,

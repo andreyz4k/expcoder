@@ -1,10 +1,12 @@
-function reverse_abs(value)
+function reverse_abs(block_id, value)
     if value == 0
         return [0]
     elseif value < 0
         error("Negative absolute value")
     else
-        return [EitherOptions(Dict(rand(UInt64) => value, rand(UInt64) => -value))]
+        return [
+            EitherOptions(Dict(hash((value, -value), block_id) => value, hash((-value, value), block_id) => -value)),
+        ]
     end
 end
 
@@ -58,7 +60,7 @@ end
 @define_abductible_reverse_primitive "-" arrow(tint, tint, tint) (a -> (b -> a - b)) reverse_minus
 # @define_primitive("-", arrow(tint, tint, tint), (a -> (b -> a - b)))
 
-function reverse_mult(value)
+function reverse_mult(block_id, value)
     options = []
     if value > 0
         upper = floor(Int64, sqrt(value))
@@ -85,7 +87,7 @@ function reverse_mult(value)
     elseif length(options) == 1
         return options[1]
     else
-        hashed_options = Dict(rand(UInt64) => option for option in options)
+        hashed_options = Dict(hash(option, block_id) => option for option in options)
         result = []
         for i in 1:2
             push!(result, EitherOptions(Dict(h => option[i] for (h, option) in hashed_options)))
@@ -98,7 +100,7 @@ end
 # @define_primitive "*" arrow(tint, tint, tint) (a -> (b -> a * b))
 
 function reverse_const_int(expected)
-    function _reverse_const_int(value)
+    function _reverse_const_int(block_id, value)
         if value == expected
             return []
         else

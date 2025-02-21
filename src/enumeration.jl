@@ -294,7 +294,16 @@ function check_reversed_program_forward(p, vars, inputs, expected_output)
     end
 end
 
-function try_get_reversed_values(sc::SolutionContext, p::Program, context, path, output_branch_id, cost, is_known)
+function try_get_reversed_values(
+    sc::SolutionContext,
+    p::Program,
+    context,
+    path,
+    output_branch_id,
+    cost,
+    is_known,
+    block_id::UInt64,
+)
     out_entry = sc.entries[sc.branch_entries[output_branch_id]]
 
     new_p, new_vars = capture_free_vars(sc, p, context)
@@ -302,7 +311,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, path,
 
     calculated_values = DefaultDict(() -> [])
     for value in out_entry.values
-        calculated_value = try_run_function(run_in_reverse, [new_p, value])
+        calculated_value = try_run_function(run_in_reverse, [new_p, value, block_id])
         if length(calculated_value) != new_vars_count
             @warn p
             @warn new_p
@@ -469,8 +478,8 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, path,
     return new_p, new_branches, either_var_ids, abductible_var_ids, either_branch_ids, abductible_branch_ids
 end
 
-function try_get_reversed_inputs(sc, p::Program, context, path, output_branch_id, cost)
-    new_p, inputs, _, _, _, _ = try_get_reversed_values(sc, p, context, path, output_branch_id, cost, false)
+function try_get_reversed_inputs(sc, p::Program, context, path, output_branch_id, cost, block_id::UInt64)
+    new_p, inputs, _, _, _, _ = try_get_reversed_values(sc, p, context, path, output_branch_id, cost, false, block_id)
     return new_p, inputs
 end
 
@@ -637,7 +646,7 @@ function try_run_block(
     for i in 1:sc.example_count
         xs = inputs[i]
         out_values = try
-            try_run_function(run_in_reverse, vcat([block.p], xs))
+            try_run_function(run_in_reverse, vcat([block.p], xs, [block_id]))
         catch e
             @error xs
             @error block.p

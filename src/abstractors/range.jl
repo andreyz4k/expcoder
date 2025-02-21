@@ -1,5 +1,5 @@
 
-function reverse_range(value)::Vector{Any}
+function reverse_range(block_id, value)::Vector{Any}
     for (i, v) in enumerate(value)
         if v != i - 1
             error("Invalid value")

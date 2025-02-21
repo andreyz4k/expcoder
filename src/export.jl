@@ -3,13 +3,6 @@ using MetaGraphsNext
 using Graphs
 using Dates
 
-function get_var_branches(sc, branch_id)
-    root_parent = get_root_parent(sc, branch_id)
-    var_branches = get_all_children(sc, root_parent)
-    push!(var_branches, root_parent)
-    return var_branches
-end
-
 function check_following_blocks(
     sc::SolutionContext,
     branch_id,
@@ -20,7 +13,8 @@ function check_following_blocks(
     following_vars_depths,
     following_blocks_depths,
 )
-    var_branches = get_var_branches(sc, branch_id)
+    var_id = first(get_connected_from(sc.branch_vars, branch_id))
+    var_branches = get_connected_to(sc.branch_vars, var_id)
     max_depth = depth
     for var_branch in var_branches
         for (block_copy_id, block_id) in get_connected_from(sc.branch_outgoing_blocks, var_branch)
@@ -63,7 +57,7 @@ function do_sorting_step(sc::SolutionContext, queue, visited_branches, remaining
         return
     end
     delete!(remaining_vars, var_id)
-    var_branches = get_var_branches(sc, branch_id)
+    var_branches = get_connected_to(sc.branch_vars, var_id)
     # @info "starting iteration for $var_id"
     # @info var_branches
 

@@ -22,7 +22,7 @@ function rev_fold(f, init, acc)
     f_info = gather_info(f)
     while acc != init
         success, calculated_acc, context =
-            _run_in_reverse(f_info, acc, ReverseRunContext([], [], Any[missing, missing], Dict(), Dict()))
+            _run_in_reverse(f_info, acc, ReverseRunContext(rand(UInt64), [], [], Any[missing, missing], Dict(), Dict()))
         if !success
             error("Failed while running in reverse in rev_fold")
         end
@@ -51,7 +51,7 @@ function rev_fold_set(f, init, acc)
     while !isempty(queue)
         acc, outs = pop!(queue)
         success, calculated_acc, context =
-            _run_in_reverse(f_info, acc, ReverseRunContext([], [], Any[missing, missing], Dict(), Dict()))
+            _run_in_reverse(f_info, acc, ReverseRunContext(rand(UInt64), [], [], Any[missing, missing], Dict(), Dict()))
         if !success
             error("Failed while running in reverse in rev_fold $(f_info.p) $acc")
         end
@@ -106,6 +106,7 @@ function reverse_rev_fold()
         return true,
         value,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, [acc, SkipArg(), SkipArg()]),
             context.calculated_arguments,
@@ -146,7 +147,7 @@ function _can_be_output_option(option, context, external_indices, external_vars)
         end
     end
     if !ismissing(context.calculated_arguments[end-2])
-        found, _ = _try_unify_values(option[1][2], context.calculated_arguments[end-2], false)
+        found, _ = _try_unify_values(option[1][2], context.calculated_arguments[end-2], false, context.block_id)
         if !found
             return false
         end
@@ -249,7 +250,7 @@ function reverse_fold(is_set = false)
             success, calculated_acc, new_context = _run_in_reverse(
                 f,
                 acc,
-                ReverseRunContext([], [], calculated_arguments, copy(option[2]), copy(option[3])),
+                ReverseRunContext(context.block_id, [], [], calculated_arguments, copy(option[2]), copy(option[3])),
             )
             if !success
                 continue
@@ -393,7 +394,7 @@ function reverse_fold(is_set = false)
         elseif length(output_options) == 1
             result_arguments, result_indices, result_vars = first(output_options)
         else
-            hashed_options = Dict(rand(UInt64) => option for option in output_options)
+            hashed_options = Dict(hash(option, context.block_id) => option for option in output_options)
             result_arguments = []
             result_indices = Dict()
             result_vars = Dict()
@@ -417,6 +418,7 @@ function reverse_fold(is_set = false)
         return true,
         value,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, reverse(result_arguments), [SkipArg()]),
             context.calculated_arguments,
@@ -569,7 +571,14 @@ function reverse_fold_grid(dim)
                     success, calculated_acc, new_context = _run_in_reverse(
                         f,
                         item,
-                        ReverseRunContext([], [], calculated_arguments, copy(new_indices), copy(new_vars)),
+                        ReverseRunContext(
+                            context.block_id,
+                            [],
+                            [],
+                            calculated_arguments,
+                            copy(new_indices),
+                            copy(new_vars),
+                        ),
                     )
                     if !success
                         good_option = false
@@ -719,7 +728,7 @@ function reverse_fold_grid(dim)
         elseif length(output_options) == 1
             result_arguments, result_indices, result_vars = first(output_options)
         else
-            hashed_options = Dict(rand(UInt64) => option for option in output_options)
+            hashed_options = Dict(hash(option, context.block_id) => option for option in output_options)
             result_arguments = []
             result_indices = Dict()
             result_vars = Dict()
@@ -744,6 +753,7 @@ function reverse_fold_grid(dim)
         return true,
         value,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, reverse(result_arguments), [SkipArg()]),
             context.calculated_arguments,

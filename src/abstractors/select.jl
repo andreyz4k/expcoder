@@ -132,7 +132,7 @@ function reverse_rev_select()
                         results_others[j] = value[j]
                     end
                 end
-                option_hash = rand(UInt64)
+                option_hash = hash((selector_option, results_base, results_others), context.block_id)
                 options_selector[option_hash] = selector_option
                 options_base[option_hash] = PatternWrapper(results_base)
                 options_others[option_hash] = results_others
@@ -151,6 +151,7 @@ function reverse_rev_select()
                 f_info.b_info.x_info,
                 out_selector,
                 ReverseRunContext(
+                    context.block_id,
                     context.arguments,
                     vcat(context.predicted_arguments, [out_others, out_base, SkipArg()]),
                     context.calculated_arguments,
@@ -182,6 +183,7 @@ function reverse_rev_select()
             return true,
             value,
             ReverseRunContext(
+                context.block_id,
                 context.arguments,
                 vcat(context.predicted_arguments, [results_others, PatternWrapper(results_base), SkipArg()]),
                 context.calculated_arguments,
@@ -248,7 +250,7 @@ function reverse_rev_select_set()
                     end
                 end
 
-                option_hash = rand(UInt64)
+                option_hash = hash((selector_option, results_base, results_others), context.block_id)
                 options_selector[option_hash] = selector_option
                 options_base[option_hash] = results_base
                 options_others[option_hash] = results_others
@@ -269,6 +271,7 @@ function reverse_rev_select_set()
                 f_info.b_info.x_info,
                 out_selector,
                 ReverseRunContext(
+                    context.block_id,
                     context.arguments,
                     vcat(context.predicted_arguments, [out_others, out_base, SkipArg()]),
                     context.calculated_arguments,
@@ -296,6 +299,7 @@ function reverse_rev_select_set()
             return true,
             value,
             ReverseRunContext(
+                context.block_id,
                 context.arguments,
                 vcat(context.predicted_arguments, [results_others, results_base, SkipArg()]),
                 context.calculated_arguments,

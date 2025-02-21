@@ -136,7 +136,7 @@ using solver:
 
         select_background, _ = capture_free_vars(select_background)
         @test compare_options(
-            run_in_reverse(select_background, grid),
+            run_in_reverse(select_background, grid, rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -365,7 +365,8 @@ using solver:
         extract_bgr = parse_program("(repeat_grid ??(color) ??(int) ??(int))")
         @test is_reversible(extract_bgr)
         extract_bgr, _ = capture_free_vars(extract_bgr)
-        @test run_in_reverse(extract_bgr, bgr_grid) == Dict(UInt64(1) => 0, UInt64(2) => 17, UInt64(3) => 20)
+        @test run_in_reverse(extract_bgr, bgr_grid, rand(UInt64)) ==
+              Dict(UInt64(1) => 0, UInt64(2) => 17, UInt64(3) => 20)
         @test run_with_arguments(extract_bgr, [], Dict(UInt64(1) => 0, UInt64(2) => 17, UInt64(3) => 20)) == [
             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -414,7 +415,7 @@ using solver:
         fetch_elements = parse_program("(rev_grid_elements ??(set(tuple2(tuple2(int, int), color))) ??(int) ??(int))")
         @test is_reversible(fetch_elements)
         fetch_elements, _ = capture_free_vars(fetch_elements)
-        @test run_in_reverse(fetch_elements, grid) == Dict(
+        @test run_in_reverse(fetch_elements, grid, rand(UInt64)) == Dict(
             UInt64(1) => Set([
                 ((19, 11), 9),
                 ((5, 3), 7),
@@ -474,7 +475,7 @@ using solver:
         )
         @test is_reversible(group_cells)
         group_cells, _ = capture_free_vars(group_cells)
-        @test run_in_reverse(group_cells, cells) == Dict(
+        @test run_in_reverse(group_cells, cells, rand(UInt64)) == Dict(
             0x0000000000000001 => Set([
                 Set([
                     ((18, 9), 9),
@@ -518,7 +519,7 @@ using solver:
         )
         @test is_reversible(repeat_colors)
         repeat_colors, _ = capture_free_vars(repeat_colors)
-        @test run_in_reverse(repeat_colors, groups) == Dict(
+        @test run_in_reverse(repeat_colors, groups, rand(UInt64)) == Dict(
             0x0000000000000001 => Set(
                 Tuple{Set{Tuple{Int64,Int64}},Int64}[
                     (Set([(19, 10), (18, 9), (19, 11), (17, 9), (18, 10), (18, 11), (17, 10)]), 9),
@@ -536,7 +537,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, cells) == Dict(
+        @test run_in_reverse(extract_coordinates, cells, rand(UInt64)) == Dict(
             0x0000000000000001 => Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)]),
             0x0000000000000002 => (17, 9),
         )
@@ -549,7 +550,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, cells) ==
+        @test run_in_reverse(extract_coordinates, cells, rand(UInt64)) ==
               Dict(0x0000000000000001 => ((17, 9), Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)])))
     end
 
@@ -560,7 +561,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, cells) ==
+        @test run_in_reverse(extract_coordinates, cells, rand(UInt64)) ==
               Dict(0x0000000000000001 => ((17, 9), Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)])))
     end
 
@@ -571,7 +572,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, cells) ==
+        @test run_in_reverse(extract_coordinates, cells, rand(UInt64)) ==
               Dict(0x0000000000000001 => ((17, 9), Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)])))
     end
 
@@ -588,7 +589,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, objects) == Dict(
+        @test run_in_reverse(extract_coordinates, objects, rand(UInt64)) == Dict(
             0x0000000000000001 => Set([
                 (((17, 9), Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)])), 9),
                 (((3, 3), Set([(2, 2), (0, 0), (2, 0), (0, 1), (2, 1), (1, 1), (0, 2)])), 7),
@@ -610,7 +611,7 @@ using solver:
         )
         @test is_reversible(extract_coordinates)
         extract_coordinates, _ = capture_free_vars(extract_coordinates)
-        @test run_in_reverse(extract_coordinates, objects) == Dict(
+        @test run_in_reverse(extract_coordinates, objects, rand(UInt64)) == Dict(
             0x0000000000000001 => Set([
                 (((17, 9), Set([(2, 1), (1, 0), (2, 2), (0, 0), (1, 1), (1, 2), (0, 1)])), 9),
                 (((3, 3), Set([(2, 2), (0, 0), (2, 0), (0, 1), (2, 1), (1, 1), (0, 2)])), 7),
@@ -631,7 +632,7 @@ using solver:
         @test is_reversible(select_objects)
         select_objects, _ = capture_free_vars(select_objects)
         @test compare_options(
-            run_in_reverse(select_objects, objects),
+            run_in_reverse(select_objects, objects, rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -677,7 +678,7 @@ using solver:
         )
         @test is_reversible(move_objects)
         move_objects, _ = capture_free_vars(move_objects)
-        @test calculate_dependent_vars(move_objects, Dict(0x0000000000000002 => 1), objects) == Dict(
+        @test calculate_dependent_vars(move_objects, Dict(0x0000000000000002 => 1), objects, rand(UInt64)) == Dict(
             0x0000000000000001 => Set([
                 (((8, 11), Set([(0, 0), (0, 2), (2, 0), (1, 1), (0, 1), (2, 2), (2, 1)])), 2),
                 (((2, 3), Set([(0, 0), (2, 0), (1, 1), (0, 1), (0, 2), (2, 2), (2, 1)])), 7),
@@ -693,6 +694,7 @@ using solver:
                 ]),
             ),
             objects,
+            rand(UInt64),
         ) == Dict(0x0000000000000002 => 1)
     end
 end

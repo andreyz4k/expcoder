@@ -117,6 +117,7 @@ function reverse_fix_param()
             body,
             value,
             ReverseRunContext(
+                context.block_id,
                 context.arguments[begin:end-3],
                 context.predicted_arguments,
                 context.calculated_arguments[begin:end-3],
@@ -130,6 +131,7 @@ function reverse_fix_param()
         return true,
         calculated_output,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(arg_context.predicted_arguments, [SkipArg(), SkipArg(), SkipArg()]),
             context.calculated_arguments,

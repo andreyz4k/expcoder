@@ -324,6 +324,7 @@ is_reversible(p::Invented)::Bool = p.is_reversible
 struct SkipArg end
 
 mutable struct ReverseRunContext
+    block_id::UInt64
     arguments::Vector{Any}
     predicted_arguments::Vector{Any}
     calculated_arguments::Vector{Any}
@@ -331,7 +332,7 @@ mutable struct ReverseRunContext
     filled_vars::Dict{UInt64,Any}
 end
 
-ReverseRunContext() = ReverseRunContext([], [], [], Dict(), Dict())
+ReverseRunContext(block_id::UInt64) = ReverseRunContext(block_id, [], [], [], Dict(), Dict())
 
 function _preprocess_options(args_options, output)
     if any(isa(out, AbductibleValue) for out in values(args_options))
@@ -465,6 +466,7 @@ function _run_in_reverse(p_info, output, context, splitter::EitherOptions)
             p_info,
             fix_option_hashes(fixed_hashes, output),
             ReverseRunContext(
+                context.block_id,
                 context.arguments,
                 op_predicted_arguments,
                 op_calculated_arguments,
@@ -522,6 +524,7 @@ function _run_in_reverse(p_info, output, context, splitter::EitherOptions)
         out_filled_vars[k] = _preprocess_options(v, output)
     end
     out_context = ReverseRunContext(
+        context.block_id,
         context.arguments,
         out_args,
         context.calculated_arguments,
@@ -603,6 +606,7 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
         return true,
         output,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, results),
             context.calculated_arguments,
@@ -647,6 +651,7 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject
         return true,
         output,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, [output for _ in 1:length(arguments_of_type(p_info.p.t))]),
             context.calculated_arguments,
@@ -719,6 +724,7 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
         p_info.f_info,
         output,
         ReverseRunContext(
+            context.block_id,
             vcat(context.arguments, [p_info.x_info]),
             context.predicted_arguments,
             vcat(context.calculated_arguments, [precalculated_arg]),
@@ -751,6 +757,7 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
             p_info.f_info,
             calculated_output,
             ReverseRunContext(
+                context.block_id,
                 vcat(context.arguments, [p_info.x_info]),
                 context.predicted_arguments,
                 vcat(context.calculated_arguments, [arg_calculated_output]),
@@ -784,7 +791,7 @@ end
 function __run_in_reverse(p_info::FreeVarInfo, output, context)
     # @info "Running in reverse $(p_info.p) $output $context"
     if haskey(context.filled_vars, p_info.p.var_id)
-        found, unified_v = _try_unify_values(context.filled_vars[p_info.p.var_id], output, false)
+        found, unified_v = _try_unify_values(context.filled_vars[p_info.p.var_id], output, false, context.block_id)
         if !found
             # @info "Failed to run in reverse $(p_info.p) $output $context"
             return false, output, context
@@ -800,7 +807,7 @@ end
 function __run_in_reverse(p_info::IndexInfo, output, context)
     # @info "Running in reverse $(p_info.p) $output $context"
     if haskey(context.filled_indices, p_info.p.n)
-        found, unified_v = _try_unify_values(context.filled_indices[p_info.p.n], output, false)
+        found, unified_v = _try_unify_values(context.filled_indices[p_info.p.n], output, false, context.block_id)
         if !found
             # @info "Failed to run in reverse $(p_info.p) $output $context"
             return false, output, context
@@ -823,6 +830,7 @@ function __run_in_reverse(p_info::AbstractionInfo, output, context::ReverseRunCo
         p_info.b_info,
         output,
         ReverseRunContext(
+            context.block_id,
             context.arguments[1:end-1],
             context.predicted_arguments,
             context.calculated_arguments[1:end-1],
@@ -852,11 +860,11 @@ function __run_in_reverse(p_info::SetConstInfo, output, context)
     return output == p_info.p.value, output, context
 end
 
-function run_in_reverse(p::Program, output)
+function run_in_reverse(p::Program, output, block_id::UInt64)
     # @info p
     # start_time = time()
     p_info = gather_info(p)
-    success, computed_output, context = _run_in_reverse(p_info, output, ReverseRunContext())
+    success, computed_output, context = _run_in_reverse(p_info, output, ReverseRunContext(block_id))
     # @info success, computed_output, context
     if !success
         error("Failed to run in reverse $p $output")
@@ -929,7 +937,7 @@ function _wrap_abductible(v::EitherOptions)
 end
 
 function _generic_reverse(f, val, ctx)
-    predicted_args = f(val)
+    predicted_args = f(ctx.block_id, val)
     for i in 1:length(predicted_args)
         if !ismissing(ctx.calculated_arguments[end-i+1])
             arg = predicted_args[i]
@@ -947,6 +955,7 @@ function _generic_reverse(f, val, ctx)
         true,
         val,
         ReverseRunContext(
+            ctx.block_id,
             ctx.arguments,
             vcat(ctx.predicted_arguments, reverse(predicted_args)),
             ctx.calculated_arguments,
@@ -1042,6 +1051,7 @@ macro define_abductible_reverse_primitive(name, t, x, reverse_function)
                 true,
                 v,
                 ReverseRunContext(
+                    ctx.block_id,
                     ctx.arguments,
                     vcat(
                         ctx.predicted_arguments,
@@ -1100,8 +1110,8 @@ end
 step_arg_checker(c::IsPossibleSubfunction, arg::ArgTurn) = c
 step_arg_checker(::IsPossibleSubfunction, arg) = nothing
 
-function calculate_dependent_vars(p, inputs, output)
-    context = ReverseRunContext([], [], [], Dict(), copy(inputs))
+function calculate_dependent_vars(p, inputs, output, block_id::UInt64)
+    context = ReverseRunContext(block_id, [], [], [], Dict(), copy(inputs))
     p_info = gather_info(p)
     success, computed_output, context = _run_in_reverse(p_info, output, context)
     if !success

@@ -399,11 +399,17 @@ using DataStructures: OrderedDict, Accumulator
         skeleton = parse_program("(repeat ??(int) ??(int))")
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
-        @test compare_options(run_in_reverse(p, [[1, 2, 3], [1, 2, 3]]), Dict(UInt64(1) => [1, 2, 3], UInt64(2) => 2))
-        @test compare_options(run_in_reverse(p, [1, 1, 1]), Dict(UInt64(1) => 1, UInt64(2) => 3))
-        @test compare_options(run_in_reverse(p, [1, any_object, 1]), Dict(UInt64(1) => 1, UInt64(2) => 3))
-        @test compare_options(run_in_reverse(p, [any_object, any_object, 1]), Dict(UInt64(1) => 1, UInt64(2) => 3))
-        @test run_in_reverse(p, [any_object, any_object, 1])[UInt64(1)] !== any_object
+        @test compare_options(
+            run_in_reverse(p, [[1, 2, 3], [1, 2, 3]], rand(UInt64)),
+            Dict(UInt64(1) => [1, 2, 3], UInt64(2) => 2),
+        )
+        @test compare_options(run_in_reverse(p, [1, 1, 1], rand(UInt64)), Dict(UInt64(1) => 1, UInt64(2) => 3))
+        @test compare_options(run_in_reverse(p, [1, any_object, 1], rand(UInt64)), Dict(UInt64(1) => 1, UInt64(2) => 3))
+        @test compare_options(
+            run_in_reverse(p, [any_object, any_object, 1], rand(UInt64)),
+            Dict(UInt64(1) => 1, UInt64(2) => 3),
+        )
+        @test run_in_reverse(p, [any_object, any_object, 1], rand(UInt64))[UInt64(1)] !== any_object
         @test match_at_index(
             PatternEntry(
                 0x0000000000000001,
@@ -428,30 +434,37 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[[1, 2, 3], [1, 2, 3]] [[1, 2, 3], [1, 2, 3]] [[1, 2, 3], [1, 2, 3]]]),
+            run_in_reverse(p, [[[1, 2, 3], [1, 2, 3]] [[1, 2, 3], [1, 2, 3]] [[1, 2, 3], [1, 2, 3]]], rand(UInt64)),
             Dict(UInt64(1) => [1, 2, 3], UInt64(2) => 2, UInt64(3) => 3),
         )
         @test compare_options(
-            run_in_reverse(p, [[1, 1, 1] [1, 1, 1]]),
+            run_in_reverse(p, [[1, 1, 1] [1, 1, 1]], rand(UInt64)),
             Dict(UInt64(1) => 1, UInt64(2) => 3, UInt64(3) => 2),
         )
         @test compare_options(
-            run_in_reverse(p, PatternWrapper([[1, any_object, 1] [1, any_object, any_object]])),
+            run_in_reverse(p, PatternWrapper([[1, any_object, 1] [1, any_object, any_object]]), rand(UInt64)),
             Dict(UInt64(1) => 1, UInt64(2) => 3, UInt64(3) => 2),
         )
         @test compare_options(
-            run_in_reverse(p, PatternWrapper([[any_object, any_object, 1] [any_object, any_object, any_object]])),
+            run_in_reverse(
+                p,
+                PatternWrapper([[any_object, any_object, 1] [any_object, any_object, any_object]]),
+                rand(UInt64),
+            ),
             Dict(UInt64(1) => 1, UInt64(2) => 3, UInt64(3) => 2),
         )
-        @test run_in_reverse(p, PatternWrapper([[any_object, any_object, 1] [any_object, any_object, any_object]]))[1] !==
-              any_object
+        @test run_in_reverse(
+            p,
+            PatternWrapper([[any_object, any_object, 1] [any_object, any_object, any_object]]),
+            rand(UInt64),
+        )[1] !== any_object
     end
 
     @testcase_log "Reverse cons" begin
         skeleton = parse_program("(cons ??(int) ??(list(int)))")
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
-        @test compare_options(run_in_reverse(p, [1, 2, 3]), Dict(UInt64(1) => 1, UInt64(2) => [2, 3]))
+        @test compare_options(run_in_reverse(p, [1, 2, 3], rand(UInt64)), Dict(UInt64(1) => 1, UInt64(2) => [2, 3]))
     end
 
     @testcase_log "Reverse adjoin" begin
@@ -460,7 +473,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([1, 2, 3])),
+            run_in_reverse(p, Set([1, 2, 3]), rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(0xdab8105ae838a43f => 1, 0x369f7593fdd6aa68 => 3, 0xa546dd1af6daadbb => 2),
@@ -482,7 +495,7 @@ using DataStructures: OrderedDict, Accumulator
         skeleton = parse_program("(tuple2 ??(color) ??(list(int)))")
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
-        @test compare_options(run_in_reverse(p, (1, [2, 3])), Dict(UInt64(1) => 1, UInt64(2) => [2, 3]))
+        @test compare_options(run_in_reverse(p, (1, [2, 3]), rand(UInt64)), Dict(UInt64(1) => 1, UInt64(2) => [2, 3]))
     end
 
     @testcase_log "Reverse plus" begin
@@ -490,23 +503,24 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 3),
+            run_in_reverse(p, 3, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
         @test compare_options(
-            run_in_reverse(p, 15),
+            run_in_reverse(p, 15, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
         @test compare_options(
-            run_in_reverse(p, -5),
+            run_in_reverse(p, -5, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3) == Dict(UInt64(2) => 2)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3, rand(UInt64)) == Dict(UInt64(2) => 2)
         @test calculate_dependent_vars(
             p,
             Dict{UInt64,Any}(UInt64(1) => 1),
             EitherOptions(Dict{UInt64,Any}(0xaa2dcc33efe7cdcd => 30, 0x4ef19a9b1c1cc5e2 => 15)),
+            rand(UInt64),
         ) == Dict(UInt64(2) => EitherOptions(Dict{UInt64,Any}(0xaa2dcc33efe7cdcd => 29, 0x4ef19a9b1c1cc5e2 => 14)))
     end
 
@@ -515,24 +529,25 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 3),
+            run_in_reverse(p, 3, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
         @test compare_options(
-            run_in_reverse(p, 15),
+            run_in_reverse(p, 15, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
         @test compare_options(
-            run_in_reverse(p, -5),
+            run_in_reverse(p, -5, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3) == Dict(UInt64(2) => -2)
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 1), 3) == Dict(UInt64(1) => 4)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3, rand(UInt64)) == Dict(UInt64(2) => -2)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 1), 3, rand(UInt64)) == Dict(UInt64(1) => 4)
         @test calculate_dependent_vars(
             p,
             Dict{UInt64,Any}(UInt64(2) => 1),
             EitherOptions(Dict{UInt64,Any}(0xaa2dcc33efe7cdcd => 30, 0x4ef19a9b1c1cc5e2 => 15)),
+            rand(UInt64),
         ) == Dict(UInt64(1) => EitherOptions(Dict{UInt64,Any}(0xaa2dcc33efe7cdcd => 31, 0x4ef19a9b1c1cc5e2 => 16)))
     end
 
@@ -541,7 +556,7 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 3),
+            run_in_reverse(p, 3, rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue(any_object),
                 0x0000000000000003 => AbductibleValue(any_object),
@@ -550,12 +565,14 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000003 => AbductibleValue(any_object)),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1, UInt64(2) => 5), 3) == Dict(UInt64(3) => -3)
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1, UInt64(3) => 5), 3) == Dict(UInt64(2) => -3)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1, UInt64(2) => 5), 3, rand(UInt64)) ==
+              Dict(UInt64(3) => -3)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1, UInt64(3) => 5), 3, rand(UInt64)) ==
+              Dict(UInt64(2) => -3)
     end
 
     @testcase_log "Reverse repeat with plus" begin
@@ -563,7 +580,7 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, [3, 3, 3, 3]),
+            run_in_reverse(p, [3, 3, 3, 3], rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue(any_object),
                 0x0000000000000003 => 4,
@@ -571,8 +588,12 @@ using DataStructures: OrderedDict, Accumulator
             ),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1, UInt64(3) => 4), [3, 3, 3, 3]) ==
-              Dict(UInt64(2) => 2)
+        @test calculate_dependent_vars(
+            p,
+            Dict{UInt64,Any}(UInt64(1) => 1, UInt64(3) => 4),
+            [3, 3, 3, 3],
+            rand(UInt64),
+        ) == Dict(UInt64(2) => 2)
     end
 
     @testcase_log "Reverse abs with plus" begin
@@ -580,12 +601,12 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 3),
+            run_in_reverse(p, 3, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), 3, rand(UInt64)),
             Dict(UInt64(2) => EitherOptions(Dict{UInt64,Any}(0xc8e6a6dedcb6f132 => -4, 0x9fede9511319ae42 => 2))),
         )
     end
@@ -595,12 +616,12 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 3),
+            run_in_reverse(p, 3, rand(UInt64)),
             Dict(0x0000000000000002 => AbductibleValue(any_object), 0x0000000000000001 => AbductibleValue(any_object)),
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 1), 3),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 1), 3, rand(UInt64)),
             Dict(UInt64(1) => EitherOptions(Dict{UInt64,Any}(0xc8e6a6dedcb6f132 => -2, 0x9fede9511319ae42 => 2))),
         )
     end
@@ -610,7 +631,7 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
         @test compare_options(
-            run_in_reverse(p, 6),
+            run_in_reverse(p, 6, rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -639,7 +660,7 @@ using DataStructures: OrderedDict, Accumulator
             ),
         )
         @test compare_options(
-            run_in_reverse(p, 240),
+            run_in_reverse(p, 240, rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -739,7 +760,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[1, 2], [1, 2], [1, 2]]),
+            run_in_reverse(p, [[1, 2], [1, 2], [1, 2]], rand(UInt64)),
             Dict(UInt64(1) => 1, UInt64(2) => [2], UInt64(3) => 3),
         )
     end
@@ -776,7 +797,7 @@ using DataStructures: OrderedDict, Accumulator
             p, _ = capture_free_vars(skeleton)
 
             @test compare_options(
-                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]]),
+                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]], rand(UInt64)),
                 Dict(UInt64(1) => [1, 2, 4], UInt64(2) => [3, 2, 1]),
             )
 
@@ -791,7 +812,7 @@ using DataStructures: OrderedDict, Accumulator
             p, _ = capture_free_vars(skeleton)
 
             @test compare_options(
-                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]]),
+                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]], rand(UInt64)),
                 Dict(UInt64(1) => [3, 2, 1], UInt64(2) => [1, 2, 4]),
             )
 
@@ -805,7 +826,7 @@ using DataStructures: OrderedDict, Accumulator
             p, _ = capture_free_vars(skeleton)
 
             @test compare_options(
-                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]]),
+                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]], rand(UInt64)),
                 Dict(UInt64(1) => [1, 2, 4], UInt64(2) => [[1, 1], [2], []]),
             )
 
@@ -819,7 +840,7 @@ using DataStructures: OrderedDict, Accumulator
             p, _ = capture_free_vars(skeleton)
 
             @test compare_options(
-                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]]),
+                run_in_reverse(p, [[1, 1, 1], [2, 2], [4]], rand(UInt64)),
                 Dict(UInt64(1) => [[1, 1], [2], []], UInt64(2) => [1, 2, 4]),
             )
 
@@ -836,7 +857,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[[1, 1, 1], [2, 2], [4]], [[3, 3, 3, 3], [2, 2, 2], [8, 8, 8]]]),
+            run_in_reverse(p, [[[1, 1, 1], [2, 2], [4]], [[3, 3, 3, 3], [2, 2, 2], [8, 8, 8]]], rand(UInt64)),
             Dict(UInt64(1) => [[1, 2, 4], [3, 2, 8]], UInt64(2) => [[3, 2, 1], [4, 3, 3]]),
         )
 
@@ -852,8 +873,8 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, [0, 1, 2]), Dict(UInt64(1) => 3))
-        @test compare_options(run_in_reverse(p, []), Dict(UInt64(1) => 0))
+        @test compare_options(run_in_reverse(p, [0, 1, 2], rand(UInt64)), Dict(UInt64(1) => 3))
+        @test compare_options(run_in_reverse(p, [], rand(UInt64)), Dict(UInt64(1) => 0))
     end
 
     @testcase_log "Reverse map with range" begin
@@ -875,7 +896,10 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, [[0, 1, 2], [0, 1], [0, 1, 2, 3]]), Dict(UInt64(1) => [3, 2, 4]))
+        @test compare_options(
+            run_in_reverse(p, [[0, 1, 2], [0, 1], [0, 1, 2, 3]], rand(UInt64)),
+            Dict(UInt64(1) => [3, 2, 4]),
+        )
     end
 
     @testcase_log "Reverse map set with range" begin
@@ -898,7 +922,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([[0, 1, 2], [0, 1], [0, 1, 2, 3]])),
+            run_in_reverse(p, Set([[0, 1, 2], [0, 1], [0, 1, 2, 3]]), rand(UInt64)),
             Dict(UInt64(1) => Set([3, 2, 4])),
         )
     end
@@ -908,8 +932,11 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, [[1], [2, 2], [4, 4, 4, 4]]), Dict(UInt64(1) => [1, 2, 4]))
-        @test_throws ErrorException run_in_reverse(p, [[1, 1], [2, 2], [4, 4, 4, 4]])
+        @test compare_options(
+            run_in_reverse(p, [[1], [2, 2], [4, 4, 4, 4]], rand(UInt64)),
+            Dict(UInt64(1) => [1, 2, 4]),
+        )
+        @test_throws ErrorException run_in_reverse(p, [[1, 1], [2, 2], [4, 4, 4, 4]], rand(UInt64))
 
         @test run_with_arguments(p, [], Dict(UInt64(1) => [1, 2, 4])) == [[1], [2, 2], [4, 4, 4, 4]]
     end
@@ -926,16 +953,16 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([(3, 2), (1, 2), (6, 2)])),
+            run_in_reverse(p, Set([(3, 2), (1, 2), (6, 2)]), rand(UInt64)),
             Dict(UInt64(1) => 2, UInt64(2) => Set([3, 1, 6])),
         )
-        @test_throws ErrorException run_in_reverse(p, Set([(3, 2), (1, 2), (6, 3)]))
+        @test_throws ErrorException run_in_reverse(p, Set([(3, 2), (1, 2), (6, 3)]), rand(UInt64))
 
         @test run_with_arguments(p, [], Dict(UInt64(1) => 2, UInt64(2) => Set([3, 1, 6]))) ==
               Set([(3, 2), (1, 2), (6, 2)])
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(2) => Set([3, 1, 6])), Set([(3, 2), (1, 2), (6, 2)])),
+            calculate_dependent_vars(p, Dict(UInt64(2) => Set([3, 1, 6])), Set([(3, 2), (1, 2), (6, 2)]), rand(UInt64)),
             Dict(UInt64(1) => 2),
         )
     end
@@ -946,7 +973,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Vector{Any}[[1, 1, 1], [0, 0, 0], [3, 0, 0]]),
+            run_in_reverse(p, Vector{Any}[[1, 1, 1], [0, 0, 0], [3, 0, 0]], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1094,7 +1121,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Vector{Any}[[1, 2, 1, 2], [0, 0, 0, 0], [3, 0, 1, 3, 0, 1]]),
+            run_in_reverse(p, Vector{Any}[[1, 2, 1, 2], [0, 0, 0, 0], [3, 0, 1, 3, 0, 1]], rand(UInt64)),
             Dict(UInt64(1) => [[1, 2], [0, 0], [3, 0, 1]]),
         )
     end
@@ -1111,7 +1138,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Vector{Any}[[1, 1, 1, 0, 0], [0, 0, 0], [3, 0, 0]]),
+            run_in_reverse(p, Vector{Any}[[1, 1, 1, 0, 0], [0, 0, 0], [3, 0, 0]], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1143,7 +1170,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [12, 0, 36, 2]),
+            run_in_reverse(p, [12, 0, 36, 2], rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue([any_object, any_object, any_object, any_object]),
                 0x0000000000000001 => AbductibleValue(any_object),
@@ -1151,17 +1178,17 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(1) => 2), [12, 0, 36, 2]),
+            calculate_dependent_vars(p, Dict(UInt64(1) => 2), [12, 0, 36, 2], rand(UInt64)),
             Dict(UInt64(2) => [10, -2, 34, 0]),
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(2) => [9, -3, 33, -1]), [12, 0, 36, 2]),
+            calculate_dependent_vars(p, Dict(UInt64(2) => [9, -3, 33, -1]), [12, 0, 36, 2], rand(UInt64)),
             Dict(UInt64(1) => 3),
         )
 
         @test_throws ErrorException compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(2) => [9, -3, 37, -1]), [12, 0, 36, 2]),
+            calculate_dependent_vars(p, Dict(UInt64(2) => [9, -3, 37, -1]), [12, 0, 36, 2], rand(UInt64)),
             Dict(UInt64(1) => 3),
         )
     end
@@ -1186,7 +1213,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [12, 0, 36, 2]),
+            run_in_reverse(p, [12, 0, 36, 2], rand(UInt64)),
             Dict(
                 UInt64(1) => 1,
                 UInt64(2) => EitherOptions(
@@ -1220,7 +1247,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test_throws ErrorException compare_options(
-            run_in_reverse(p, [1, 2, 3]),
+            run_in_reverse(p, [1, 2, 3], rand(UInt64)),
             Dict(
                 UInt64(1) => 1,
                 UInt64(2) => EitherOptions(
@@ -1248,7 +1275,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [0, 1, 4]),
+            run_in_reverse(p, [0, 1, 4], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1269,7 +1296,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test_throws ErrorException compare_options(
-            run_in_reverse(p, [0, 2, 12, 2, 11, 0]),
+            run_in_reverse(p, [0, 2, 12, 2, 11, 0], rand(UInt64)),
             Dict(
                 UInt64(1) => 1,
                 UInt64(2) => EitherOptions(
@@ -1303,7 +1330,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test_throws ErrorException compare_options(
-            run_in_reverse(p, [16, 10, 7, 12, 13, 3]),
+            run_in_reverse(p, [16, 10, 7, 12, 13, 3], rand(UInt64)),
             Dict(
                 UInt64(1) => 1,
                 UInt64(2) => EitherOptions(
@@ -1320,14 +1347,15 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [3, 2]),
+            run_in_reverse(p, [3, 2], rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue([any_object, any_object]),
                 0x0000000000000001 => AbductibleValue([any_object, any_object]),
             ),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => [1, 2]), [3, 2]) == Dict(UInt64(2) => [2, 0])
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => [1, 2]), [3, 2], rand(UInt64)) ==
+              Dict(UInt64(2) => [2, 0])
     end
 
     @testcase_log "Reverse map with plus and free var" begin
@@ -1343,15 +1371,17 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [3, 2]),
+            run_in_reverse(p, [3, 2], rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue([any_object, any_object]),
                 0x0000000000000001 => AbductibleValue(any_object),
             ),
         )
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => [2, 1]), [3, 2]) == Dict(UInt64(1) => 1)
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), [3, 2]) == Dict(UInt64(2) => [2, 1])
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => [2, 1]), [3, 2], rand(UInt64)) ==
+              Dict(UInt64(1) => 1)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => 1), [3, 2], rand(UInt64)) ==
+              Dict(UInt64(2) => [2, 1])
     end
 
     @testcase_log "Reverse rows with either" begin
@@ -1430,6 +1460,7 @@ using DataStructures: OrderedDict, Accumulator
                         0xa3fd43ac20d453b3 => Any[Any[1, 1, 1], Any[0, 0], Any[3]],
                     ),
                 ),
+                rand(UInt64),
             ),
             Dict{UInt64,Any}(
                 0x0000000000000001 => EitherOptions(
@@ -1465,7 +1496,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [1, 2, 1, 3, 2, 1]),
+            run_in_reverse(p, [1, 2, 1, 3, 2, 1], rand(UInt64)),
             Dict(
                 UInt64(1) =>
                     EitherOptions(Dict(0xa0664d92ec387436 => 3, 0x6711a85d77d098cf => 1, 0xfcd4cc2c187414b6 => 2)),
@@ -1510,7 +1541,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([1, 2, 3])),
+            run_in_reverse(p, Set([1, 2, 3]), rand(UInt64)),
             Dict(
                 UInt64(1) =>
                     EitherOptions(Dict(0x6711a85d77d098cf => 2, 0x7fec434e3caa5c07 => 1, 0xc99cccbee72d140a => 3)),
@@ -1538,7 +1569,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[0, 1, 2], [], [0, 1, 2, 3]]),
+            run_in_reverse(p, [[0, 1, 2], [], [0, 1, 2, 3]], rand(UInt64)),
             Dict(
                 UInt64(1) => PatternWrapper([any_object, [], any_object]),
                 UInt64(2) => [[0, 1, 2], nothing, [0, 1, 2, 3]],
@@ -1556,7 +1587,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]]),
+            run_in_reverse(p, [[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]], rand(UInt64)),
             Dict(UInt64(1) => 1, UInt64(2) => [2, 3], UInt64(3) => 4),
         )
 
@@ -1574,7 +1605,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, 16),
+            run_in_reverse(p, 16, rand(UInt64)),
             Dict(UInt64(1) => EitherOptions(Dict{UInt64,Any}(0x61b87a7d8efbbc18 => -4, 0x34665f52efaea3b2 => 4))),
         )
     end
@@ -1588,7 +1619,7 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, 64), Dict(UInt64(1) => 4))
+        @test compare_options(run_in_reverse(p, 64, rand(UInt64)), Dict(UInt64(1) => 4))
     end
 
     @testcase_log "Invented abstractor with same index combined #2" begin
@@ -1600,7 +1631,7 @@ using DataStructures: OrderedDict, Accumulator
         @test is_reversible(skeleton)
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, 64), Dict(UInt64(1) => 4))
+        @test compare_options(run_in_reverse(p, 64, rand(UInt64)), Dict(UInt64(1) => 4))
     end
 
     @testcase_log "Invented abstractor with same index combined #3" begin
@@ -1613,7 +1644,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, 16),
+            run_in_reverse(p, 16, rand(UInt64)),
             Dict(UInt64(1) => EitherOptions(Dict{UInt64,Any}(0x791ecca7c8ec2799 => -2, 0x026990618cb235dc => 2))),
         )
     end
@@ -1628,7 +1659,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]]),
+            run_in_reverse(p, [[0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]], rand(UInt64)),
             Dict(UInt64(1) => 4, UInt64(2) => 3),
         )
     end
@@ -1644,7 +1675,11 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[[0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]], [[0, 1, 2], [0, 1, 2]]]),
+            run_in_reverse(
+                p,
+                [[[0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]], [[0, 1, 2], [0, 1, 2]]],
+                rand(UInt64),
+            ),
             Dict(UInt64(1) => [4, 3], UInt64(2) => [4, 2]),
         )
     end
@@ -1698,15 +1733,15 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [3, 2, 1]),
+            run_in_reverse(p, [3, 2, 1], rand(UInt64)),
             Dict(UInt64(1) => Set([(1, 3), (2, 2), (3, 1)]), UInt64(2) => 3),
         )
         @test compare_options(
-            run_in_reverse(p, [3, nothing, 1]),
+            run_in_reverse(p, [3, nothing, 1], rand(UInt64)),
             Dict(UInt64(1) => Set([(1, 3), (3, 1)]), UInt64(2) => 3),
         )
         @test compare_options(
-            run_in_reverse(p, [3, 2, nothing]),
+            run_in_reverse(p, [3, 2, nothing], rand(UInt64)),
             Dict(UInt64(1) => Set([(1, 3), (2, 2)]), UInt64(2) => 3),
         )
 
@@ -1721,7 +1756,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[3, 2, 1] [4, 5, 6]]),
+            run_in_reverse(p, [[3, 2, 1] [4, 5, 6]], rand(UInt64)),
             Dict(
                 UInt64(1) => Set([((1, 1), 3), ((1, 2), 4), ((2, 1), 2), ((2, 2), 5), ((3, 1), 1), ((3, 2), 6)]),
                 UInt64(2) => 3,
@@ -1729,7 +1764,7 @@ using DataStructures: OrderedDict, Accumulator
             ),
         )
         @test compare_options(
-            run_in_reverse(p, [[3, nothing, 1] [4, 5, 6]]),
+            run_in_reverse(p, [[3, nothing, 1] [4, 5, 6]], rand(UInt64)),
             Dict(
                 UInt64(1) => Set([((1, 1), 3), ((1, 2), 4), ((2, 2), 5), ((3, 1), 1), ((3, 2), 6)]),
                 UInt64(2) => 3,
@@ -1737,7 +1772,7 @@ using DataStructures: OrderedDict, Accumulator
             ),
         )
         @test compare_options(
-            run_in_reverse(p, [[3, 2, 1] [nothing, nothing, nothing]]),
+            run_in_reverse(p, [[3, 2, 1] [nothing, nothing, nothing]], rand(UInt64)),
             Dict(UInt64(1) => Set([((1, 1), 3), ((2, 1), 2), ((3, 1), 1)]), UInt64(2) => 3, UInt64(3) => 2),
         )
 
@@ -1772,7 +1807,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [(1, 3), (2, 2), (3, 1)]),
+            run_in_reverse(p, [(1, 3), (2, 2), (3, 1)], rand(UInt64)),
             Dict(UInt64(1) => [1, 2, 3], UInt64(2) => [3, 2, 1]),
         )
         @test run_with_arguments(p, [], Dict(UInt64(1) => [1, 2, 3], UInt64(2) => [3, 2, 1])) ==
@@ -1785,7 +1820,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[(1, 3), (2, 2), (3, 1)] [(4, 5), (9, 2), (2, 5)]]),
+            run_in_reverse(p, [[(1, 3), (2, 2), (3, 1)] [(4, 5), (9, 2), (2, 5)]], rand(UInt64)),
             Dict(UInt64(1) => [[1, 2, 3] [4, 9, 2]], UInt64(2) => [[3, 2, 1] [5, 2, 5]]),
         )
         @test run_with_arguments(p, [], Dict(UInt64(1) => [[1, 2, 3] [4, 9, 2]], UInt64(2) => [[3, 2, 1] [5, 2, 5]])) ==
@@ -1798,7 +1833,7 @@ using DataStructures: OrderedDict, Accumulator
 
         p, _ = capture_free_vars(skeleton)
 
-        @test compare_options(run_in_reverse(p, [2, 4, 1, 4, 1]), Dict(UInt64(1) => [1, 4, 1, 4, 2]))
+        @test compare_options(run_in_reverse(p, [2, 4, 1, 4, 1], rand(UInt64)), Dict(UInt64(1) => [1, 4, 1, 4, 2]))
 
         @test run_with_arguments(p, [], Dict(UInt64(1) => [1, 4, 1, 4, 2])) == [2, 4, 1, 4, 1]
     end
@@ -1810,7 +1845,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [2, 4, 1, 4, 1]),
+            run_in_reverse(p, [2, 4, 1, 4, 1], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1845,7 +1880,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, 1),
+            run_in_reverse(p, 1, rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1866,9 +1901,10 @@ using DataStructures: OrderedDict, Accumulator
 
         @test run_with_arguments(p, [], Dict(UInt64(1) => [1], UInt64(2) => 0)) == 1
 
-        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => [1, 2]), 4) == Dict(UInt64(2) => 1)
+        @test calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(1) => [1, 2]), 4, rand(UInt64)) ==
+              Dict(UInt64(2) => 1)
         @test compare_options_subset(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 2), 4),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 2), 4, rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1881,7 +1917,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options_subset(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 4), 4),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => 4), 4, rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1921,7 +1957,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [3, 5, 2, 1]),
+            run_in_reverse(p, [3, 5, 2, 1], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -1969,7 +2005,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(3) => []), [3, 5, 2, 1]),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(3) => []), [3, 5, 2, 1], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(0xfe1aa1e710789fbb => Any[3, 5, 2, 1], 0xa8b7141625cc424c => Any[-3, -5, -2, -1]),
@@ -1980,7 +2016,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            run_in_reverse(p, [2, 4, 0, 6]),
+            run_in_reverse(p, [2, 4, 0, 6], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2046,7 +2082,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(3) => []), [2, 4, 0, 6]),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(3) => []), [2, 4, 0, 6], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2097,7 +2133,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [2, 6, 12]),
+            run_in_reverse(p, [2, 6, 12], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2199,7 +2235,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(3) => []), [2, 6, 12]),
+            calculate_dependent_vars(p, Dict(UInt64(3) => []), [2, 6, 12], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2245,7 +2281,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            run_in_reverse(p, [2, 6, 0, 12]),
+            run_in_reverse(p, [2, 6, 0, 12], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2469,7 +2505,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [2, 6, 12]),
+            run_in_reverse(p, [2, 6, 12], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2490,7 +2526,7 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(1) => 1), [2, 6, 12]),
+            calculate_dependent_vars(p, Dict(UInt64(1) => 1), [2, 6, 12], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2512,12 +2548,12 @@ using DataStructures: OrderedDict, Accumulator
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(2) => [0, 4]), [2, 6, 12]),
+            calculate_dependent_vars(p, Dict(UInt64(2) => [0, 4]), [2, 6, 12], rand(UInt64)),
             Dict(0x0000000000000001 => 2, 0x0000000000000003 => Any[12]),
         )
 
         @test compare_options(
-            calculate_dependent_vars(p, Dict(UInt64(3) => [12]), [2, 6, 12]),
+            calculate_dependent_vars(p, Dict(UInt64(3) => [12]), [2, 6, 12], rand(UInt64)),
             Dict(
                 0x0000000000000002 => AbductibleValue([any_object, any_object]),
                 0x0000000000000001 => AbductibleValue(any_object),
@@ -2532,7 +2568,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([2, 4, 1, 6, 9])),
+            run_in_reverse(p, Set([2, 4, 1, 6, 9]), rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2620,7 +2656,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options_subset(
-            run_in_reverse(p, [2, 4, 1, 4, 1]),
+            run_in_reverse(p, [2, 4, 1, 4, 1], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2746,7 +2782,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[1, 3, 9], [4, 6, 1], [1, 1, 4], [4, 5, 0], [2, 2, 4]]),
+            run_in_reverse(p, [[1, 3, 9], [4, 6, 1], [1, 1, 4], [4, 5, 0], [2, 2, 4]], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2781,7 +2817,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options_subset(
-            run_in_reverse(p, [13, 11, 6, 9, 8]),
+            run_in_reverse(p, [13, 11, 6, 9, 8], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2809,10 +2845,16 @@ using DataStructures: OrderedDict, Accumulator
             p,
             Dict{UInt64,Any}(UInt64(1) => [[1, 4, 1, 4, 2] [3, 6, 1, 5, 2] [9, 1, 4, 0, 4]]),
             [13, 11, 6, 9, 8],
+            rand(UInt64),
         ) == Dict(UInt64(2) => [0, 0, 0, 0, 0])
 
         @test compare_options_subset(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => [1, 4, 1, 4, 2]), [13, 11, 6, 9, 8]),
+            calculate_dependent_vars(
+                p,
+                Dict{UInt64,Any}(UInt64(2) => [1, 4, 1, 4, 2]),
+                [13, 11, 6, 9, 8],
+                rand(UInt64),
+            ),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2832,7 +2874,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, [[1, 4, 1, 4, 2], [3, 6, 1, 5, 2], [9, 1, 4, 0, 4]]),
+            run_in_reverse(p, [[1, 4, 1, 4, 2], [3, 6, 1, 5, 2], [9, 1, 4, 0, 4]], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2871,7 +2913,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options_subset(
-            run_in_reverse(p, [12, 17, 18]),
+            run_in_reverse(p, [12, 17, 18], rand(UInt64)),
             Dict(
                 0x0000000000000002 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2898,10 +2940,11 @@ using DataStructures: OrderedDict, Accumulator
             p,
             Dict{UInt64,Any}(UInt64(1) => [[1, 4, 1, 4, 2] [3, 6, 1, 5, 2] [9, 1, 4, 0, 4]]),
             [12, 17, 18],
+            rand(UInt64),
         ) == Dict(UInt64(2) => [0, 0, 0])
 
         @test compare_options_subset(
-            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => [1, 4, 1]), [12, 17, 18]),
+            calculate_dependent_vars(p, Dict{UInt64,Any}(UInt64(2) => [1, 4, 1]), [12, 17, 18], rand(UInt64)),
             Dict(
                 0x0000000000000001 => EitherOptions(
                     Dict{UInt64,Any}(
@@ -2921,7 +2964,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test in(
-            run_in_reverse(p, Set([(1, Set([[1, 2, 3], [1, 4, 2]])), (2, Set([[2]]))])),
+            run_in_reverse(p, Set([(1, Set([[1, 2, 3], [1, 4, 2]])), (2, Set([[2]]))]), rand(UInt64)),
             [
                 Dict(UInt64(1) => [2], UInt64(2) => Set([(1, Set([[1, 2, 3], [1, 4, 2]]))])),
                 Dict(UInt64(1) => [1, 4, 2], UInt64(2) => Set([(2, Set([[2]])), (1, Set([[1, 2, 3]]))])),
@@ -2947,7 +2990,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([[1, 2, 3], [1, 4, 2], [2]])),
+            run_in_reverse(p, Set([[1, 2, 3], [1, 4, 2], [2]]), rand(UInt64)),
             Dict(UInt64(1) => Set([(1, Set([[1, 2, 3], [1, 4, 2]])), (2, Set([[2]]))])),
         )
 
@@ -2964,7 +3007,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test in(
-            run_in_reverse(p, Set([Set([[1, 2, 3], [1, 4, 2]]), Set([[2]])])),
+            run_in_reverse(p, Set([Set([[1, 2, 3], [1, 4, 2]]), Set([[2]])]), rand(UInt64)),
             Set([
                 Dict(UInt64(1) => [2], UInt64(2) => Set([Set([[1, 2, 3], [1, 4, 2]])])),
                 Dict(UInt64(1) => [1, 4, 2], UInt64(2) => Set([Set([[1, 2, 3]]), Set([[2]])])),
@@ -2991,7 +3034,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test in(
-            run_in_reverse(p, Set([Set([[1, 2, 3], [1, 4, 2, 2], [3, 5, 2, 5, 2]]), Set([[2]])])),
+            run_in_reverse(p, Set([Set([[1, 2, 3], [1, 4, 2, 2], [3, 5, 2, 5, 2]]), Set([[2]])]), rand(UInt64)),
             Set([
                 Dict(
                     UInt64(1) => [1, 4, 2, 2],
@@ -3034,7 +3077,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options(
-            run_in_reverse(p, Set([[1, 2, 3], [1, 4, 2, 2], [3, 5, 2, 5, 2], [2]])),
+            run_in_reverse(p, Set([[1, 2, 3], [1, 4, 2, 2], [3, 5, 2, 5, 2], [2]]), rand(UInt64)),
             Dict(UInt64(1) => Set([Set([[1, 2, 3], [1, 4, 2, 2], [3, 5, 2, 5, 2]]), Set([[2]])])),
         )
 
@@ -3052,7 +3095,7 @@ using DataStructures: OrderedDict, Accumulator
         p, _ = capture_free_vars(skeleton)
 
         @test compare_options_subset(
-            run_in_reverse(p, [12, 4, 8, 11, 0, 8, 11]),
+            run_in_reverse(p, [12, 4, 8, 11, 0, 8, 11], rand(UInt64)),
             Dict(
                 UInt64(1) => EitherOptions(
                     Dict{UInt64,Any}(
@@ -3111,6 +3154,7 @@ using DataStructures: OrderedDict, Accumulator
                     (6, [7, 3, 9, 4, 3, 1, 3, 7, 1, 9, 8, 2, 8, 3, 2, 9, 3, 3, 5]),
                     (6, [7, 5, 7, 2, 4, 3, 1, 1, 6, 0, 6]),
                 ]),
+                rand(UInt64),
             ),
             Dict(),
         )

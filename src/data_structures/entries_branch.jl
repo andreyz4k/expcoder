@@ -511,7 +511,8 @@ function updated_branches(
     return new_branch_id, is_new_out_branch, true, allow_fails, next_blocks, true, block_created_paths
 end
 
-function _get_abducted_values(sc, out_block::ProgramBlock, branches)
+function _get_abducted_values(sc, out_block_id, branches)
+    out_block = sc.blocks[out_block_id]
     in_entries = Dict(var_id => sc.entries[sc.branch_entries[branches[var_id]]] for var_id in out_block.input_vars)
     out_entry = sc.entries[sc.branch_entries[branches[out_block.output_var]]]
 
@@ -526,6 +527,7 @@ function _get_abducted_values(sc, out_block::ProgramBlock, branches)
                     (var_id, entry) in in_entries if !isa(entry.values[i], AbductibleValue)
                 ),
                 out_entry.values[i],
+                out_block_id,
             ],
         )
         if isnothing(updated_values)
@@ -555,7 +557,7 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
 
     old_branches[var_id] = new_branch_id
 
-    updated_values = _get_abducted_values(sc, sc.blocks[out_block_id], old_branches)
+    updated_values = _get_abducted_values(sc, out_block_id, old_branches)
 
     new_branches = Dict{UInt64,UInt64}()
     out_branches = Dict{UInt64,UInt64}()

@@ -1,12 +1,12 @@
 
-function reverse_adjoin(value)::Vector{Any}
+function reverse_adjoin(block_id, value)::Vector{Any}
     if isempty(value)
         error("Set is empty")
     end
     options = Dict()
     for v in value
         option = [v, setdiff(value, [v])]
-        options[rand(UInt64)] = option
+        options[hash(option, block_id)] = option
     end
     if length(options) == 1
         result = first(options)[2]

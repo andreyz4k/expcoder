@@ -39,6 +39,7 @@ function reverse_rev_greedy_cluster()
         return true,
         groups,
         ReverseRunContext(
+            context.block_id,
             context.arguments,
             vcat(context.predicted_arguments, [new_groups, selected_value, SkipArg()]),
             context.calculated_arguments,

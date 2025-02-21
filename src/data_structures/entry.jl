@@ -346,7 +346,7 @@ function is_subeither(wide::EitherOptions, narrow::EitherOptions)
     if check_level
         all(haskey(wide.options, k) && is_subeither(wide.options[k], n_op) for (k, n_op) in narrow.options)
     else
-        any(is_subeither(op, narrow) for op in wide.options)
+        any(is_subeither(op, narrow) for (_, op) in wide.options)
     end
 end
 

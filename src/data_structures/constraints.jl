@@ -98,13 +98,13 @@ function _tighten_constraint(
 
             inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
             inputs = Dict(
-                v => haskey(out_branches, v) ? out_branches[v] : b for b in inp_branches for
-                v in get_connected_from(sc.branch_vars, b)
+                v => haskey(out_branches, v) && !is_child_branch(sc, out_branches[v], b) ? out_branches[v] : b for
+                b in inp_branches for v in get_connected_from(sc.branch_vars, b)
             )
             out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
             target_branches = UInt64[
-                haskey(out_branches, v) ? out_branches[v] : b for b in out_block_branches for
-                v in get_connected_from(sc.branch_vars, b)
+                haskey(out_branches, v) && !is_child_branch(sc, out_branches[v], b) ? out_branches[v] : b for
+                b in out_block_branches for v in get_connected_from(sc.branch_vars, b)
             ]
             _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
         end
@@ -315,13 +315,13 @@ function _tighten_constraint(
             push!(visited_b_copy_ids, b_copy_id)
             inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
             inputs = Dict(
-                v => haskey(out_branches, v) ? out_branches[v] : b for b in inp_branches for
-                v in get_connected_from(sc.branch_vars, b)
+                v => haskey(out_branches, v) && !is_child_branch(sc, out_branches[v], b) ? out_branches[v] : b for
+                b in inp_branches for v in get_connected_from(sc.branch_vars, b)
             )
             out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
             target_branches = UInt64[
-                haskey(out_branches, v) ? out_branches[v] : b for b in out_block_branches for
-                v in get_connected_from(sc.branch_vars, b)
+                haskey(out_branches, v) && !is_child_branch(sc, out_branches[v], b) ? out_branches[v] : b for
+                b in out_block_branches for v in get_connected_from(sc.branch_vars, b)
             ]
 
             input_entries = Set(sc.branch_entries[b] for b in values(inputs))

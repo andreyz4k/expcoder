@@ -43,6 +43,8 @@ function update_guiding_model(guiding_model::DummyGuidingModel, traces)
     return guiding_model
 end
 
+using JLD2
+
 function save_guiding_model(m::DummyGuidingModel, path)
     model_state = (m.preset_weights, m.log_variable, m.log_lambda, m.log_free_var)
     jldsave(path; type = "dummy", model_state)

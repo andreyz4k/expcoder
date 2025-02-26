@@ -25,10 +25,28 @@ function store_precompressed_traces(traces, grammar)
     @info "Stored precompressed traces to $fname"
 end
 
-function compress_traces(traces, grammar)
+function check_repeating_blocks(task, program)
+    in_blocks, out_blocks, vars_mapping = _extract_blocks(task, program, false)
+    for (var, blocks) in Iterators.flatten([out_blocks, in_blocks])
+        for (i, block) in enumerate(blocks)
+            if isa(block.p, FreeVar)
+                continue
+            end
+            for j in 1:i-1
+                if !isa(blocks[j].p, FreeVar) && is_on_path(block.p, blocks[j].p, Dict(), true)
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+function compress_traces(tasks, traces, grammar)
     if isempty(traces)
         return traces, grammar
     end
+    tasks_dict = Dict(task.name => task for task in tasks)
     # store_precompressed_traces(traces, grammar)
     existing_inventions = String[string(p) for p in grammar if isa(p, Invented)]
     programs, tasks, hits = extract_programs_and_tasks(traces)
@@ -61,6 +79,9 @@ function compress_traces(traces, grammar)
     end
     new_traces = Dict()
     for ((hit, cost), task_name, new_program) in zip(hits, tasks, rewritten_programs)
+        if !check_repeating_blocks(tasks_dict[task_name], new_program)
+            continue
+        end
         if !haskey(new_traces, task_name)
             new_traces[task_name] = PriorityQueue{HitResult,Float64}()
         end

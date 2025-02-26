@@ -23,6 +23,19 @@ function get_all_children(sc, branch_id)
     return children
 end
 
+function is_child_branch(sc, branch_id, child_id)
+    children = get_connected_from(sc.branch_children, branch_id)
+    if in(child_id, children)
+        return true
+    end
+    for child in children
+        if is_child_branch(sc, child, child_id)
+            return true
+        end
+    end
+    return false
+end
+
 function value_updates(
     sc,
     block::ProgramBlock,

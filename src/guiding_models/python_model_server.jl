@@ -83,6 +83,8 @@ function update_guiding_model(guiding_model::PythonStandaloneGuidingModel, trace
     return guiding_model
 end
 
+using JLD2
+
 function save_guiding_model(m::PythonStandaloneGuidingModel, path)
     py_path = path * ".pt"
     Redis.set(m.redis_conn, "save_model", py_path)

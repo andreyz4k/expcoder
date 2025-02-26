@@ -385,6 +385,8 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, 
     end
 end
 
+using JLD2
+
 function load_guiding_model(path)
     model_info = JLD2.load(path)
     if model_info["type"] == "dummy"

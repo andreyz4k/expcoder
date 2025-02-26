@@ -270,7 +270,7 @@ function is_bp_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verbo
     if isa(bl.p, FreeVar)
         is_var_on_path(bp, bl, vars_mapping, verbose)
     else
-        is_on_path(bp.skeleton, bl.p, Dict(), verbose)
+        is_on_path(bp.skeleton, bl.p, Dict())
     end
 end
 

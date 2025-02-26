@@ -200,7 +200,7 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
         if isa(bl.p, FreeVar)
             continue
         end
-        if is_on_path(bp.skeleton, bl.p, Dict(), sc.verbose)
+        if is_on_path(bp.skeleton, bl.p, Dict())
             if sc.verbose
                 @info "Found matching parent block $bl"
             end
@@ -964,7 +964,7 @@ function main(; kwargs...)
                 end
             end
 
-            cur_traces, grammar = compress_traces(cur_traces, grammar)
+            cur_traces, grammar = compress_traces(tasks, cur_traces, grammar)
             grammar_hash = hash(grammar)
             traces[grammar_hash] = (grammar, cur_traces)
 

@@ -79,7 +79,7 @@ function compress_traces(tasks, traces, grammar)
     end
     new_traces = Dict()
     for ((hit, cost), task_name, new_program) in zip(hits, tasks, rewritten_programs)
-        if !check_repeating_blocks(tasks_dict[task_name], new_program)
+        if !check_repeating_blocks(tasks_dict[task_name], parse_program(new_program))
             continue
         end
         if !haskey(new_traces, task_name)

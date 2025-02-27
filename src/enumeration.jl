@@ -543,6 +543,21 @@ function _update_block_type(block_type, input_types)
     return block_type
 end
 
+function _update_block_output_type(block_type, output_type)
+    if !is_polymorphic(block_type)
+        return block_type
+    end
+
+    context, block_type = instantiate(block_type, empty_context)
+    context, output_type = instantiate(output_type, context)
+    context = unify(context, return_of_type(block_type), output_type)
+    if isnothing(context)
+        error("Can't unify $(return_of_type(block_type)) with $output_type")
+    end
+    context, block_type = apply_context(context, block_type)
+    return block_type
+end
+
 function try_run_block(
     sc::SolutionContext,
     block::ProgramBlock,
@@ -627,13 +642,14 @@ function try_run_block(
     created_paths,
 )
     inputs = []
-
+    input_types = []
     for _ in 1:sc.example_count
         push!(inputs, [])
     end
     for var_id in block.input_vars
         fixed_branch_id = fixed_branches[var_id]
         entry = sc.entries[sc.branch_entries[fixed_branch_id]]
+        push!(input_types, sc.types[entry.type_id])
         for i in 1:sc.example_count
             push!(inputs[i], entry.values[i])
         end
@@ -666,6 +682,7 @@ function try_run_block(
         sc,
         block,
         block_id,
+        _update_block_output_type(block.type, input_types[1]),
         target_output,
         [outs[v_id] for v_id in block.output_vars],
         fixed_branches,

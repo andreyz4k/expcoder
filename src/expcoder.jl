@@ -392,7 +392,9 @@ function create_reversed_block(
         throw(EnumerationException())
     end
     if isempty(either_var_ids) && isempty(abductible_var_ids)
-        block = ReverseProgramBlock(new_p, cost, [input_var[1]], [v_id for (v_id, _, _) in output_vars])
+        arg_types = [sc.types[v[3]] for v in output_vars]
+        p_type = arrow(arg_types..., input_type)
+        block = ReverseProgramBlock(new_p, p_type, cost, [input_var[1]], [v_id for (v_id, _, _) in output_vars])
         var_locations = collect_var_locations(new_p)
         for (var_id, locations) in var_locations
             sc.known_var_locations[var_id] = collect(locations)

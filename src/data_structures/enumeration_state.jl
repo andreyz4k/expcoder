@@ -109,7 +109,7 @@ function get_candidates_for_known_var(sc, branch_id, guiding_model_channels, gra
     var_id = first(get_connected_from(sc.branch_vars, branch_id))
     entry_id = sc.branch_entries[branch_id]
     entry = sc.entries[entry_id]
-    if !isnothing(sc.explained_min_path_costs[branch_id]) && entry.complexity > 0
+    if !isnothing(sc.explained_min_path_costs[branch_id]) && entry.complexity > 0 && sc.branch_is_not_const[branch_id]
         if !haskey(sc.entry_grammars, (entry_id, true))
             generate_grammar(sc, guiding_model_channels, grammar, entry_id, true, branch_id)
         else

@@ -239,7 +239,13 @@ using DataStructures
                     end
                 end
 
-                bl = ReverseProgramBlock(p.v, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
+                bl = ReverseProgramBlock(
+                    p.v,
+                    t0,
+                    0.0,
+                    [vars_mapping[p.inp_var_id]],
+                    [vars_mapping[v] for v in p.var_ids],
+                )
                 push!(blocks, bl)
                 p = p.b
             elseif p isa FreeVar

@@ -86,6 +86,7 @@ function value_updates(
     sc,
     block::ReverseProgramBlock,
     block_id,
+    block_type,
     target_output::Dict{UInt64,UInt64},
     new_values,
     fixed_branches::Dict{UInt64,UInt64},
@@ -99,11 +100,13 @@ function value_updates(
     set_explained = false
     next_blocks = Set()
     block_created_paths = Dict{UInt64,Vector{Any}}()
+    out_types = arguments_of_type(block_type)
     for i in 1:length(block.output_vars)
         out_var = block.output_vars[i]
         values = new_values[i]
         br_id = target_output[out_var]
         entry = sc.entries[sc.branch_entries[br_id]]
+        t_id = push!(sc.types, out_types[i])
         out_branch_id, is_new_out_branch_, is_new_nxt_block, all_fails, n_blocks, set_expl, bl_created_paths =
             updated_branches(
                 sc,
@@ -113,7 +116,7 @@ function value_updates(
                 is_new_block,
                 out_var,
                 br_id,
-                entry.type_id,
+                t_id,
                 true,
                 true,
                 fixed_branches,

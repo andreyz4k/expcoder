@@ -619,6 +619,17 @@ function set_new_paths_for_block(
     check_path_cost,
     best_cost,
 )
+    filter!(input_paths) do path
+        for in_var_id in bl.input_vars
+            if haskey(path.main_path, in_var_id)
+                prev_block = sc.blocks[path.main_path[in_var_id]]
+                return !isa(prev_block, ProgramBlock) || !isa(prev_block.p, SetConst)
+            else
+                return true
+            end
+        end
+        error("Reverse block $bl has no input vars; unreachable")
+    end
     return set_new_paths_for_var(
         sc,
         bl_id,

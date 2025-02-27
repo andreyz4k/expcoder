@@ -66,8 +66,15 @@ function _tighten_constraint(
                 sc.branch_types[created_branch_id, new_type_id] = true
 
                 for (parent, children) in parents_children
-                    deleteat!(sc.branch_children, parent, children)
-                    sc.branch_children[parent, created_branch_id] = true
+                    # if isnothing(parent)
+                    #     @warn "Parent is nothing for $var_id $branch_id $new_entry"
+                    #     @warn "Parents children $parents_children"
+                    #     export_solution_context(sc, sc.task_name)
+                    # end
+                    if !isnothing(parent)
+                        deleteat!(sc.branch_children, parent, children)
+                        sc.branch_children[parent, created_branch_id] = true
+                    end
                     sc.branch_children[created_branch_id, children] = true
                 end
                 union!(unknown_old_branches, get_all_parents(sc, created_branch_id))

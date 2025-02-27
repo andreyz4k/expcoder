@@ -265,8 +265,10 @@ function export_solution_context(sc::SolutionContext, task_name)
             "_block_copy_id" => block_copy_id,
             "_block_type" => typeof(block),
             "_p" => string(block.p),
+            "_type" => string(sc.types[block.type]),
             "_cost" => block.cost,
             "_depth" => get(blocks_depths, block_id, -200) + rand(),
+            "_root_branch" => sc.block_root_branches[block_id],
         )
 
         if isa(block, ProgramBlock)

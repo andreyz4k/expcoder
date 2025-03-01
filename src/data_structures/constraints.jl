@@ -332,7 +332,7 @@ function _tighten_constraint(
             ]
 
             input_entries = Set(sc.branch_entries[b] for b in values(inputs))
-            if any(in(sc.branch_entries[b], input_entries) for b in target_branches)
+            if !sc.traced && any(in(sc.branch_entries[b], input_entries) for b in target_branches)
                 if sc.verbose
                     @info "Fixing constraint leads to a redundant block"
                 end

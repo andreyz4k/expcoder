@@ -159,9 +159,7 @@ function _extract_blocks(task, target_program, verbose = false)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                 end
-                if p.inp_var_id in vars_from_input
-                    push!(vars_from_input, v)
-                end
+                push!(vars_from_input, v)
             end
 
             bl = ReverseProgramBlock(p.v, t0, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
@@ -296,10 +294,19 @@ function enumeration_iteration_finished_traced(
     vars_mapping,
     rev_vars_mapping,
 )
-    if sc.branch_is_unknown[br_id]
-        new_block_result, unfinished_prototypes = enumeration_iteration_finished_output(sc, bp)
+    if bp.reverse
+        new_block_result, unfinished_prototypes = create_reversed_block(
+            sc,
+            bp.skeleton,
+            bp.context,
+            bp.path,
+            bp.output_var,
+            bp.cost,
+            return_of_type(bp.request),
+        )
     else
-        new_block_result, unfinished_prototypes = enumeration_iteration_finished_input(sc, bp)
+        new_block_result = enumeration_iteration_finished_output(sc, bp)
+        unfinished_prototypes = []
     end
     found_solutions = []
     filtered_target_blocks = filter(bl -> is_bp_on_path(bp, bl, vars_mapping, sc.verbose), target_blocks)

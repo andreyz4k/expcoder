@@ -67,13 +67,6 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
     new_explained_branches = Set(get_new_values(sc.branch_is_not_copy))
     updated_factors_unknown_branches = Set(get_new_values(sc.unknown_complexity_factors))
     updated_factors_explained_branches = Set(get_new_values(sc.explained_complexity_factors))
-    for branch_id in updated_factors_unknown_branches
-        if in(branch_id, new_unknown_branches)
-            enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
-        elseif haskey(sc.branch_queues_unknown, branch_id)
-            update_branch_priority(sc, branch_id, false)
-        end
-    end
     for branch_id in union(updated_factors_explained_branches, new_explained_branches)
         if !sc.branch_is_not_copy[branch_id]
             continue
@@ -82,6 +75,13 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
             enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
         else
             update_branch_priority(sc, branch_id, true)
+        end
+    end
+    for branch_id in updated_factors_unknown_branches
+        if in(branch_id, new_unknown_branches)
+            enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
+        elseif haskey(sc.branch_queues_unknown, branch_id)
+            update_branch_priority(sc, branch_id, false)
         end
     end
 end
@@ -290,7 +290,7 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
         block_id = push!(sc.blocks, new_block)
         sc.block_root_branches[block_id] = bp.output_var[2]
     end
-    return [(block_id, input_branches, Dict{UInt64,UInt64}(bp.output_var[1] => bp.output_var[2]))], []
+    return [(block_id, input_branches, Dict{UInt64,UInt64}(bp.output_var[1] => bp.output_var[2]))]
 end
 
 function create_wrapping_program_prototype(
@@ -433,10 +433,9 @@ function create_reversed_block(
     end
 end
 
-function enumeration_iteration_finished_input(sc, bp::BlockPrototype)
+function enumeration_iteration_finished(sc::SolutionContext, bp::BlockPrototype, br_id)
     if bp.reverse
-        # @info "Try get reversed for $bp"
-        return create_reversed_block(
+        new_block_result, unfinished_prototypes = create_reversed_block(
             sc,
             bp.skeleton,
             bp.context,
@@ -446,24 +445,8 @@ function enumeration_iteration_finished_input(sc, bp::BlockPrototype)
             return_of_type(bp.request),
         )
     else
-        arg_types =
-            [sc.types[first(get_connected_from(sc.branch_types, branch_id))] for (_, branch_id) in bp.input_vars]
-        p_type = arrow(arg_types..., return_of_type(bp.request))
-        new_block =
-            ProgramBlock(bp.skeleton, p_type, bp.cost, [v_id for (v_id, _) in bp.input_vars], bp.output_var[1], false)
-        new_block_id = push!(sc.blocks, new_block)
-        sc.block_root_branches[new_block_id] = bp.output_var[2]
-        input_branches = Dict{UInt64,UInt64}(var_id => branch_id for (var_id, branch_id) in bp.input_vars)
-        target_output = Dict{UInt64,UInt64}(bp.output_var[1] => bp.output_var[2])
-        return [(new_block_id, input_branches, target_output)], []
-    end
-end
-
-function enumeration_iteration_finished(sc::SolutionContext, bp::BlockPrototype, br_id)
-    if sc.branch_is_unknown[br_id]
-        new_block_result, unfinished_prototypes = enumeration_iteration_finished_output(sc, bp)
-    else
-        new_block_result, unfinished_prototypes = enumeration_iteration_finished_input(sc, bp)
+        new_block_result = enumeration_iteration_finished_output(sc, bp)
+        unfinished_prototypes = []
     end
     found_solutions = []
     for (new_block_id, input_branches, target_output) in new_block_result

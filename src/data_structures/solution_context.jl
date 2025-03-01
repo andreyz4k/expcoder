@@ -959,7 +959,31 @@ function update_context(sc::SolutionContext)
         _update_complexity_factor_known(sc, branch_id)
     end
 
-    return get_new_paths(sc.incoming_paths, sc.target_branch_id)
+    solution_paths = get_new_paths(sc.incoming_paths, sc.target_branch_id)
+    target_var = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+    output_paths = filter(solution_paths) do solution_path
+        vars_from_output = Set{UInt64}([target_var])
+        vars_to_check = Set{UInt64}([target_var])
+        while !isempty(vars_to_check)
+            var_id = pop!(vars_to_check)
+            block = sc.blocks[solution_path.main_path[var_id]]
+            if isa(block, ProgramBlock) && !isa(block.p, FreeVar)
+                union!(vars_from_output, block.input_vars)
+                union!(vars_to_check, block.input_vars)
+            end
+        end
+
+        for (v_id, bl_id) in solution_path.main_path
+            bl = sc.blocks[bl_id]
+            if isa(bl, ProgramBlock) && !isa(bl.p, FreeVar)
+                if !in(v_id, vars_from_output)
+                    return false
+                end
+            end
+        end
+        return true
+    end
+    return output_paths
 end
 
 function update_prev_follow_vars(sc::SolutionContext, block_id::UInt64)

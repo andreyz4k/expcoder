@@ -78,14 +78,27 @@ function compress_traces(tasks, traces, grammar)
         end
     end
     new_traces = Dict()
-    for ((hit, cost), task_name, new_program) in zip(hits, tasks, rewritten_programs)
-        if !check_repeating_blocks(tasks_dict[task_name], parse_program(new_program))
+    for ((hit, cost), task_name, new_program_str) in zip(hits, tasks, rewritten_programs)
+        new_program = parse_program(new_program_str)
+        replacements = Dict{Any,Any}("output" => "output")
+        argument_types = arguments_of_type(tasks_dict[task_name].task_type)
+        for (key, t) in argument_types
+            replacements[key] = key
+        end
+        rewritten_program = alpha_substitution(new_program, replacements, Set(), Set(), UInt64(1), Dict())[1]
+        if !check_repeating_blocks(tasks_dict[task_name], rewritten_program)
             continue
+        end
+        trace_values = Dict()
+        for (var_id, val) in hit.trace_values
+            if haskey(replacements, var_id)
+                trace_values[replacements[var_id]] = val
+            end
         end
         if !haskey(new_traces, task_name)
             new_traces[task_name] = PriorityQueue{HitResult,Float64}()
         end
-        new_hit = HitResult(new_program, hit.hit_prior, hit.hit_likelihood, hit.hit_time, hit.trace_values)
+        new_hit = HitResult(string(rewritten_program), hit.hit_prior, hit.hit_likelihood, hit.hit_time, trace_values)
         new_traces[task_name][new_hit] = cost
     end
     return new_traces, new_grammar

@@ -87,7 +87,9 @@ function alpha_substitution(p::LetClause, replacements, let_vars, used_vars, nex
     if isa(p.v, FreeVar)
         if haskey(input_keys, p.v.var_id)
             replacements[p.var_id] = input_keys[p.v.var_id]
-        elseif length([v for (v, r) in replacements if r == replacements[p.v.var_id]]) > 1 || (in(p.v.var_id, let_vars) && (has_var(p.b, p.v.var_id) || in(p.v.var_id, used_vars)))
+        elseif length([v for (v, r) in replacements if r == replacements[p.v.var_id]]) > 1 ||
+               has_var(p.b, p.v.var_id) ||
+               in(p.v.var_id, used_vars)
             new_v, next_index = alpha_substitution(p.v, replacements, let_vars, Set{UInt64}(), next_index, input_keys)
             replacements[p.var_id] = next_index
             new_b, next_index2 = alpha_substitution(p.b, replacements, let_vars, used_vars, next_index + 1, input_keys)

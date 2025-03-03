@@ -623,7 +623,7 @@ function set_new_paths_for_block(
         for in_var_id in bl.input_vars
             if haskey(path.main_path, in_var_id)
                 prev_block = sc.blocks[path.main_path[in_var_id]]
-                return !isa(prev_block, ProgramBlock) || !isa(prev_block.p, SetConst)
+                return !isa(prev_block, ProgramBlock) || (!isa(prev_block.p, SetConst) && !isa(prev_block.p, FreeVar))
             else
                 return true
             end

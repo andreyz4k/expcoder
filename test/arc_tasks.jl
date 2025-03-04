@@ -48,6 +48,7 @@ using solver:
                 (request_channel, result_channel, end_tasks_channel),
                 grammar,
                 nothing,
+                nothing,
                 40,
                 1,
                 type_weights,

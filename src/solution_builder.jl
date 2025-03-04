@@ -108,12 +108,15 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
             if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
                 if haskey(rev_inner_mapping, var_id) && haskey(rev_vars_mapping, rev_inner_mapping[var_id])
                     orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
-                    # @info "Skipping branch $var_id $orig_var_id $br_id $is_explained $from_input"
+                    if sc.verbose
+                        @info "Skipping branch $var_id $orig_var_id $br_id $is_explained $from_input $bp"
+                    end
                     push!(skipped_blocks, (br_id, is_explained, from_input, bp))
                 else
-                    # @info "Skipping branch $var_id $br_id $is_explained"
+                    if sc.verbose
+                        @info "Skipping branch $var_id $br_id $is_explained $bp"
+                    end
                 end
-                # @info bp
                 update_branch_priority(sc, br_id, is_explained)
                 continue
             end

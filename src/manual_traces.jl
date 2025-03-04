@@ -87,9 +87,11 @@ _used_vars(::Any) = []
 function _extract_blocks(task, target_program, verbose = false)
     vars_mapping = Dict{Any,UInt64}()
     vars_from_input = Set{Any}()
+    vars_from_rev = Set{Any}()
     for (arg, _) in task.task_type.arguments
         vars_mapping[arg] = length(vars_mapping) + 1
         push!(vars_from_input, arg)
+        push!(vars_from_rev, arg)
     end
     vars_mapping["out"] = length(vars_mapping) + 1
     copied_vars = 0
@@ -103,6 +105,7 @@ function _extract_blocks(task, target_program, verbose = false)
             @info in_blocks
             @info out_blocks
             @info vars_from_input
+            @info vars_from_rev
             @info copied_vars
         end
         if p isa LetClause
@@ -116,30 +119,35 @@ function _extract_blocks(task, target_program, verbose = false)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                     push!(in_vars, vars_mapping[v])
-                elseif v in vars_from_input && !isa(p.v, FreeVar)
+                elseif v in vars_from_rev && !isa(p.v, FreeVar)
                     copied_vars += 1
-                    push!(in_vars, length(vars_mapping) + copied_vars)
-                    copy_block = ProgramBlock(
-                        FreeVar(t0, vars_mapping[v], nothing),
-                        t0,
-                        0.0,
-                        [vars_mapping[v]],
-                        length(vars_mapping) + copied_vars,
-                        false,
-                    )
-                    if !haskey(in_blocks, vars_mapping[v])
-                        in_blocks[vars_mapping[v]] = []
+                    out_var = length(vars_mapping) + copied_vars
+                    push!(in_vars, out_var)
+                    copy_block =
+                        ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
+                    if v in vars_from_input
+                        if !haskey(in_blocks, vars_mapping[v])
+                            in_blocks[vars_mapping[v]] = []
+                        end
+                        push!(in_blocks[vars_mapping[v]], copy_block)
+                    else
+                        if !haskey(out_blocks, out_var)
+                            out_blocks[out_var] = []
+                        end
+                        push!(out_blocks[out_var], copy_block)
                     end
-                    push!(in_blocks[vars_mapping[v]], copy_block)
                 else
                     push!(in_vars, vars_mapping[v])
+                end
+                if v in vars_from_input
+                    push!(vars_from_input, p.var_id)
                 end
             end
             if !haskey(vars_mapping, p.var_id)
                 vars_mapping[p.var_id] = length(vars_mapping) + copied_vars + 1
             end
             bl = ProgramBlock(p.v, t0, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
-            if isa(p.v, FreeVar)
+            if isa(p.v, FreeVar) && p.v.var_id in vars_from_input
                 if !haskey(in_blocks, in_vars[1])
                     in_blocks[in_vars[1]] = []
                 end
@@ -159,7 +167,10 @@ function _extract_blocks(task, target_program, verbose = false)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                 end
-                push!(vars_from_input, v)
+                push!(vars_from_rev, v)
+                if p.inp_var_id in vars_from_input
+                    push!(vars_from_input, v)
+                end
             end
 
             bl = ReverseProgramBlock(p.v, t0, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
@@ -183,21 +194,23 @@ function _extract_blocks(task, target_program, verbose = false)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                     push!(in_vars, vars_mapping[v])
-                elseif v in vars_from_input
+                elseif v in vars_from_rev
                     copied_vars += 1
-                    push!(in_vars, length(vars_mapping) + copied_vars)
-                    copy_block = ProgramBlock(
-                        FreeVar(t0, vars_mapping[v], nothing),
-                        t0,
-                        0.0,
-                        [vars_mapping[v]],
-                        length(vars_mapping) + copied_vars,
-                        false,
-                    )
-                    if !haskey(in_blocks, vars_mapping[v])
-                        in_blocks[vars_mapping[v]] = []
+                    out_var = length(vars_mapping) + copied_vars
+                    push!(in_vars, out_var)
+                    copy_block =
+                        ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
+                    if v in vars_from_input
+                        if !haskey(in_blocks, vars_mapping[v])
+                            in_blocks[vars_mapping[v]] = []
+                        end
+                        push!(in_blocks[vars_mapping[v]], copy_block)
+                    else
+                        if !haskey(out_blocks, out_var)
+                            out_blocks[out_var] = []
+                        end
+                        push!(out_blocks[out_var], copy_block)
                     end
-                    push!(in_blocks[vars_mapping[v]], copy_block)
                 else
                     push!(in_vars, vars_mapping[v])
                 end

@@ -525,6 +525,7 @@ function solve_task(
     task_name,
     guiding_model_channels,
     grammar,
+    previous_traces,
     timeout_container,
     timeout,
     program_timeout,
@@ -603,8 +604,11 @@ function solve_task(
 
         need_export = false
         if need_export
-            export_solution_context(sc, task.name)
+            export_solution_context(sc, previous_traces)
         end
+    catch
+        export_solution_context(sc)
+        rethrow()
     finally
         mark_task_finished(guiding_model_channels, task_name)
     end
@@ -617,6 +621,7 @@ function try_solve_task(
     task_name,
     guiding_model_channels,
     grammar,
+    previous_traces,
     timeout_containers,
     timeout,
     program_timeout,
@@ -633,6 +638,7 @@ function try_solve_task(
             task_name,
             guiding_model_channels,
             grammar,
+            previous_traces,
             timeout_container,
             timeout,
             program_timeout,
@@ -654,6 +660,7 @@ function try_solve_tasks(
     tasks,
     guiding_model_server::GuidingModelServer,
     grammar,
+    previous_traces,
     timeout,
     program_timeout,
     type_weights,
@@ -673,6 +680,7 @@ function try_solve_tasks(
         # new_traces = map(tasks) do task
         task_name = "$(task.name)_$(randstring(6))"
         put!(register_channel, task_name)
+        prev_traces = get(previous_traces, task.name, nothing)
         while true
             reg_task_name, request_channel, result_channel, end_tasks_channel = take!(register_response_channel)
             if reg_task_name == task_name
@@ -681,6 +689,7 @@ function try_solve_tasks(
                     task_name,
                     (request_channel, result_channel, end_tasks_channel),
                     grammar,
+                    prev_traces,
                     timeout_containers,
                     timeout,
                     program_timeout,
@@ -705,6 +714,7 @@ function try_solve_tasks(
     tasks,
     guiding_model_server::PythonGuidingModelServer,
     grammar,
+    previous_traces,
     timeout,
     program_timeout,
     type_weights,
@@ -723,11 +733,13 @@ function try_solve_tasks(
         # new_traces = map(tasks) do task
         task_name = "$(task.name)_$(randstring(6))"
         conn = get_redis_connection(redis_db)
+        prev_traces = get(previous_traces, task.name, nothing)
         result = @time try_solve_task(
             task,
             task_name,
             conn,
             grammar,
+            prev_traces,
             timeout_containers,
             timeout,
             program_timeout,
@@ -919,11 +931,13 @@ function main(; kwargs...)
             # guiding_model = update_guiding_model(guiding_model, traces)
             # @info "Finished updating model with manual traces"
 
+            cur_traces = traces[grammar_hash][2]
             new_traces = try_solve_tasks(
                 worker_pool,
                 tasks,
                 guiding_model_server,
                 grammar,
+                cur_traces,
                 parsed_args[:timeout],
                 parsed_args[:program_timeout],
                 type_weights,
@@ -934,7 +948,6 @@ function main(; kwargs...)
             if !haskey(traces, grammar_hash)
                 traces[grammar_hash] = (grammar, Dict{String,Any}())
             end
-            cur_traces = traces[grammar_hash][2]
             for task_traces in new_traces
                 task_name = task_traces["task"].name
                 if !haskey(cur_traces, task_name)

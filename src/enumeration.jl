@@ -584,7 +584,7 @@ function try_run_block(
             inputs[i][var_id] = entry.values[i]
         end
     end
-    if !has_non_consts && length(block.input_vars) > 0
+    if !has_non_consts && length(block.input_vars) > 0 && !isa(block.p, FreeVar)
         if sc.verbose
             @info "Aborting $block_id $(block.p) because all inputs are const"
         end

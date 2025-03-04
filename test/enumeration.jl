@@ -97,6 +97,7 @@ using solver:
                 (request_channel, result_channel, end_tasks_channel),
                 grammar,
                 nothing,
+                nothing,
                 timeout,
                 program_timeout,
                 type_weights,

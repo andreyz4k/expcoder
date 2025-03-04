@@ -4,6 +4,7 @@ using NDPriorityQueues
 
 "Solution context"
 mutable struct SolutionContext
+    task::Task
     task_name::String
     entries::IndexedStorage{Entry}
     types::TypeStorage
@@ -105,6 +106,7 @@ function create_starting_context(
     argument_types = arguments_of_type(task.task_type)
     example_count = length(task.train_outputs)
     sc = SolutionContext(
+        task,
         task_name,
         IndexedStorage{Entry}(),
         TypeStorage(),

@@ -173,7 +173,7 @@ function sort_vars_and_blocks(sc::SolutionContext)
     return out_var_depths, out_block_depths
 end
 
-function export_solution_context(sc::SolutionContext, task_name)
+function export_solution_context(sc::SolutionContext, previous_traces = nothing)
     data = MetaGraph(
         DiGraph();  # underlying graph structure
         label_type = String,  # branch id
@@ -246,6 +246,31 @@ function export_solution_context(sc::SolutionContext, task_name)
         end
     end
 
+    prev_trace_blocks = []
+    prev_trace_rev_blocks = []
+    if !isnothing(previous_traces)
+        for (trace, _) in previous_traces
+            p = parse_program(trace.hit_program)
+            in_blocks, out_blocks, vars_mapping = _extract_blocks(sc.task, p, false)
+            for (var, blocks) in Iterators.flatten([out_blocks, in_blocks])
+                for (i, block) in enumerate(blocks)
+                    if isa(block.p, FreeVar)
+                        continue
+                    end
+                    if isa(block, ProgramBlock)
+                        if all(!is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_blocks)
+                            push!(prev_trace_blocks, block)
+                        end
+                    else
+                        if all(!is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_rev_blocks)
+                            push!(prev_trace_rev_blocks, block)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     for block_copy_id in 1:sc.block_copies_count[]
         outs = get_connected_to(sc.branch_incoming_blocks, block_copy_id)
         if isempty(outs)
@@ -274,8 +299,11 @@ function export_solution_context(sc::SolutionContext, task_name)
         if isa(block, ProgramBlock)
             block_dict["_is_reversible"] = block.is_reversible
             block_dict["_var_id"] = block.output_var
+            block_dict["_is_on_prev_trace"] =
+                !isa(block.p, FreeVar) && any(is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_blocks)
         else
             block_dict["_var_id"] = block.input_vars[1]
+            block_dict["_is_on_prev_trace"] = any(is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_rev_blocks)
         end
 
         add_vertex!(data, "b$block_copy_id", block_dict)
@@ -289,7 +317,7 @@ function export_solution_context(sc::SolutionContext, task_name)
 
     # @info data
     # filename = "solution_dumps/$(replace(task.name, " " => "_"))_p_$(sc.hyperparameters["path_cost_power"])_c_$(sc.hyperparameters["complexity_power"])_set_$(sc.type_weights["set"])_tuple_$(sc.type_weights["tuple2"])_list_$(sc.type_weights["list"])_any_$(sc.type_weights["any"])_$(now()).dot"
-    filename = "solution_dumps/$(replace(task_name, " " => "_"))_$(now()).dot"
+    filename = "solution_dumps/$(replace(sc.task.name, " " => "_"))_$(now()).dot"
     # mkdir("solution_dumps")
     savegraph(filename, data, DOTFormat())
     @info filename

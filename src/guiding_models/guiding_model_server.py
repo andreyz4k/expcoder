@@ -1,5 +1,4 @@
 import itertools
-import os
 from queue import Empty, SimpleQueue
 from threading import Lock, Thread
 from time import sleep, time
@@ -8,13 +7,14 @@ import traceback
 import numpy as np
 import redis
 import orjson
-from larch import pickle
 import torch
 from torch.utils.data import DataLoader, Dataset
 import wandb
 
 
+from embeddings_cache import SQLiteEmbeddingsCache, RedisEmbeddingsCache
 import guiding_model
+
 
 device = guiding_model.device
 
@@ -34,12 +34,13 @@ def current_grammar_loop(
         if new_funcs:
             with model_lock:
                 new_funcs_embedding = model.get_embedding(new_funcs).cpu()
-            for i, f in enumerate(new_funcs):
-                embeddings_cache[f] = new_funcs_embedding[i, :]
+            embeddings_cache.set_many(
+                {f: new_funcs_embedding[i, :] for i, f in enumerate(new_funcs)}
+            )
 
         with model_lock:
             grammar_func_encodings = torch.stack(
-                [embeddings_cache[f] for f in new_grammar]
+                embeddings_cache.get_batch(new_grammar)
             ).to(device)
 
             grammar_encodings = torch.mean(grammar_func_encodings, dim=0)
@@ -455,8 +456,12 @@ def embedding_iteration(
         f"Processed embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint} in {run_time} seconds"
     )
 
-    for i, trace_val in enumerate(trace_val_batch):
-        embeddings_cache[trace_val] = trace_val_embedding[i, :].clone()
+    embeddings_cache.set_many(
+        {
+            trace_val: trace_val_embedding[i, :].clone()
+            for i, trace_val in enumerate(trace_val_batch)
+        }
+    )
 
     wandb.log(
         {
@@ -525,11 +530,9 @@ def main_processing_iteration(
     # print(f"Processing batch {len(payloads)}")
     # print(payloads)
     trace_val_batch = torch.stack(
-        [
-            embeddings_cache[trace_val]
-            for v in payloads
-            for trace_val in v["trace_val"][0]
-        ]
+        embeddings_cache.get_batch(
+            [trace_val for v in payloads for trace_val in v["trace_val"][0]]
+        )
     )
     # print(trace_val_batch.shape)
     trace_val_mask = model.combine_masks([v["trace_val"][1] for v in payloads])
@@ -647,92 +650,6 @@ def finished_tasks_loop(redis_db, finished_tasks):
         finished_tasks.add(task_name)
 
 
-class EmbeddingsCache(dict):
-    max_chunk_size = 1000
-
-    def __init__(self, chunks=None):
-        if not chunks:
-            self.chunks = [{}]
-            self.saved_chunks = 0
-            self.last_chunk_saved_size = 0
-        else:
-            self.chunks = chunks
-            if len(self.chunks[-1]) == self.max_chunk_size:
-                self.saved_chunks = len(self.chunks)
-                self.last_chunk_saved_size = 0
-            else:
-                self.saved_chunks = len(self.chunks) - 1
-                self.last_chunk_saved_size = len(self.chunks[-1])
-
-    def __contains__(self, key):
-        result = any(key in chunk for chunk in self.chunks)
-        # print("Checking", key, result)
-        return result
-
-    def __getitem__(self, key):
-        # print("Getting", key)
-        start = time()
-        for chunk in self.chunks:
-            if key in chunk:
-                result = chunk[key]
-                wandb.log({"embedding_cache_get_time": time() - start})
-                return result
-        raise KeyError(key)
-
-    def __setitem__(self, key, value):
-        # print("Setting", key)
-        start = time()
-        for chunk in self.chunks:
-            if key in chunk:
-                break
-        else:  # key not found
-            if len(self.chunks[-1]) < self.max_chunk_size:
-                self.chunks[-1][key] = value
-            else:
-                self.chunks.append({key: value})
-        wandb.log({"embedding_cache_set_time": time() - start})
-
-    @classmethod
-    def restore_from_path(cls, dir_path):
-        start = time()
-        chunks = []
-        if not os.path.exists(dir_path):
-            os.mkdir(dir_path)
-        for fname in sorted(os.listdir(dir_path), key=lambda name: int(name[6:-4])):
-            with open(os.path.join(dir_path, fname), "rb") as f:
-                chunks.append(pickle.load(f))
-        result = cls(chunks)
-        print(f"Restored embeddings cache in {time() - start} seconds")
-        return result
-
-    def save_to_path(self, dir_path):
-        start = time()
-        chunks_to_save = range(self.saved_chunks, len(self.chunks))
-        total_length = 0
-        for i in chunks_to_save:
-            if i == len(self.chunks) - 1:
-                if len(self.chunks[i]) == self.last_chunk_saved_size:
-                    continue
-                else:
-                    self.last_chunk_saved_size = len(self.chunks[i])
-            total_length += len(self.chunks[i])
-            with open(os.path.join(dir_path, f"chunk_{i}.pkl"), "wb") as f:
-                pickle.dump(self.chunks[i], f)
-            if len(self.chunks[i]) == self.max_chunk_size:
-                self.saved_chunks = i + 1
-
-        if total_length > 0:
-            print(
-                f"Saved {len(chunks_to_save)} embeddings chunks of total length {total_length} in {time() - start} seconds"
-            )
-
-
-def save_embeddings_cache_loop(embeddings_cache):
-    while True:
-        sleep(60)
-        embeddings_cache.save_to_path("embeddings_cache")
-
-
 class GuidingRedisDataset(Dataset):
     def __init__(self, redis_db, model, model_lock, payload, embeddings_cache) -> None:
         super().__init__()
@@ -770,8 +687,12 @@ class GuidingRedisDataset(Dataset):
                     if guiding_model.device == "mps":
                         torch.mps.empty_cache()
 
-                for i, trace_val in enumerate(new_trace_vals):
-                    self.embeddings_cache[trace_val] = trace_val_embedding[i, :]
+                self.embeddings_cache.set_many(
+                    {
+                        trace_val: trace_val_embedding[i, :].clone()
+                        for i, trace_val in enumerate(new_trace_vals)
+                    }
+                )
 
             trace_mask = np.array(trace_mask)
             is_reversed = data["is_rev"]
@@ -814,12 +735,16 @@ class BatchCombiner:
             if new_funcs:
                 with self.model_lock:
                     new_funcs_embedding = self.model.get_embedding(new_funcs).cpu()
-                for i, f in enumerate(new_funcs):
-                    self.embeddings_cache[f] = new_funcs_embedding[i, :]
+                self.embeddings_cache.set_many(
+                    {
+                        f: new_funcs_embedding[i, :].clone()
+                        for i, f in enumerate(new_funcs)
+                    }
+                )
 
             with self.model_lock:
                 grammar_func_encodings = torch.stack(
-                    [self.embeddings_cache[f] for f in self.grammar]
+                    self.embeddings_cache.get_batch(self.grammar)
                 ).to(device)
 
                 grammar_encodings = torch.mean(grammar_func_encodings, dim=0)
@@ -835,7 +760,7 @@ class BatchCombiner:
 
             with self.model_lock:
                 trace_embiddings = torch.stack(
-                    [self.embeddings_cache[t] for t in all_traces]
+                    self.embeddings_cache.get_batch(all_traces)
                 ).to(device)
                 trace_mask = torch.tensor(trace_mask).to(device)
 
@@ -953,6 +878,7 @@ def load_model_loop(redis_db, model):
 def main():
     print("Starting guiding model server...")
     redis_db = sys.argv[1]
+    cache_type = sys.argv[2]
     model = guiding_model.create_model()
 
     load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
@@ -961,7 +887,20 @@ def main():
     model_lock = Lock()
     current_grammar = [None]
     finished_tasks = set()
-    embeddings_cache = EmbeddingsCache.restore_from_path("embeddings_cache")
+
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="expcoder",
+        # track hyperparameters and run metadata
+        config={},
+    )
+
+    if cache_type == "sqlite":
+        embeddings_cache = SQLiteEmbeddingsCache("embeddings_cache.db")
+    else:
+        embeddings_cache = RedisEmbeddingsCache(redis_db)
+
+    print(f"Cache size is {embeddings_cache.get_size()}")
     queues = {
         "embeddings_queue": SimpleQueue(),
         "inputs_queue": SimpleQueue(),
@@ -973,13 +912,6 @@ def main():
     }
     inputs_cache = {}
     outputs_cache = {}
-
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="expcoder",
-        # track hyperparameters and run metadata
-        config={},
-    )
 
     set_grammar_thread = Thread(
         target=current_grammar_loop,
@@ -1032,10 +964,6 @@ def main():
         ),
     )
     main_processing_thread.start()
-    save_embeddings_cache_thread = Thread(
-        target=save_embeddings_cache_loop, args=(embeddings_cache,)
-    )
-    save_embeddings_cache_thread.start()
     update_model_thread = Thread(
         target=update_model_loop, args=(redis_db, model, model_lock, embeddings_cache)
     )

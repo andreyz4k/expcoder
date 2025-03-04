@@ -438,6 +438,10 @@ function updated_branches(
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
     new_entry, new_entry_index = make_entry(sc, t_id, new_values)
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
+    # @info "Either branch $branch_id"
+    # @info "New entry $new_entry"
+    # @info "Possible result $possible_result"
+    # @info "New parents children $new_parents_children"
     parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
@@ -746,10 +750,11 @@ function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_bra
     if isempty(unfixed_vars)
         return false, Set([(block_id, fixed_branches, target_output)]), Set()
     end
-    # @info fixed_branches
+    # @info "Fixed branches $fixed_branches"
     # @info unfixed_vars
     inputs = Dict(v => b for (v, b) in all_inputs if in(v, unfixed_vars))
     new_fixed_branches = merge(fixed_branches, inputs)
+    # @info "New fixed branches $new_fixed_branches"
     if all(sc.branch_is_explained[br_id] for br_id in values(inputs))
         return false, Set([(block_id, new_fixed_branches, target_output)]), Set()
     end
@@ -769,11 +774,17 @@ function _downstream_blocks_existing_branch(sc, var_id, out_branch_id, fixed_bra
     outputs = Set()
     fixed_branches = merge(fixed_branches, Dict(var_id => out_branch_id))
     next_blocks = get_connected_from(sc.branch_outgoing_blocks, out_branch_id)
+    # @info "Possible next blocks $next_blocks"
     for (b_copy_id, b_id) in next_blocks
         block = sc.blocks[b_id]
+        # @info "Block $b_id $block"
         unfixed_vars = [v_id for v_id in block.input_vars if !haskey(fixed_branches, v_id)]
+        # @info "Unfixed vars $unfixed_vars"
         allow_block_fails, block_options, unfixed_options =
             _downstream_branch_options_known(sc, b_id, b_copy_id, fixed_branches, unfixed_vars)
+        # @info "Allow block fails $allow_block_fails"
+        # @info "Block options $block_options"
+        # @info "Unfixed options $unfixed_options"
         allow_fails |= allow_block_fails
         union!(outputs, block_options)
         # union!(unexplained_options, unfixed_options)

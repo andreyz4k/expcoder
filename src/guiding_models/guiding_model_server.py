@@ -48,60 +48,71 @@ def current_grammar_loop(
         redis_conn.delete("set_current_grammar")
 
 
+def fetching_iteration(
+    redis_conn, queues, embeddings_cache, inputs_cache, outputs_cache, finished_tasks
+):
+    start = time()
+    payload_str = redis_conn.lpop("requests")
+    if not payload_str:
+        sleep(0.001)
+        return
+    payload = orjson.loads(payload_str)
+    if payload["task_name"] in finished_tasks:
+        return
+
+    trace_val = payload["trace_val"]
+
+    new_trace_vals = set(v for v in trace_val[0] if v not in embeddings_cache)
+
+    out_queue = "processing_queue"
+
+    if new_trace_vals:
+        for v in new_trace_vals:
+            queues["embeddings_queue"].put(
+                {
+                    "task_name": payload["task_name"],
+                    "trace_val": v,
+                }
+            )
+
+        out_queue = "waiting_for_embedding"
+        payload["needs_embedding"] = True
+
+    if payload["task_name"] not in outputs_cache:
+        queues["outputs_queue"].put(
+            {"task_name": payload["task_name"], "output": payload["output"]},
+        )
+        out_queue = "waiting_for_outputs"
+        payload["needs_outputs"] = True
+
+    if payload["task_name"] not in inputs_cache:
+        queues["inputs_queue"].put(
+            {"task_name": payload["task_name"], "inputs": payload["inputs"]}
+        )
+        out_queue = "waiting_for_inputs"
+        payload["needs_inputs"] = True
+
+    payload["start_time"] = start
+    payload["fetch_time"] = time() - start
+    if out_queue == "processing_queue":
+        queues[out_queue].put(payload)
+    else:
+        queues[out_queue][0].put(payload)
+
+
 def fetching_loop(
     redis_db, queues, embeddings_cache, inputs_cache, outputs_cache, finished_tasks
 ):
     redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
-    it = 0
     while True:
-        start = time()
-        payload_str = redis_conn.lpop("requests")
-        if not payload_str:
-            sleep(0.001)
-            continue
-        payload = orjson.loads(payload_str)
-        if payload["task_name"] in finished_tasks:
-            continue
-
-        trace_val = payload["trace_val"]
-
-        new_trace_vals = set(v for v in trace_val[0] if v not in embeddings_cache)
-
-        out_queue = "processing_queue"
-        it += 1
-
-        if new_trace_vals:
-            for v in new_trace_vals:
-                queues["embeddings_queue"].put(
-                    {
-                        "task_name": payload["task_name"],
-                        "trace_val": v,
-                    }
-                )
-
-            out_queue = "waiting_for_embedding"
-            payload["needs_embedding"] = True
-
-        if payload["task_name"] not in outputs_cache:
-            queues["outputs_queue"].put(
-                {"task_name": payload["task_name"], "output": payload["output"]},
-            )
-            out_queue = "waiting_for_outputs"
-            payload["needs_outputs"] = True
-
-        if payload["task_name"] not in inputs_cache:
-            queues["inputs_queue"].put(
-                {"task_name": payload["task_name"], "inputs": payload["inputs"]}
-            )
-            out_queue = "waiting_for_inputs"
-            payload["needs_inputs"] = True
-
-        payload["start_time"] = start
-        payload["fetch_time"] = time() - start
-        if out_queue == "processing_queue":
-            queues[out_queue].put(payload)
-        else:
-            queues[out_queue][0].put(payload)
+        fetching_iteration(
+            redis_conn,
+            queues,
+            embeddings_cache,
+            inputs_cache,
+            outputs_cache,
+            finished_tasks,
+        )
 
 
 def check_next_input_batches(
@@ -164,72 +175,74 @@ def preprocess_inputs_entry(inputs_entry):
     return combined_batch, subbatch_mask
 
 
+def inputs_iteration(
+    queues, model, model_lock, inputs_cache, finished_tasks, batch_size
+):
+    start = time()
+    inputs_batch = []
+    task_names = set()
+    while len(inputs_batch) < batch_size:
+        try:
+            new_payload = queues["inputs_queue"].get_nowait()
+            task_name = new_payload["task_name"]
+            if (
+                task_name in finished_tasks
+                or task_name in task_names
+                or task_name in inputs_cache
+            ):
+                continue
+            task_names.add(task_name)
+            inputs_batch.append(new_payload)
+        except Empty:
+            break
+    if not inputs_batch:
+        check_next_input_batches(queues, inputs_cache, finished_tasks, 0.0, 0.0, start)
+        sleep(0.001)
+        return
+
+    # print("Processing inputs batch")
+    start_processing = time()
+
+    combined_inputs_batch = [preprocess_inputs_entry(inputs) for inputs in inputs_batch]
+
+    preprocessing_time = time() - start_processing
+
+    with model_lock:
+        start_processing = time()
+        combined_inputs_batch = model.process_input_output_batch(combined_inputs_batch)
+
+        with torch.no_grad():
+            input_encodings = model.input_output_encoder(*combined_inputs_batch)
+
+        for i, v in enumerate(inputs_batch):
+            inputs_cache[v["task_name"]] = input_encodings[i, :]
+
+        processing_time = time() - start_processing
+
+    wandb.log(
+        {
+            "inputs_processing_time": processing_time,
+            "inputs_preprocessing_time": preprocessing_time,
+            "inputs_batch_size": len(inputs_batch),
+        }
+    )
+    # print("Processed inputs batch")
+    check_next_input_batches(
+        queues,
+        inputs_cache,
+        finished_tasks,
+        processing_time,
+        preprocessing_time,
+        start,
+    )
+
+
 def inputs_loop(queues, model, model_lock, inputs_cache, finished_tasks):
     try:
         batch_size = 32
         while True:
-            start = time()
-            inputs_batch = []
-            task_names = set()
-            while len(inputs_batch) < batch_size:
-                try:
-                    new_payload = queues["inputs_queue"].get_nowait()
-                    task_name = new_payload["task_name"]
-                    if (
-                        task_name in finished_tasks
-                        or task_name in task_names
-                        or task_name in inputs_cache
-                    ):
-                        continue
-                    task_names.add(task_name)
-                    inputs_batch.append(new_payload)
-                except Empty:
-                    break
-            if not inputs_batch:
-                check_next_input_batches(
-                    queues, inputs_cache, finished_tasks, 0.0, 0.0, start
-                )
-                sleep(0.001)
-                continue
-
-            # print("Processing inputs batch")
-            start_processing = time()
-
-            combined_inputs_batch = [
-                preprocess_inputs_entry(inputs) for inputs in inputs_batch
-            ]
-
-            preprocessing_time = time() - start_processing
-
-            with model_lock:
-                start_processing = time()
-                combined_inputs_batch = model.process_input_output_batch(
-                    combined_inputs_batch
-                )
-
-                with torch.no_grad():
-                    input_encodings = model.input_output_encoder(*combined_inputs_batch)
-
-                for i, v in enumerate(inputs_batch):
-                    inputs_cache[v["task_name"]] = input_encodings[i, :]
-
-                processing_time = time() - start_processing
-
-            wandb.log(
-                {
-                    "inputs_processing_time": processing_time,
-                    "inputs_preprocessing_time": preprocessing_time,
-                    "inputs_batch_size": len(inputs_batch),
-                }
-            )
-            # print("Processed inputs batch")
-            check_next_input_batches(
-                queues,
-                inputs_cache,
-                finished_tasks,
-                processing_time,
-                preprocessing_time,
-                start,
+            inputs_iteration(
+                queues, model, model_lock, inputs_cache, finished_tasks, batch_size
             )
     finally:
         print("Exiting inputs loop")
@@ -281,73 +294,79 @@ def preprocess_outputs_entry(outputs_entry):
     return output_grids, subbatch_mask
 
 
+def outputs_iteration(
+    queues, model, model_lock, outputs_cache, finished_tasks, batch_size
+):
+    start = time()
+    outputs_batch = []
+    task_names = set()
+    while len(outputs_batch) < batch_size:
+        try:
+            new_payload = queues["outputs_queue"].get_nowait()
+            task_name = new_payload["task_name"]
+            if (
+                task_name in finished_tasks
+                or task_name in task_names
+                or task_name in outputs_cache
+            ):
+                continue
+            task_names.add(task_name)
+            outputs_batch.append(new_payload)
+        except Empty:
+            break
+    if not outputs_batch:
+        check_next_output_batches(
+            queues, outputs_cache, finished_tasks, 0.0, 0.0, start
+        )
+        sleep(0.001)
+        return
+
+    # print("Processing outputs batch")
+
+    start_processing = time()
+
+    combined_outputs_batch = [
+        preprocess_outputs_entry(outputs) for outputs in outputs_batch
+    ]
+
+    preprocessing_time = time() - start_processing
+    with model_lock:
+        start_processing = time()
+        combined_outputs_batch = model.process_input_output_batch(
+            combined_outputs_batch
+        )
+        with torch.no_grad():
+            output_encodings = model.input_output_encoder(*combined_outputs_batch)
+
+        for i, v in enumerate(outputs_batch):
+            outputs_cache[v["task_name"]] = output_encodings[i, :]
+
+        run_time = time() - start_processing
+
+    wandb.log(
+        {
+            "outputs_processing_time": run_time,
+            "outputs_preprocessing_time": preprocessing_time,
+            "outputs_batch_size": len(outputs_batch),
+        }
+    )
+    # print("Processed outputs batch")
+    check_next_output_batches(
+        queues,
+        outputs_cache,
+        finished_tasks,
+        run_time,
+        preprocessing_time,
+        start,
+    )
+
+
 def outputs_loop(queues, model, model_lock, outputs_cache, finished_tasks):
     try:
         batch_size = 32
         while True:
-            start = time()
-            outputs_batch = []
-            task_names = set()
-            while len(outputs_batch) < batch_size:
-                try:
-                    new_payload = queues["outputs_queue"].get_nowait()
-                    task_name = new_payload["task_name"]
-                    if (
-                        task_name in finished_tasks
-                        or task_name in task_names
-                        or task_name in outputs_cache
-                    ):
-                        continue
-                    task_names.add(task_name)
-                    outputs_batch.append(new_payload)
-                except Empty:
-                    break
-            if not outputs_batch:
-                check_next_output_batches(
-                    queues, outputs_cache, finished_tasks, 0.0, 0.0, start
-                )
-                sleep(0.001)
-                continue
-
-            # print("Processing outputs batch")
-
-            start_processing = time()
-
-            combined_outputs_batch = [
-                preprocess_outputs_entry(outputs) for outputs in outputs_batch
-            ]
-
-            preprocessing_time = time() - start_processing
-            with model_lock:
-                start_processing = time()
-                combined_outputs_batch = model.process_input_output_batch(
-                    combined_outputs_batch
-                )
-                with torch.no_grad():
-                    output_encodings = model.input_output_encoder(
-                        *combined_outputs_batch
-                    )
-
-                for i, v in enumerate(outputs_batch):
-                    outputs_cache[v["task_name"]] = output_encodings[i, :]
-
-                run_time = time() - start_processing
-
-            wandb.log(
-                {
-                    "outputs_processing_time": run_time,
-                    "outputs_preprocessing_time": preprocessing_time,
-                    "outputs_batch_size": len(outputs_batch),
-                }
-            )
-            # print("Processed outputs batch")
-            check_next_output_batches(
-                queues,
-                outputs_cache,
-                finished_tasks,
-                run_time,
-                preprocessing_time,
-                start,
+            outputs_iteration(
+                queues, model, model_lock, outputs_cache, finished_tasks, batch_size
             )
     finally:
         print("Exiting output loop")
@@ -377,87 +396,212 @@ def check_next_embedding_batches(
         queues["processing_queue"].put(payload)
 
 
+def embedding_iteration(
+    queues,
+    pending_payloads,
+    model,
+    model_lock,
+    embeddings_cache,
+    finished_tasks,
+    max_batch_size,
+    gpu_mem_threshold,
+):
+    start = time()
+    trace_val_batch = []
+    max_value_length = 0
+    mem_footprint = 0
+    while len(trace_val_batch) < max_batch_size:
+        try:
+            if pending_payloads:
+                new_payload = pending_payloads.pop()
+            else:
+                new_payload = queues["embeddings_queue"].get_nowait()
+            if (
+                new_payload["task_name"] in finished_tasks
+                or new_payload["trace_val"] in embeddings_cache
+            ):
+                continue
+            new_val_max_length = max(max_value_length, len(new_payload["trace_val"]))
+            new_mem_footprint = new_val_max_length**2 * (len(trace_val_batch) + 1)
+            if new_mem_footprint > gpu_mem_threshold and len(trace_val_batch) > 0:
+                pending_payloads.append(new_payload)
+                break
+            trace_val_batch.append(new_payload["trace_val"])
+            max_value_length = new_val_max_length
+            mem_footprint = new_mem_footprint
+        except Empty:
+            break
+    if not trace_val_batch:
+        check_next_embedding_batches(
+            queues, embeddings_cache, finished_tasks, 0.0, start
+        )
+        sleep(0.001)
+        return
+
+    # print(f"Got embeddings batch")
+
+    with model_lock:
+        start_processing = time()
+        print(
+            f"Processing embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint}"
+        )
+        trace_val_embedding = model.get_embedding(trace_val_batch).cpu()
+        if guiding_model.device == "mps":
+            torch.mps.empty_cache()
+        # print("Processed embeddings batch")
+        run_time = time() - start_processing
+
+    print(
+        f"Processed embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint} in {run_time} seconds"
+    )
+
+    for i, trace_val in enumerate(trace_val_batch):
+        embeddings_cache[trace_val] = trace_val_embedding[i, :].clone()
+
+    wandb.log(
+        {
+            "embedding_processing_time": run_time,
+            "embedding_batch_size": len(trace_val_batch),
+            "embedding_batch_max_size": max_value_length,
+            "embedding_batch_mem_footprint": mem_footprint,
+        }
+    )
+
+    check_next_embedding_batches(
+        queues, embeddings_cache, finished_tasks, run_time, start
+    )
+
+
 def embedding_loop(queues, model, model_lock, embeddings_cache, finished_tasks):
     try:
         gpu_mem_threshold = 5 * 10**7
         max_batch_size = 128
-        pending_payload = None
+        pending_payloads = []
 
         while True:
-            start = time()
-            trace_val_batch = []
-            max_value_length = 0
-            mem_footprint = 0
-            while len(trace_val_batch) < max_batch_size:
-                try:
-                    if pending_payload:
-                        new_payload = pending_payload
-                        pending_payload = None
-                    else:
-                        new_payload = queues["embeddings_queue"].get_nowait()
-                    if (
-                        new_payload["task_name"] in finished_tasks
-                        or new_payload["trace_val"] in embeddings_cache
-                    ):
-                        continue
-                    new_val_max_length = max(
-                        max_value_length, len(new_payload["trace_val"])
-                    )
-                    new_mem_footprint = new_val_max_length**2 * (
-                        len(trace_val_batch) + 1
-                    )
-                    if (
-                        new_mem_footprint > gpu_mem_threshold
-                        and len(trace_val_batch) > 0
-                    ):
-                        pending_payload = new_payload
-                        break
-                    trace_val_batch.append(new_payload["trace_val"])
-                    max_value_length = new_val_max_length
-                    mem_footprint = new_mem_footprint
-                except Empty:
-                    break
-            if not trace_val_batch:
-                check_next_embedding_batches(
-                    queues, embeddings_cache, finished_tasks, 0.0, start
-                )
-                sleep(0.001)
-                continue
-
-            # print(f"Got embeddings batch")
-
-            with model_lock:
-                start_processing = time()
-                print(
-                    f"Processing embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint}"
-                )
-                trace_val_embedding = model.get_embedding(trace_val_batch).cpu()
-                if guiding_model.device == "mps":
-                    torch.mps.empty_cache()
-                # print("Processed embeddings batch")
-                run_time = time() - start_processing
-
-            print(
-                f"Processed embeddings batch {len(trace_val_batch)} {max_value_length} {mem_footprint} in {run_time} seconds"
-            )
-
-            for i, trace_val in enumerate(trace_val_batch):
-                embeddings_cache[trace_val] = trace_val_embedding[i, :].clone()
-
-            wandb.log(
-                {
-                    "embedding_processing_time": run_time,
-                    "embedding_batch_size": len(trace_val_batch),
-                    "embedding_batch_max_size": max_value_length,
-                    "embedding_batch_mem_footprint": mem_footprint,
-                }
-            )
-
-            check_next_embedding_batches(
-                queues, embeddings_cache, finished_tasks, run_time, start
+            embedding_iteration(
+                queues,
+                pending_payloads,
+                model,
+                model_lock,
+                embeddings_cache,
+                finished_tasks,
+                max_batch_size,
+                gpu_mem_threshold,
             )
     finally:
         print("Exiting embedding loop")
+
+
+def main_processing_iteration(
+    redis_conn,
+    queues,
+    model,
+    model_lock,
+    current_grammar,
+    embeddings_cache,
+    inputs_cache,
+    outputs_cache,
+    finished_tasks,
+    batch_size,
+):
+    start = time()
+    payloads = []
+    while len(payloads) < batch_size:
+        try:
+            new_payload = queues["processing_queue"].get_nowait()
+            if new_payload["task_name"] in finished_tasks:
+                continue
+            payloads.append(new_payload)
+        except Empty:
+            break
+
+    if not payloads:
+        sleep(0.001)
+        return
+    # print("Got processing batch")
+
+    start_processing = time()
+    # print(f"Processing batch {len(payloads)}")
+    # print(payloads)
+    trace_val_batch = torch.stack(
+        [
+            embeddings_cache[trace_val]
+            for v in payloads
+            for trace_val in v["trace_val"][0]
+        ]
+    )
+    # print(trace_val_batch.shape)
+    trace_val_mask = model.combine_masks([v["trace_val"][1] for v in payloads])
+    stacking_time = time() - start_processing
+    # print(trace_val_mask.shape)
+
+    with model_lock:
+        start_processing = time()
+        with torch.no_grad():
+            trace_val_batch = trace_val_batch.to(device)
+            trace_val_mask = model.transfer_to_device(trace_val_mask)
+            trace_val_embedding = torch.matmul(trace_val_batch.H, trace_val_mask).H
+            # print(trace_val_embedding)
+            # print(trace_val_embedding.shape)
+            input_encodings = torch.stack(
+                [inputs_cache[v["task_name"]] for v in payloads]
+            )
+            # print(input_encodings)
+            # print(input_encodings.shape)
+            output_encodings = torch.stack(
+                [outputs_cache[v["task_name"]] for v in payloads]
+            )
+            is_reversed = model.transfer_to_device([[v["is_known"]] for v in payloads])
+            # print(is_reversed.shape)
+            grammar_func_encodings, grammar_encodings = current_grammar[0]
+            result = model.body(
+                grammar_func_encodings,
+                grammar_encodings,
+                input_encodings,
+                output_encodings,
+                trace_val_embedding,
+                is_reversed,
+            ).cpu()
+        run_time = time() - start_processing
+    # print(result)
+    # print(result.shape)
+
+    wandb.log(
+        {
+            "processing_stacking_time": stacking_time,
+            "processing_time": run_time,
+            "processing_batch_size": len(payloads),
+        }
+    )
+
+    for i, payload in enumerate(payloads):
+        full_run_time = time() - payload["start_time"]
+        out_payload = {
+            "entry_id": payload["entry_id"],
+            "result": result[i, :].tolist(),
+            "is_known": payload["is_known"],
+            "times": {
+                "fetch": payload["fetch_time"] + (time() - start),
+                "processing_stacking": stacking_time,
+                "processing": run_time,
+                "run": full_run_time,
+            },
+        }
+        if "input_time" in payload:
+            out_payload["times"]["input"] = payload["input_time"]
+            out_payload["times"]["input_preprocessing"] = payload[
+                "input_preprocessing_time"
+            ]
+        if "output_time" in payload:
+            out_payload["times"]["output"] = payload["output_time"]
+            out_payload["times"]["output_preprocessing"] = payload[
+                "output_preprocessing_time"
+            ]
+        if "embedding_time" in payload:
+            out_payload["times"]["embedding"] = payload["embedding_time"]
+        redis_conn.rpush(payload["task_name"], orjson.dumps(out_payload))
+    # print("Processed batch")
 
 
 def main_processing_loop(
@@ -475,107 +619,18 @@ def main_processing_loop(
         redis_conn = redis.Redis(host="localhost", port=6379, db=redis_db)
         batch_size = 128
         while True:
-            start = time()
-            payloads = []
-            while len(payloads) < batch_size:
-                try:
-                    new_payload = queues["processing_queue"].get_nowait()
-                    if new_payload["task_name"] in finished_tasks:
-                        continue
-                    payloads.append(new_payload)
-                except Empty:
-                    break
-
-            if not payloads:
-                sleep(0.001)
-                continue
-            # print("Got processing batch")
-
-            start_processing = time()
-            # print(f"Processing batch {len(payloads)}")
-            # print(payloads)
-            trace_val_batch = torch.stack(
-                [
-                    embeddings_cache[trace_val]
-                    for v in payloads
-                    for trace_val in v["trace_val"][0]
-                ]
+            main_processing_iteration(
+                redis_conn,
+                queues,
+                model,
+                model_lock,
+                current_grammar,
+                embeddings_cache,
+                inputs_cache,
+                outputs_cache,
+                finished_tasks,
+                batch_size,
             )
-            # print(trace_val_batch.shape)
-            trace_val_mask = model.combine_masks([v["trace_val"][1] for v in payloads])
-            stacking_time = time() - start_processing
-            # print(trace_val_mask.shape)
-
-            with model_lock:
-                start_processing = time()
-                with torch.no_grad():
-                    trace_val_batch = trace_val_batch.to(device)
-                    trace_val_mask = model.transfer_to_device(trace_val_mask)
-                    trace_val_embedding = torch.matmul(
-                        trace_val_batch.H, trace_val_mask
-                    ).H
-                    # print(trace_val_embedding)
-                    # print(trace_val_embedding.shape)
-                    input_encodings = torch.stack(
-                        [inputs_cache[v["task_name"]] for v in payloads]
-                    )
-                    # print(input_encodings)
-                    # print(input_encodings.shape)
-                    output_encodings = torch.stack(
-                        [outputs_cache[v["task_name"]] for v in payloads]
-                    )
-                    is_reversed = model.transfer_to_device(
-                        [[v["is_known"]] for v in payloads]
-                    )
-                    # print(is_reversed.shape)
-                    grammar_func_encodings, grammar_encodings = current_grammar[0]
-                    result = model.body(
-                        grammar_func_encodings,
-                        grammar_encodings,
-                        input_encodings,
-                        output_encodings,
-                        trace_val_embedding,
-                        is_reversed,
-                    ).cpu()
-                run_time = time() - start_processing
-            # print(result)
-            # print(result.shape)
-
-            wandb.log(
-                {
-                    "processing_stacking_time": stacking_time,
-                    "processing_time": run_time,
-                    "processing_batch_size": len(payloads),
-                }
-            )
-
-            for i, payload in enumerate(payloads):
-                full_run_time = time() - payload["start_time"]
-                out_payload = {
-                    "entry_id": payload["entry_id"],
-                    "result": result[i, :].tolist(),
-                    "is_known": payload["is_known"],
-                    "times": {
-                        "fetch": payload["fetch_time"] + (time() - start),
-                        "processing_stacking": stacking_time,
-                        "processing": run_time,
-                        "run": full_run_time,
-                    },
-                }
-                if "input_time" in payload:
-                    out_payload["times"]["input"] = payload["input_time"]
-                    out_payload["times"]["input_preprocessing"] = payload[
-                        "input_preprocessing_time"
-                    ]
-                if "output_time" in payload:
-                    out_payload["times"]["output"] = payload["output_time"]
-                    out_payload["times"]["output_preprocessing"] = payload[
-                        "output_preprocessing_time"
-                    ]
-                if "embedding_time" in payload:
-                    out_payload["times"]["embedding"] = payload["embedding_time"]
-                redis_conn.rpush(payload["task_name"], orjson.dumps(out_payload))
-            # print("Processed batch")
     finally:
         print("Exiting main processing loop")
 
@@ -616,21 +671,26 @@ class EmbeddingsCache(dict):
 
     def __getitem__(self, key):
         # print("Getting", key)
+        start = time()
         for chunk in self.chunks:
             if key in chunk:
-                return chunk[key]
+                result = chunk[key]
+                wandb.log({"embedding_cache_get_time": time() - start})
+                return result
         raise KeyError(key)
 
     def __setitem__(self, key, value):
         # print("Setting", key)
+        start = time()
         for chunk in self.chunks:
             if key in chunk:
-                return
+                break
         else:  # key not found
             if len(self.chunks[-1]) < self.max_chunk_size:
                 self.chunks[-1][key] = value
             else:
                 self.chunks.append({key: value})
+        wandb.log({"embedding_cache_set_time": time() - start})
 
     @classmethod
     def restore_from_path(cls, dir_path):

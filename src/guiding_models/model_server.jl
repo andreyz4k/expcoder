@@ -223,7 +223,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
     end
 end
 
-function start_server(server::GuidingModelServer, is_test = false)
+function start_server(server::GuidingModelServer, is_test = false; wandb_run_id = nothing)
     server.registration_loop = Threads.@spawn _registration_loop(server)
     server.processing_loop = Threads.@spawn _guiding_processing_loop(server)
 end

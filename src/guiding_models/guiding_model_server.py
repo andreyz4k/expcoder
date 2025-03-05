@@ -879,6 +879,10 @@ def main():
     print("Starting guiding model server...")
     redis_db = sys.argv[1]
     cache_type = sys.argv[2]
+    wandb_run_id = None
+    if len(sys.argv) > 3:
+        wandb_run_id = sys.argv[3]
+    print(f"Wandb run id: {wandb_run_id}")
     model = guiding_model.create_model()
 
     load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
@@ -891,6 +895,7 @@ def main():
     wandb.init(
         # set the wandb project where this run will be logged
         project="expcoder",
+        id=wandb_run_id,
         # track hyperparameters and run metadata
         config={},
     )

@@ -25,11 +25,13 @@ SharedArrays = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
 SharedMemoryLocks = "7bb51ff7-3c6a-41be-b642-de78e6952b49"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StitchBindings = "98c25cc8-eb50-4420-96bf-d3053e46f68d"
+Wandb = "ad70616a-06c9-5745-b1f1-6a5f42545108"
 
 [compat]
 CondaPkg = "0.2.24"
 JLD2 = "0.4.53"
 Redis = "3.0.0"
+Wandb = "0.5.6"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"

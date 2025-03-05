@@ -112,18 +112,20 @@ end
 
 import Redis
 
-function start_server(server::PythonGuidingModelServer, is_test = false)
+function start_server(server::PythonGuidingModelServer, is_test = false; wandb_run_id = nothing)
     @info "Starting Python model server"
     # Reset redis db
     server.model.redis_conn = get_redis_connection(server.model.redis_db)
-    @info server.model.redis_db
     Redis.flushdb(server.model.redis_conn, "sync")
     cache_type = "sqlite"
-    cmd = `.CondaPkg/env/bin/python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
+    if !isnothing(wandb_run_id)
+        cmd = `.CondaPkg/env/bin/python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type) $(wandb_run_id)`
+    else
+        cmd = `.CondaPkg/env/bin/python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
+    end
     if is_test
         cmd = addenv(cmd, "WANDB_MODE" => "offline")
     end
-    @info pwd()
     server.model.process = run(pipeline(cmd, stdout = stdout, stderr = stderr); wait = false)
     if !isnothing(server.model.load_path)
         Redis.set(server.model.redis_conn, "load_model", server.model.load_path)

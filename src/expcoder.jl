@@ -873,6 +873,8 @@ function log_grammar(iteration, grammar)
     @info ""
 end
 
+using Wandb
+
 function main(; kwargs...)
     @info "Starting enumeration service"
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
@@ -890,9 +892,15 @@ function main(; kwargs...)
     end
 
     @info "Parsed arguments $parsed_args"
+
+    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+    lg = WandbLogger(; project = "expcoder", name = nothing, config = hyperparameters)
+    wandb_run_id = string(lg.wrun.id)
+    @info "Wandb run id $wandb_run_id"
+
     grammar_hash = hash(grammar)
     guiding_model_server = GuidingModelServer(guiding_model)
-    start_server(guiding_model_server)
+    start_server(guiding_model_server; wandb_run_id = wandb_run_id)
     set_current_grammar!(guiding_model, grammar)
     worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
 
@@ -909,7 +917,6 @@ function main(; kwargs...)
         "set" => 1.0,
         "any" => 1.0,
     )
-    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
 
     # tasks = tasks[begin:10]
 
@@ -948,6 +955,7 @@ function main(; kwargs...)
             if !haskey(traces, grammar_hash)
                 traces[grammar_hash] = (grammar, Dict{String,Any}())
             end
+            Wandb.log(lg, Dict("solved_tasks" => length(new_traces)))
             for task_traces in new_traces
                 task_name = task_traces["task"].name
                 if !haskey(cur_traces, task_name)
@@ -979,5 +987,6 @@ function main(; kwargs...)
     finally
         stop(worker_pool)
         stop_server(guiding_model_server, true)
+        close(lg)
     end
 end

@@ -14,5 +14,6 @@ include("compression.jl")
 include("manual_traces.jl")
 include("solution_builder.jl")
 include("expcoder.jl")
+include("hyperparam_search.jl")
 
 end

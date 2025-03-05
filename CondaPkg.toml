@@ -1,12 +1,13 @@
 [deps]
-redis-py = ""
-tqdm = ""
-optimum = ""
-onnx = ""
 einops = ""
 numpy = ""
-wandb = ""
+onnx = ""
+optimum = ""
 orjson = ""
+redis-py = ""
+sqlite = ""
+tqdm = ""
+wandb = ""
 
 [pip.deps]
 larch-pickle = ""

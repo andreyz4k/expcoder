@@ -20,35 +20,20 @@ class SQLiteEmbeddingsCache:
             db_path (str): Path to the SQLite database file
         """
         self.db_path = db_path
-        self._conn = None
-        self._init_connection()
         self._init_db()
 
-    def _init_connection(self):
-        """Initialize the database connection with proper settings."""
-        if self._conn is not None:
-            return
+    def _get_connection(self):
+        """Get a new database connection with proper settings.
 
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._conn.execute("PRAGMA cache_size = 1000000")
-        # # Enable WAL mode for better concurrent access
-        # self._conn.execute("PRAGMA journal_mode=WAL")
-        # # Set busy timeout to avoid "database is locked" errors
-        # self._conn.execute("PRAGMA busy_timeout=30000")
-
-    def __del__(self):
-        """Cleanup database connection on object deletion."""
-        if self._conn is not None:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            self._conn = None
+        Yields:
+            sqlite3.Connection: Database connection
+        """
+        return sqlite3.connect(self.db_path)
 
     def _init_db(self):
         """Initialize the SQLite database with required table."""
-        with self._conn:
-            self._conn.execute(
+        with self._get_connection() as conn:
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS embeddings_cache (
                     key TEXT PRIMARY KEY,
@@ -57,6 +42,7 @@ class SQLiteEmbeddingsCache:
                 )
             """
             )
+            conn.execute("PRAGMA cache_size = 1000000")
 
     def __contains__(self, key):
         """Check if a key exists in the cache.
@@ -67,11 +53,11 @@ class SQLiteEmbeddingsCache:
         Returns:
             bool: True if key exists, False otherwise
         """
-
-        cursor = self._conn.execute(
-            "SELECT 1 FROM embeddings_cache WHERE key = ?", (key,)
-        )
-        return cursor.fetchone() is not None
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM embeddings_cache WHERE key = ?", (key,)
+            )
+            return cursor.fetchone() is not None
 
     def __getitem__(self, key):
         """Retrieve a tensor from the cache.
@@ -86,8 +72,8 @@ class SQLiteEmbeddingsCache:
             KeyError: If key doesn't exist in cache
         """
         start = time()
-        with self._conn:
-            cursor = self._conn.execute(
+        with self._get_connection() as conn:
+            cursor = conn.execute(
                 "SELECT array_data FROM embeddings_cache WHERE key = ?", (key,)
             )
             row = cursor.fetchone()
@@ -113,8 +99,8 @@ class SQLiteEmbeddingsCache:
         # Always save tensors from CPU to ensure compatibility
         tensor_bytes = value.cpu().numpy().tobytes()
 
-        with self._conn:
-            self._conn.execute(
+        with self._get_connection() as conn:
+            conn.execute(
                 """
                 INSERT OR REPLACE INTO embeddings_cache (key, array_data)
                 VALUES (?, ?)
@@ -136,8 +122,8 @@ class SQLiteEmbeddingsCache:
         start = time()
         placeholders = ",".join("?" * len(keys))
 
-        with self._conn:
-            cursor = self._conn.execute(
+        with self._get_connection() as conn:
+            cursor = conn.execute(
                 f"SELECT key, array_data FROM embeddings_cache WHERE key IN ({placeholders})",
                 keys,
             )
@@ -165,8 +151,8 @@ class SQLiteEmbeddingsCache:
             tensor_bytes = tensor.cpu().numpy().tobytes()
             binary_data.append((key, tensor_bytes))
 
-        with self._conn:
-            self._conn.executemany(
+        with self._get_connection() as conn:
+            conn.executemany(
                 """
                 INSERT OR REPLACE INTO embeddings_cache (key, array_data)
                 VALUES (?, ?)
@@ -206,8 +192,8 @@ class SQLiteEmbeddingsCache:
 
     def clear(self):
         """Clear all entries from the cache."""
-        with self._conn:
-            self._conn.execute("DELETE FROM embeddings_cache")
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM embeddings_cache")
 
     def delete(self, key):
         """Delete a specific key from the cache.
@@ -215,8 +201,8 @@ class SQLiteEmbeddingsCache:
         Args:
             key: The key to delete
         """
-        with self._conn:
-            self._conn.execute("DELETE FROM embeddings_cache WHERE key = ?", (key,))
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM embeddings_cache WHERE key = ?", (key,))
 
     def delete_many(self, keys):
         """Delete multiple keys from the cache in a single transaction.
@@ -226,8 +212,8 @@ class SQLiteEmbeddingsCache:
         """
         placeholders = ",".join("?" * len(keys))
 
-        with self._conn:
-            self._conn.execute(
+        with self._get_connection() as conn:
+            conn.execute(
                 f"DELETE FROM embeddings_cache WHERE key IN ({placeholders})", keys
             )
 
@@ -237,8 +223,8 @@ class SQLiteEmbeddingsCache:
         Returns:
             list: List of all keys in the cache
         """
-        with self._conn:
-            cursor = self._conn.execute("SELECT key FROM embeddings_cache")
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT key FROM embeddings_cache")
             return [row[0] for row in cursor.fetchall()]
 
     def get_size(self):
@@ -247,8 +233,8 @@ class SQLiteEmbeddingsCache:
         Returns:
             int: Number of entries in the cache
         """
-        with self._conn:
-            cursor = self._conn.execute("SELECT COUNT(*) FROM embeddings_cache")
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM embeddings_cache")
             return cursor.fetchone()[0]
 
 

@@ -1,8 +1,9 @@
+using HyperTuning
 
 function hyperparam_search(; kwargs...)
-    @info "Starting hyperparameter search"
     sweep_tag = randstring(12)
     group_tag = randstring(12)
+    @info "Starting hyperparameter search with group tag $group_tag and sweep tag $sweep_tag"
 
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
     merge!(parsed_args, kwargs)
@@ -43,9 +44,6 @@ function hyperparam_search(; kwargs...)
     tasks_to_check = [t for t in tasks if haskey(traces[grammar_hash][2], t.name)]
     tasks = tasks_to_check
 
-    k = 1
-
-    # Main macro. The first argument to the for loop is always interpreted as the number of iterations
     try
         traces = get_manual_traces(
             parsed_args[:domain],
@@ -57,18 +55,14 @@ function hyperparam_search(; kwargs...)
             traces,
         )
 
-        for path_cost_power in shuffle([0, 0.1, 0.3, 0.5, 1, 1.5, 2]),
-            complexity_power in shuffle([0, 0.1, 0.3, 0.5, 1, 1.5, 2]),
-            block_cost_power in shuffle([0, 0.1, 0.3, 0.5, 1, 1.5, 2])
-
-            # for path_cost_power in [1], complexity_power in [1], block_cost_power in [1]
+        function objective(trial)
+            @unpack path_cost_power, complexity_power, block_cost_power = trial
             hyperparameters = Dict(
                 "path_cost_power" => path_cost_power,
                 "complexity_power" => complexity_power,
                 "block_cost_power" => block_cost_power,
             )
-            @info "Running $k with hyperparameters $hyperparameters"
-            k += 1
+            @info "Running with hyperparameters $hyperparameters"
             tags = [sweep_tag]
 
             lg = WandbLogger(; project = "expcoder", group = group_tag, tags = tags, config = hyperparameters)
@@ -101,7 +95,19 @@ function hyperparam_search(; kwargs...)
 
             log_traces(Dict(t["task"].name => t["traces"] for t in new_traces))
             close(lg)
+            return Float64(-length(new_traces))
         end
+
+        scenario = Scenario(
+            path_cost_power = (-3.0 .. 10.0),
+            complexity_power = (-3.0 .. 10.0),
+            block_cost_power = (-3.0 .. 10.0),
+            max_trials = 2,
+            batch_size = 1,
+        )
+
+        HyperTuning.optimize(objective, scenario)
+
     finally
         stop(worker_pool)
         stop_server(guiding_model_server, true)

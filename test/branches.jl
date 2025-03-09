@@ -46,6 +46,7 @@ using DataStructures
         "coord" => 1.0,
         "set" => 1.0,
         "any" => 1.0,
+        "either" => 0.0,
     )
 
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)

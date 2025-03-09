@@ -13,6 +13,7 @@ function get_complexity_summary(values, t)
             end
         end
     end
+    accum["either"] = options_count
     return accum, max_result, options_count
 end
 

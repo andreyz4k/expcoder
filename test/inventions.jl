@@ -27,6 +27,7 @@ using solver:
         "coord" => 1.0,
         "set" => 1.0,
         "any" => 1.0,
+        "either" => 0.0,
     )
 
     timeout = 40

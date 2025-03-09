@@ -486,6 +486,7 @@ function build_manual_trace(
         "coord" => 1.0,
         "set" => 1.0,
         "any" => 1.0,
+        "either" => 0.0,
     )
 
     hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)

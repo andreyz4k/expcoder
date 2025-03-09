@@ -596,6 +596,8 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
     end
     if success
         new_context.predicted_arguments = [_wrap_abductible(arg) for arg in new_context.predicted_arguments]
+        new_context.filled_indices = Dict(i => _wrap_abductible(v) for (i, v) in new_context.filled_indices)
+        new_context.filled_vars = Dict(k => _wrap_abductible(v) for (k, v) in new_context.filled_vars)
         results = success, _wrap_abductible(calculated_output), new_context
         # @info "Results for reverse $(p_info.p) $output $context are $results"
         return results
@@ -605,6 +607,16 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
             if ismissing(context.calculated_arguments[end-i+1])
                 if isarrow(t)
                     push!(results, SkipArg())
+                    for index in context.arguments[i].indices
+                        if !haskey(context.filled_indices, index)
+                            context.filled_indices[index] = output
+                        end
+                    end
+                    for var_id in context.arguments[i].var_ids
+                        if !haskey(context.filled_vars, var_id)
+                            context.filled_vars[var_id] = output
+                        end
+                    end
                 else
                     push!(results, AbductibleValue(any_object))
                 end
@@ -636,6 +648,8 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::PatternWrapper, context
     end
 
     new_context.predicted_arguments = [_wrap_wildcard(arg) for arg in new_context.predicted_arguments]
+    new_context.filled_indices = Dict(i => _wrap_wildcard(v) for (i, v) in new_context.filled_indices)
+    new_context.filled_vars = Dict(k => _wrap_wildcard(v) for (k, v) in new_context.filled_vars)
 
     results = success, _wrap_wildcard(calculated_output), new_context
     # @info "Results for reverse $(p_info.p) $output $context are $results"
@@ -663,15 +677,30 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject
         # @info "Results for reverse $(p_info.p) $output $context are $results"
         return results
     else
+        new_predicted_arguments = []
+        for (i, t) in enumerate(reverse(arguments_of_type(p_info.p.t)))
+            if isarrow(t)
+                push!(new_predicted_arguments, SkipArg())
+                for index in context.arguments[i].indices
+                    if !haskey(context.filled_indices, index)
+                        context.filled_indices[index] = output
+                    end
+                end
+                for var_id in context.arguments[i].var_ids
+                    if !haskey(context.filled_vars, var_id)
+                        context.filled_vars[var_id] = output
+                    end
+                end
+            else
+                push!(new_predicted_arguments, output)
+            end
+        end
         results = true,
         output,
         ReverseRunContext(
             context.block_id,
             context.arguments,
-            vcat(
-                context.predicted_arguments,
-                [isarrow(t) ? SkipArg() : output for t in reverse(arguments_of_type(p_info.p.t))],
-            ),
+            vcat(context.predicted_arguments, new_predicted_arguments),
             context.calculated_arguments,
             context.filled_indices,
             context.filled_vars,

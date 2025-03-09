@@ -603,25 +603,26 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
         return results
     else
         results = []
-        for (i, t) in enumerate(reverse(arguments_of_type(p_info.p.t)))
-            if ismissing(context.calculated_arguments[end-i+1])
+        arg_types = reverse(arguments_of_type(p_info.p.t))
+        for (i, t) in enumerate(arg_types)
+            if ismissing(context.calculated_arguments[end-length(arg_types)+i])
                 if isarrow(t)
                     push!(results, SkipArg())
                     for index in context.arguments[i].indices
                         if !haskey(context.filled_indices, index)
-                            context.filled_indices[index] = output
+                            context.filled_indices[index] = AbductibleValue(any_object)
                         end
                     end
                     for var_id in context.arguments[i].var_ids
                         if !haskey(context.filled_vars, var_id)
-                            context.filled_vars[var_id] = output
+                            context.filled_vars[var_id] = AbductibleValue(any_object)
                         end
                     end
                 else
                     push!(results, AbductibleValue(any_object))
                 end
             else
-                push!(results, context.calculated_arguments[end-i+1])
+                push!(results, context.calculated_arguments[end-length(arg_types)+i])
             end
         end
         results = true,

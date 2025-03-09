@@ -3,17 +3,23 @@ function get_complexity_summary(values, t)
     accum = Accumulator{String,Int64}()
     max_result = Accumulator{String,Int64}()
     options_count = 0
+    either_count = 0
     for value in values
         max_accum = Accumulator{String,Int64}()
         ops = get_complexity_summary(value, t, accum, max_accum)
         options_count += ops
+        if ops > 1
+            either_count += 1
+        end
         for (k, v) in max_accum
             if !haskey(max_result, k) || max_result[k] < v
                 max_result[k] = v
             end
         end
     end
-    accum["either"] = options_count
+    if either_count > 1
+        accum["either"] = either_count
+    end
     return accum, max_result, options_count
 end
 

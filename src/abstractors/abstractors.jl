@@ -537,6 +537,7 @@ function _run_in_reverse(p_info, output, context, splitter::EitherOptions)
         # @info "Bad options count $output_options"
         return false, output, out_context
     end
+    # @info "Results for reverse $(p_info.p) $output $context"
     # @info "Output options $output_options"
     # @info "Output context $out_context"
     return true, EitherOptions(output_options), out_context
@@ -563,7 +564,9 @@ end
 function __run_in_reverse(p_info::PrimitiveInfo, @nospecialize(output::Any), context)
     # @info "Running in reverse $(p_info.p) $output $context"
     try
-        return all_abstractors[p_info.p][2](output, context)
+        results = all_abstractors[p_info.p][2](output, context)
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     catch e
         # bt = catch_backtrace()
         # @error "Error while running $(p_info.p) $output $context" exception = (e, bt)
@@ -593,17 +596,23 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
     end
     if success
         new_context.predicted_arguments = [_wrap_abductible(arg) for arg in new_context.predicted_arguments]
-        return success, _wrap_abductible(calculated_output), new_context
+        results = success, _wrap_abductible(calculated_output), new_context
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     else
         results = []
-        for i in length(arguments_of_type(p_info.p.t))-1:-1:0
-            if ismissing(context.calculated_arguments[end-i])
-                push!(results, AbductibleValue(any_object))
+        for (i, t) in enumerate(reverse(arguments_of_type(p_info.p.t)))
+            if ismissing(context.calculated_arguments[end-i+1])
+                if isarrow(t)
+                    push!(results, SkipArg())
+                else
+                    push!(results, AbductibleValue(any_object))
+                end
             else
-                push!(results, context.calculated_arguments[end-i])
+                push!(results, context.calculated_arguments[end-i+1])
             end
         end
-        return true,
+        results = true,
         output,
         ReverseRunContext(
             context.block_id,
@@ -613,6 +622,8 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::AbductibleValue, contex
             context.filled_indices,
             context.filled_vars,
         )
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     end
 end
 
@@ -626,7 +637,9 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::PatternWrapper, context
 
     new_context.predicted_arguments = [_wrap_wildcard(arg) for arg in new_context.predicted_arguments]
 
-    return success, _wrap_wildcard(calculated_output), new_context
+    results = success, _wrap_wildcard(calculated_output), new_context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject}, context)
@@ -646,18 +659,25 @@ function __run_in_reverse(p_info::PrimitiveInfo, output::Union{Nothing,AnyObject
         end
     end
     if success
-        return success, calculated_output, new_context
+        results = success, calculated_output, new_context
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     else
-        return true,
+        results = true,
         output,
         ReverseRunContext(
             context.block_id,
             context.arguments,
-            vcat(context.predicted_arguments, [output for _ in 1:length(arguments_of_type(p_info.p.t))]),
+            vcat(
+                context.predicted_arguments,
+                [isarrow(t) ? SkipArg() : output for t in reverse(arguments_of_type(p_info.p.t))],
+            ),
             context.calculated_arguments,
             context.filled_indices,
             context.filled_vars,
         )
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     end
 end
 
@@ -673,12 +693,16 @@ function __run_in_reverse(p_info::ApplyInfo, output::AbductibleValue, context)
         if calculated_output isa Function
             error("Function output")
         end
-        return true, calculated_output, context
+        results = true, calculated_output, context
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     catch e
         if e isa InterruptException
             rethrow()
         end
-        return @invoke __run_in_reverse(p_info::ApplyInfo, output::Any, context)
+        results = @invoke __run_in_reverse(p_info::ApplyInfo, output::Any, context)
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     end
 end
 
@@ -742,7 +766,9 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
     pop!(arg_context.calculated_arguments)
     arg_target = pop!(arg_context.predicted_arguments)
     if arg_target isa SkipArg
-        return true, calculated_output, arg_context
+        results = true, calculated_output, arg_context
+        # @info "Results for reverse $(p_info.p) $output $context are $results"
+        return results
     end
     success, arg_calculated_output, out_context = _run_in_reverse(p_info.x_info, arg_target, arg_context)
     if !success
@@ -773,7 +799,9 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
         pop!(arg_context.calculated_arguments)
         arg_target = pop!(arg_context.predicted_arguments)
         if arg_target isa SkipArg
-            return true, calculated_output, arg_context
+            results = true, calculated_output, arg_context
+            # @info "Results for reverse $(p_info.p) $output $context are $results"
+            return results
         end
         success, arg_calculated_output, out_context = _run_in_reverse(p_info.x_info, arg_target, arg_context)
         if !success
@@ -785,7 +813,9 @@ function __run_in_reverse(p_info::ApplyInfo, output, context)
     end
     # @info "Calculated output for $(p_info.p) $calculated_output"
     # @info "Out context for $(p_info.p) $out_context"
-    return true, calculated_output, out_context
+    results = true, calculated_output, out_context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function __run_in_reverse(p_info::FreeVarInfo, output, context)
@@ -801,7 +831,9 @@ function __run_in_reverse(p_info::FreeVarInfo, output, context)
         context.filled_vars[p_info.p.var_id] = output
     end
     # @info context
-    return true, context.filled_vars[p_info.p.var_id], context
+    results = true, context.filled_vars[p_info.p.var_id], context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function __run_in_reverse(p_info::IndexInfo, output, context)
@@ -817,7 +849,9 @@ function __run_in_reverse(p_info::IndexInfo, output, context)
         context.filled_indices[p_info.p.n] = output
     end
     # @info context
-    return true, context.filled_indices[p_info.p.n], context
+    results = true, context.filled_indices[p_info.p.n], context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function __run_in_reverse(p_info::AbstractionInfo, output, context::ReverseRunContext)
@@ -853,11 +887,15 @@ function __run_in_reverse(p_info::AbstractionInfo, output, context::ReverseRunCo
     end
 
     out_context.filled_indices = Dict{Int64,Any}(i - 1 => v for (i, v) in out_context.filled_indices if i > 0)
-    return true, output, out_context
+    results = true, output, out_context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function __run_in_reverse(p_info::SetConstInfo, output, context)
-    return output == p_info.p.value, output, context
+    results = output == p_info.p.value, output, context
+    # @info "Results for reverse $(p_info.p) $output $context are $results"
+    return results
 end
 
 function run_in_reverse(p::Program, output, block_id::UInt64)

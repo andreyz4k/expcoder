@@ -247,6 +247,8 @@ function reverse_fold(is_set = false)
             else
                 push!(calculated_arguments, missing)
             end
+            # @info "Calculated arguments $calculated_arguments"
+            # @info f
             success, calculated_acc, new_context = _run_in_reverse(
                 f,
                 acc,

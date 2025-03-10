@@ -826,28 +826,35 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ProgramBlock, 
     # end
     if isempty(bl.input_vars)
         if isnothing(sc.explained_complexity_factors[out_branch_id])
-            if isempty(parents)
+            best_parent = nothing
+            for parent in parents
+                if sc.branch_is_unknown[parent] && isnothing(sc.unknown_complexity_factors[parent])
+                    @warn "Unknown complexity factor is nothing for $parent"
+                    @warn bl
+                    @warn input_branches
+                    @warn output_branches
+                    @warn out_branch_id
+                    @warn parents
+                    export_solution_context(sc)
+                end
+                if sc.branch_is_unknown[parent] &&
+                   !isnothing(sc.complexities[parent]) &&
+                   (
+                       isnothing(best_parent) ||
+                       sc.unknown_complexity_factors[parent] > sc.unknown_complexity_factors[best_parent]
+                   )
+                    best_parent = parent
+                end
+            end
+            if isnothing(best_parent)
                 sc.added_upstream_complexities[out_branch_id] =
                     sc.unknown_complexity_factors[out_branch_id] - sc.complexities[out_branch_id]
-                sc.explained_complexity_factors[out_branch_id] =
-                    sc.added_upstream_complexities[out_branch_id] + sc.complexities[out_branch_id]
             else
-                best_parent = nothing
-                for parent in parents
-                    if sc.branch_is_unknown[parent] &&
-                       !isnothing(sc.complexities[parent]) &&
-                       (
-                           isnothing(best_parent) ||
-                           sc.unknown_complexity_factors[parent] > sc.unknown_complexity_factors[best_parent]
-                       )
-                        best_parent = parent
-                    end
-                end
                 sc.added_upstream_complexities[out_branch_id] =
                     sc.unknown_complexity_factors[best_parent] - sc.complexities[best_parent]
-                sc.explained_complexity_factors[out_branch_id] =
-                    sc.added_upstream_complexities[out_branch_id] + sc.complexities[out_branch_id]
             end
+            sc.explained_complexity_factors[out_branch_id] =
+                sc.added_upstream_complexities[out_branch_id] + sc.complexities[out_branch_id]
         end
     else
         related_branches = Dict()

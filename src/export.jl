@@ -3,173 +3,79 @@ using MetaGraphsNext
 using Graphs
 using Dates
 
-function check_following_blocks(
-    sc::SolutionContext,
-    branch_id,
-    depth,
-    right_border_depth,
-    vars_depths,
-    block_depths,
-    following_vars_depths,
-    following_blocks_depths,
-)
-    var_id = first(get_connected_from(sc.branch_vars, branch_id))
-    var_branches = get_connected_to(sc.branch_vars, var_id)
-    max_depth = depth
-    for var_branch in var_branches
-        for (block_copy_id, block_id) in get_connected_from(sc.branch_outgoing_blocks, var_branch)
-            # if haskey(block_depths, block_id) || haskey(following_blocks_depths, block_id)
-            #     continue
-            # end
-            block_outputs = get_connected_to(sc.branch_incoming_blocks, block_copy_id)
-            following_blocks_depths[block_id] = depth
-            for (output_branch_id, _) in block_outputs
-                output_var_id = first(get_connected_from(sc.branch_vars, output_branch_id))
-                if haskey(following_vars_depths, output_var_id)
-                    continue
-                end
-                if haskey(vars_depths, output_var_id)
-                    following_max_depth = vars_depths[output_var_id] - right_border_depth + depth
-                else
-                    following_vars_depths[output_var_id] = depth + 1
-                    following_max_depth, following_vars_depths, following_blocks_depths = check_following_blocks(
-                        sc,
-                        output_branch_id,
-                        depth + 1,
-                        right_border_depth,
-                        vars_depths,
-                        block_depths,
-                        following_vars_depths,
-                        following_blocks_depths,
-                    )
-                end
-                max_depth = max(max_depth, following_max_depth)
-            end
-        end
-    end
-    return max_depth, following_vars_depths, following_blocks_depths
-end
-
-function do_sorting_step(sc::SolutionContext, queue, visited_branches, remaining_vars, vars_depths, blocks_depths)
-    branch_id = pop!(queue)
-    var_id = first(get_connected_from(sc.branch_vars, branch_id))
-    if !in(var_id, remaining_vars)
-        return
-    end
-    delete!(remaining_vars, var_id)
-    var_branches = get_connected_to(sc.branch_vars, var_id)
-    # @info "starting iteration for $var_id"
-    # @info var_branches
-
-    for var_branch in var_branches
-        for (block_copy_id, block_id) in get_connected_from(sc.branch_incoming_blocks, var_branch)
-            # @info "Checking incomimg block $block_copy_id $block_id"
-            if !haskey(blocks_depths, block_id)
-                blocks_depths[block_id] = vars_depths[var_id]
-            end
-            block_inputs = get_connected_to(sc.branch_outgoing_blocks, block_copy_id)
-            # @info "block_inputs $block_inputs"
-            inputs_depths = 0
-            following_vars_depths = Dict()
-            following_blocks_depths = Dict()
-            for (input_branch_id, _) in block_inputs
-                following_depth, following_vars_depths, following_blocks_depths = check_following_blocks(
-                    sc,
-                    input_branch_id,
-                    0,
-                    vars_depths[var_id],
-                    vars_depths,
-                    blocks_depths,
-                    following_vars_depths,
-                    following_blocks_depths,
-                )
-                # @info "For input $input_branch_id $(sc.branch_vars[input_branch_id]) following_depth $following_depth"
-                # @info "following_vars_depths $following_vars_depths"
-                # @info "following_blocks_depths $following_blocks_depths"
-                inputs_depths = max(inputs_depths, following_depth)
-            end
-            # @info "inputs_depths $inputs_depths"
-            # @info "following_vars_depths $following_vars_depths"
-            # @info "following_blocks_depths $following_blocks_depths"
-            for (v_id, depth) in following_vars_depths
-                vars_depths[v_id] = vars_depths[var_id] + inputs_depths - depth + 1
-            end
-            for (b_id, depth) in following_blocks_depths
-                blocks_depths[b_id] = vars_depths[var_id] + inputs_depths - depth
-            end
-            new_depth = vars_depths[var_id] + inputs_depths + 1
-            for (input_branch_id, _) in block_inputs
-                if !haskey(vars_depths, first(get_connected_from(sc.branch_vars, input_branch_id)))
-                    vars_depths[first(get_connected_from(sc.branch_vars, input_branch_id))] = new_depth
-                else
-                    # vars_depths[sc.branch_vars[input_branch_id]] =
-                    #     max(vars_depths[sc.branch_vars[input_branch_id]], new_depth)
-                end
-                push!(queue, input_branch_id)
-            end
-            # @info "vars_depths $vars_depths"
-            # @info "blocks_depths $blocks_depths"
-        end
-    end
-end
-
 function sort_vars_and_blocks(sc::SolutionContext)
-    remaining_vars = Set(1:sc.vars_count[])
     output_var = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
-    vars_depths = Dict{UInt64,Int}(output_var => 0)
-    blocks_depths = Dict{UInt64,Int}()
-    visited_branches = Set()
-    queue = Set{UInt64}()
-    push!(queue, sc.target_branch_id)
-    while !isempty(queue)
-        do_sorting_step(sc, queue, visited_branches, remaining_vars, vars_depths, blocks_depths)
-    end
-    if !isempty(remaining_vars)
-        right_border_depth = maximum(values(vars_depths))
-        inputs_depths = 0
-        following_vars_depths = Dict()
-        following_blocks_depths = Dict()
-        for var_id in keys(sc.input_keys)
-            if in(var_id, remaining_vars)
-                branch_id = var_id  # hack due to initialization procedure
-
-                following_depth, following_vars_depths, following_blocks_depths = check_following_blocks(
-                    sc,
-                    branch_id,
-                    0,
-                    right_border_depth,
-                    vars_depths,
-                    blocks_depths,
-                    following_vars_depths,
-                    following_blocks_depths,
-                )
-                inputs_depths = max(inputs_depths, following_depth)
+    input_vars = collect(keys(sc.input_keys))
+    var_groups = [input_vars, [output_var]]
+    for var_id in output_var+1:sc.vars_count[]
+        prev_vars = get_connected_to(sc.previous_vars, var_id)
+        foll_vars = get_connected_from(sc.previous_vars, var_id)
+        min_i = 0
+        max_i = length(var_groups) + 1
+        for (i, group) in enumerate(var_groups)
+            if !isempty(intersect(prev_vars, group))
+                min_i = i + 1
+            end
+            if !isempty(intersect(foll_vars, group))
+                max_i = min(max_i, i - 1)
             end
         end
-        # @info "following_vars_depths $following_vars_depths"
-        # @info "following_blocks_depths $following_blocks_depths"
-
-        for (v_id, depth) in following_vars_depths
-            vars_depths[v_id] = right_border_depth + inputs_depths - depth + 1
-        end
-        for (b_id, depth) in following_blocks_depths
-            blocks_depths[b_id] = right_border_depth + inputs_depths - depth
+        if min_i <= max_i
+            if max_i <= length(var_groups)
+                push!(var_groups[max_i], var_id)
+            elseif min_i == length(var_groups) + 1
+                group = var_groups[end]
+                prev_vars = intersect(prev_vars, group)
+                new_group = setdiff(group, prev_vars)
+                push!(new_group, var_id)
+                var_groups[end] = prev_vars
+                push!(var_groups, new_group)
+            else
+                push!(var_groups[min_i], var_id)
+            end
+        elseif min_i == max_i + 1
+            insert!(var_groups, min_i, [var_id])
+        else
+            prev_groups = []
+            next_groups = []
+            for j in max_i+1:min_i-1
+                group = splice!(var_groups, max_i + 1)
+                prev_group_vars = intersect(prev_vars, group)
+                next_group_vars = setdiff(group, prev_group_vars)
+                if !isempty(prev_group_vars)
+                    push!(prev_groups, prev_group_vars)
+                end
+                if !isempty(next_group_vars)
+                    push!(next_groups, next_group_vars)
+                end
+            end
+            for group in reverse(next_groups)
+                insert!(var_groups, max_i + 1, group)
+            end
+            insert!(var_groups, max_i + 1, [var_id])
+            for group in reverse(prev_groups)
+                insert!(var_groups, max_i + 1, group)
+            end
         end
     end
-    max_depth = maximum(values(vars_depths))
+    max_depth = length(var_groups)
     out_var_depths = Dict{UInt64,Float64}()
     out_block_depths = Dict{UInt64,Float64}()
-    for (var_id, depth) in vars_depths
-        out_var_depths[var_id] = (max_depth / 2 - depth) * 20 + (rand() - 0.5) * 10
+    for (i, group) in enumerate(var_groups)
+        for var_id in group
+            out_var_depths[var_id] = (i - max_depth / 2) * 20 + (rand() - 0.5) * 10
+        end
     end
-    for (block_id, depth) in blocks_depths
-        out_block_depths[block_id] = (max_depth / 2 - depth) * 20 - 10 + (rand() - 0.5) * 10
+    for block_id in 1:length(sc.blocks)
+        block = sc.blocks[UInt64(block_id)]
+        if isa(block, ProgramBlock)
+            depth = out_var_depths[block.output_var]
+            out_block_depths[block_id] = depth - 10 + (rand() - 0.5) * 10
+        else
+            depth = out_var_depths[block.input_vars[1]]
+            out_block_depths[block_id] = depth + 10 + (rand() - 0.5) * 10
+        end
     end
-    # @info remaining_vars
-    # @info "vars_depths $vars_depths"
-    # @info "blocks_depths $blocks_depths"
-    # @info "out_var_depths $out_var_depths"
-    # @info "out_block_depths $out_block_depths"
     return out_var_depths, out_block_depths
 end
 

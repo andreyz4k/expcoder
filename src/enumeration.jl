@@ -213,33 +213,43 @@ function state_violates_symmetry(p::Apply, var_shift = 0)::Bool
 end
 state_violates_symmetry(::Program, var_shift = 0)::Bool = false
 
-capture_free_vars(sc, p::Program, context) = _capture_free_vars(sc, p, context, [])
+function check_valid_program_location(sc, p, var_id, is_forward)
+    root_locations = is_forward ? sc.unknown_var_locations[var_id] : sc.known_var_locations[var_id]
+    for (f, ind) in root_locations
+        if violates_symmetry(f, p, ind)
+            return false
+        end
+    end
+    return true
+end
 
-_capture_free_vars(sc, p::Program, context, captured_vars) = p, captured_vars
+capture_free_vars(p::Program, context) = _capture_free_vars(p, context, [])
 
-function _capture_free_vars(sc, p::Apply, context, captured_vars)
-    new_f, captured_vars = _capture_free_vars(sc, p.f, context, captured_vars)
-    new_x, captured_vars = _capture_free_vars(sc, p.x, context, captured_vars)
+_capture_free_vars(p::Program, context, captured_vars) = p, captured_vars
+
+function _capture_free_vars(p::Apply, context, captured_vars)
+    new_f, captured_vars = _capture_free_vars(p.f, context, captured_vars)
+    new_x, captured_vars = _capture_free_vars(p.x, context, captured_vars)
     Apply(new_f, new_x), captured_vars
 end
 
-function _capture_free_vars(sc, p::Abstraction, context, captured_vars)
-    new_b, new_vars = _capture_free_vars(sc, p.b, context, captured_vars)
-    Abstraction(new_b), new_vars
+function _capture_free_vars(p::Abstraction, context, captured_vars)
+    new_b, captured_vars = _capture_free_vars(p.b, context, captured_vars)
+    Abstraction(new_b), captured_vars
 end
 
-function _capture_free_vars(sc, p::Hole, context, captured_vars)
+function _capture_free_vars(p::Hole, context, captured_vars)
     _, t = apply_context(context, p.t)
-    var_id = create_next_var(sc)
+    var_id = UInt64(length(captured_vars) + 1)
     push!(captured_vars, (var_id, t))
 
     FreeVar(t, var_id, isempty(p.locations) ? nothing : p.locations[1]), captured_vars
 end
 
-function _capture_free_vars(sc, p::FreeVar, context, captured_vars)
+function _capture_free_vars(p::FreeVar, context, captured_vars)
     if isnothing(p.var_id)
         _, t = apply_context(context, p.t)
-        var_id = create_next_var(sc)
+        var_id = UInt64(length(captured_vars) + 1)
         push!(captured_vars, (var_id, t))
     elseif isa(p.var_id, UInt64)
         var_id = p.var_id
@@ -252,6 +262,32 @@ function _capture_free_vars(sc, p::FreeVar, context, captured_vars)
         var_id, t = captured_vars[i]
     end
     FreeVar(t, var_id, p.location), captured_vars
+end
+
+capture_new_free_vars(sc, p) = _capture_new_free_vars(sc, p, Dict(), [])
+
+_capture_new_free_vars(sc, p::Program, captured_vars_mapping, captured_vars) = p, captured_vars
+
+function _capture_new_free_vars(sc, p::FreeVar, captured_vars_mapping, captured_vars)
+    if haskey(captured_vars_mapping, p.var_id)
+        return FreeVar(p.t, captured_vars_mapping[p.var_id], p.location), captured_vars
+    else
+        var_id = create_next_var(sc)
+        push!(captured_vars, var_id)
+        captured_vars_mapping[p.var_id] = var_id
+        return FreeVar(p.t, var_id, p.location), captured_vars
+    end
+end
+
+function _capture_new_free_vars(sc, p::Apply, captured_vars_mapping, captured_vars)
+    new_f, captured_vars = _capture_new_free_vars(sc, p.f, captured_vars_mapping, captured_vars)
+    new_x, captured_vars = _capture_new_free_vars(sc, p.x, captured_vars_mapping, captured_vars)
+    Apply(new_f, new_x), captured_vars
+end
+
+function _capture_new_free_vars(sc, p::Abstraction, captured_vars_mapping, captured_vars)
+    new_b, captured_vars = _capture_new_free_vars(sc, p.b, captured_vars_mapping, captured_vars)
+    Abstraction(new_b), captured_vars
 end
 
 function check_reversed_program_forward(p, vars, inputs, expected_output)
@@ -294,19 +330,10 @@ function check_reversed_program_forward(p, vars, inputs, expected_output)
     end
 end
 
-function try_get_reversed_values(
-    sc::SolutionContext,
-    p::Program,
-    context,
-    path,
-    output_branch_id,
-    cost,
-    is_known,
-    block_id::UInt64,
-)
-    out_entry = sc.entries[sc.branch_entries[output_branch_id]]
+function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_entry, block_id = UInt64(0))
+    out_entry = sc.entries[root_entry]
 
-    new_p, new_vars = capture_free_vars(sc, p, context)
+    new_p, new_vars = capture_free_vars(p, context)
     new_vars_count = length(new_vars)
 
     calculated_values = DefaultDict(() -> [])
@@ -326,13 +353,16 @@ function try_get_reversed_values(
     end
 
     new_entries = []
+    has_eithers = false
     has_abductibles = false
+    unfixed_vars = []
 
     for (var_id, t) in new_vars
         vals = calculated_values[var_id]
         complexity_summary, max_summary, options_count = get_complexity_summary(vals, t)
         t_id = push!(sc.types, t)
         if any(isa(value, EitherOptions) for value in vals)
+            has_eithers = true
             new_entry = EitherEntry(
                 t_id,
                 vals,
@@ -341,6 +371,7 @@ function try_get_reversed_values(
                 options_count,
                 get_complexity(sc, complexity_summary),
             )
+            push!(unfixed_vars, var_id)
         elseif any(isa(value, PatternWrapper) for value in vals)
             new_entry = PatternEntry(
                 t_id,
@@ -360,6 +391,7 @@ function try_get_reversed_values(
                 options_count,
                 get_complexity(sc, complexity_summary),
             )
+            push!(unfixed_vars, var_id)
         else
             new_entry = ValueEntry(
                 t_id,
@@ -373,114 +405,11 @@ function try_get_reversed_values(
         if !sc.traced && new_entry == out_entry
             throw(EnumerationException())
         end
-        push!(new_entries, (var_id, new_entry))
+        entry_index = push!(sc.entries, new_entry)
+        push!(new_entries, (var_id, entry_index, t_id))
     end
 
-    complexity_factor = (is_known ? sc.explained_complexity_factors : sc.unknown_complexity_factors)[output_branch_id]
-    if !has_abductibles
-        complexity_factor -= out_entry.complexity - sum(entry.complexity for (_, entry) in new_entries; init = 0.0)
-    end
-
-    new_branches = []
-    either_branch_ids = UInt64[]
-    either_var_ids = UInt64[]
-    abductible_branch_ids = UInt64[]
-    abductible_var_ids = UInt64[]
-
-    if is_known
-        out_related_complexity_branches = get_connected_from(sc.related_explained_complexity_branches, output_branch_id)
-    else
-        out_related_complexity_branches = get_connected_from(sc.related_unknown_complexity_branches, output_branch_id)
-    end
-
-    for (var_id, entry) in new_entries
-        entry_index = push!(sc.entries, entry)
-        exact_match, parents_children = find_related_branches(sc, var_id, entry, entry_index)
-
-        if !isnothing(exact_match)
-            branch_id = exact_match
-        else
-            branch_id = increment!(sc.branches_count)
-            sc.branch_entries[branch_id] = entry_index
-            sc.branch_vars[branch_id, var_id] = true
-            sc.branch_types[branch_id, entry.type_id] = true
-            if sc.verbose
-                @info "Created new branch $branch_id $entry"
-                @info "Parents children $parents_children"
-            end
-            for (parent, children) in parents_children
-                if isnothing(parent)
-                    # @info "Root branch $root_branch_id"
-                    # @info "old branch $old_br_entry"
-                    # @info "new branch $entry"
-                    # @info "Children $children"
-                    # @info "Children parents $([(c, get_connected_to(sc.branch_children, c)) for c in children])"
-                    # @info "Children entries $([(c, sc.entries[sc.branch_entries[c]]) for c in children])"
-                    # @info "Parents children $parents_children"
-                else
-                    deleteat!(sc.branch_children, [parent], children)
-                    sc.branch_children[parent, branch_id] = true
-                end
-                sc.branch_children[branch_id, children] = true
-            end
-        end
-
-        if is_known
-            sc.explained_min_path_costs[branch_id] = cost + sc.explained_min_path_costs[output_branch_id]
-            sc.explained_complexity_factors[branch_id] = complexity_factor
-            sc.unused_explained_complexities[branch_id] = entry.complexity
-            sc.added_upstream_complexities[branch_id] = sc.added_upstream_complexities[output_branch_id]
-            sc.related_explained_complexity_branches[branch_id, out_related_complexity_branches] = true
-        else
-            sc.branch_is_unknown[branch_id] = true
-            sc.branch_unknown_from_output[branch_id] = sc.branch_unknown_from_output[output_branch_id]
-            sc.unknown_min_path_costs[branch_id] = cost + sc.unknown_min_path_costs[output_branch_id]
-            sc.unknown_complexity_factors[branch_id] = complexity_factor
-            sc.unmatched_complexities[branch_id] = entry.complexity
-            sc.related_unknown_complexity_branches[branch_id, out_related_complexity_branches] = true
-        end
-        sc.complexities[branch_id] = entry.complexity
-
-        if isa(entry, EitherEntry)
-            push!(either_branch_ids, branch_id)
-            push!(either_var_ids, var_id)
-        elseif isa(entry, AbductibleEntry)
-            push!(abductible_branch_ids, branch_id)
-            push!(abductible_var_ids, var_id)
-        end
-
-        push!(new_branches, (var_id, branch_id, entry.type_id))
-    end
-
-    if length(new_branches) > 1
-        for (_, branch_id, _) in new_branches
-            inds = [b_id for (_, b_id, _) in new_branches if b_id != branch_id]
-            if is_known
-                sc.related_explained_complexity_branches[branch_id, inds] = true
-            else
-                sc.related_unknown_complexity_branches[branch_id, inds] = true
-            end
-        end
-    end
-    if length(either_branch_ids) >= 1
-        active_constraints = keys(get_connected_from(sc.constrained_branches, output_branch_id))
-        if length(active_constraints) == 0
-            new_constraint_id = increment!(sc.constraints_count)
-            # @info "Added new constraint with either $new_constraint_id"
-            active_constraints = UInt64[new_constraint_id]
-        end
-        for constraint_id in active_constraints
-            sc.constrained_branches[either_branch_ids, constraint_id] = either_var_ids
-            sc.constrained_vars[either_var_ids, constraint_id] = either_branch_ids
-        end
-    end
-
-    return new_p, new_branches, either_var_ids, abductible_var_ids, either_branch_ids, abductible_branch_ids
-end
-
-function try_get_reversed_inputs(sc, p::Program, context, path, output_branch_id, cost, block_id::UInt64)
-    new_p, inputs, _, _, _, _ = try_get_reversed_values(sc, p, context, path, output_branch_id, cost, false, block_id)
-    return new_p, inputs
+    return new_p, new_entries, unfixed_vars, has_eithers, has_abductibles
 end
 
 function _fill_holes(p::Hole, context)
@@ -544,6 +473,7 @@ function _update_block_type(block_type, input_types)
 end
 
 function _update_block_output_type(block_type, output_type)
+    return block_type
     if !is_polymorphic(block_type)
         return block_type
     end
@@ -829,7 +759,7 @@ function log_results(sc, hits)
                 length(v),
                 length(unique(v)),
                 br_id,
-                first(get_connected_from(sc.branch_vars, br_id)),
+                sc.branch_vars[br_id],
                 sc.branch_entries[br_id],
                 sc.entries[sc.branch_entries[br_id]],
                 [sc.blocks[b_id] for (_, b_id) in get_connected_from(sc.branch_incoming_blocks, br_id)],

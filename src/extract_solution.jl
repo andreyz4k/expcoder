@@ -6,10 +6,8 @@ function extract_solution(sc::SolutionContext, solution_path::Path)
     res = [(bl_id, sc.blocks[bl_id]) for bl_id in extract_block_sequence(solution_path)]
 
     root_block_branches = [sc.block_root_branches[block_id] for (block_id, block) in res if !isa(block.p, FreeVar)]
-    root_block_entries = Dict(
-        first(get_connected_from(sc.branch_vars, branch_id)) => sc.entries[sc.branch_entries[branch_id]] for
-        branch_id in root_block_branches
-    )
+    root_block_entries =
+        Dict(sc.branch_vars[branch_id] => sc.entries[sc.branch_entries[branch_id]] for branch_id in root_block_branches)
 
     cost = sum(block.cost for (_, block) in res)
     output = res[end][2].p
@@ -21,7 +19,7 @@ function extract_solution(sc::SolutionContext, solution_path::Path)
     replacements = Dict{UInt64,Any}()
     base_output = output
     output = alpha_substitution(output, replacements, Set{UInt64}(), Set{UInt64}(), UInt64(1), sc.input_keys)[1]
-    output_var_id = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+    output_var_id = sc.branch_vars[sc.target_branch_id]
     trace_values = Dict()
     for (var_id, entry) in root_block_entries
         tp = sc.types[entry.type_id]

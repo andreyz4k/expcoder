@@ -34,7 +34,7 @@ using solver:
     )
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
 
-    function test_solve_task(task)
+    function test_solve_task(task, verbose = false)
         guiding_model_server = GuidingModelServer(guiding_model)
         start_server(guiding_model_server)
 
@@ -55,7 +55,7 @@ using solver:
                 type_weights,
                 hyperparameters,
                 10,
-                false,
+                verbose,
             )
         finally
             stop_server(guiding_model_server)

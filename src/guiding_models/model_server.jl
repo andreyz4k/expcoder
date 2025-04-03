@@ -261,7 +261,6 @@ end
 
 function receive_grammar_weights(sc::SolutionContext, guiding_model_channels, grammar)
     receiver_channel = guiding_model_channels[2]
-    grammar_len = length(grammar)
     while isready(receiver_channel)
         response = take!(receiver_channel)
         if sc.verbose
@@ -283,83 +282,76 @@ function receive_grammar_weights(sc::SolutionContext, guiding_model_channels, gr
             @info "Already have grammar for entry $entry_id, is_rev $is_rev"
             continue
         end
-
-        log_variable = result[end-2]
-        log_lambda = result[end-1]
-        log_free_var = result[end]
-
-        sc.entry_grammars[(entry_id, is_rev)] = if !haskey(contextual_grammar_cache, grammar_len)
-            productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-            g = Grammar(log_variable, log_lambda, log_free_var, productions)
-            contextual_grammar_cache[grammar_len] = make_dummy_contextual(g)
-            contextual_grammar_cache[grammar_len]
-        else
-            prototype = contextual_grammar_cache[grammar_len]
-            production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
-            ContextualGrammar(
-                _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-                _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-                Dict(
-                    p => [
-                        _grammar_with_weights(g, production_scores, log_variable, log_lambda, log_free_var) for
-                        g in grammars
-                    ] for (p, grammars) in prototype.contextual_library
-                ),
-            )
-        end
-
-        for (branch_id) in sc.waiting_branches[(entry_id, is_rev)]
-            var_id = first(get_connected_from(sc.branch_vars, branch_id))
-            entry = sc.entries[entry_id]
-            type_id = first(get_connected_from(sc.branch_types, branch_id))
-            type = sc.types[type_id]
-            context, type = instantiate(type, empty_context)
-
-            bp = BlockPrototype(
-                Hole(
-                    type,
-                    is_rev ? sc.known_var_locations[var_id] : sc.unknown_var_locations[var_id],
-                    CombinedArgChecker([SimpleArgChecker(is_rev, -1, true)]),
-                    is_rev ? nothing : entry.values,
-                ),
-                context,
-                [],
-                EPSILON,
-                0,
-                type,
-                nothing,
-                (var_id, branch_id),
-                is_rev,
-            )
-            queue_group = is_rev ? sc.branch_queues_explained : sc.branch_queues_unknown
-            if haskey(queue_group, branch_id)
-                q = queue_group[branch_id]
-            else
-                q = PriorityQueue{BlockPrototype,Float64}()
-            end
-            if is_rev
-                enqueue_known_bp(sc, bp, q, branch_id)
-            else
-                enqueue_unknown_bp(sc, bp, q)
-            end
-            if !isempty(q)
-                queue_group[branch_id] = q
-                update_branch_priority(sc, branch_id, is_rev)
-            end
-        end
-        delete!(sc.waiting_branches, (entry_id, is_rev))
+        process_grammar_results(sc, entry_id, is_rev, result, grammar)
     end
+end
+
+function process_grammar_results(sc::SolutionContext, entry_id, is_rev, result, grammar)
+    log_variable = result[end-2]
+    log_lambda = result[end-1]
+    log_free_var = result[end]
+    grammar_len = length(grammar)
+
+    sc.entry_grammars[(entry_id, is_rev)] = if !haskey(contextual_grammar_cache, grammar_len)
+        productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
+        g = Grammar(log_variable, log_lambda, log_free_var, productions)
+        contextual_grammar_cache[grammar_len] = make_dummy_contextual(g)
+        contextual_grammar_cache[grammar_len]
+    else
+        prototype = contextual_grammar_cache[grammar_len]
+        production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
+        ContextualGrammar(
+            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
+            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
+            Dict(
+                p => [
+                    _grammar_with_weights(g, production_scores, log_variable, log_lambda, log_free_var) for
+                    g in grammars
+                ] for (p, grammars) in prototype.contextual_library
+            ),
+        )
+    end
+
+    entry = sc.entries[entry_id]
+    type_id = entry.type_id
+    type = sc.types[type_id]
+    context, type = instantiate(type, empty_context)
+
+    bp = BlockPrototype(
+        Hole(type, [], CombinedArgChecker([SimpleArgChecker(is_rev, -1, true)]), is_rev ? nothing : entry.values),
+        context,
+        [],
+        EPSILON,
+        0,
+        type,
+        entry_id,
+        is_rev,
+    )
+
+    q = PriorityQueue{BlockPrototype,Float64}()
+    if sc.verbose
+        @info "Enqueing $bp"
+    end
+    q[bp] = bp.cost
+
+    if is_rev
+        sc.entry_queues_reverse[entry_id] = q
+    else
+        sc.entry_queues_forward[entry_id] = q
+    end
+    update_entry_priority(sc, entry_id, is_rev)
+
+    delete!(sc.waiting_entries, (entry_id, is_rev))
 end
 
 function mark_task_finished(guiding_model_channels, task_name)
     put!(guiding_model_channels[3], task_name)
 end
 
-function generate_grammar(sc::SolutionContext, guiding_model_channels, grammar, entry_id, is_known, branch_id)
-    if !haskey(sc.waiting_branches, (entry_id, is_known))
-        sc.waiting_branches[(entry_id, is_known)] = [branch_id]
+function generate_grammar(sc::SolutionContext, guiding_model_channels, entry_id, is_known, branch_id)
+    if !in((entry_id, is_known), sc.waiting_entries)
+        push!(sc.waiting_entries, (entry_id, is_known))
     else
-        push!(sc.waiting_branches[(entry_id, is_known)], branch_id)
         return
     end
 

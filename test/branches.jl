@@ -29,7 +29,8 @@ using solver:
     EPSILON,
     _get_custom_arg_checkers,
     step_arg_checker,
-    combine_arg_checkers
+    combine_arg_checkers,
+    insert_block
 
 using DataStructures
 
@@ -79,13 +80,10 @@ using DataStructures
         ]
     ]
 
-    function initial_state(sc, branch_id, grammar)
-        target_type_id = first(get_connected_from(sc.branch_types, branch_id))
-        var_id = first(get_connected_from(sc.branch_vars, branch_id))
-        target_type = sc.types[target_type_id]
-        context, target_type = instantiate(target_type, empty_context)
-        entry_id = sc.branch_entries[branch_id]
+    function initial_state(sc, entry_id, grammar)
         entry = sc.entries[entry_id]
+        target_type = sc.types[entry.type_id]
+        context, target_type = instantiate(target_type, empty_context)
 
         if !haskey(sc.entry_grammars, (entry_id, false))
             productions = Tuple{Program,Tp,Float64}[(p, p.t, 0.0) for p in grammar]
@@ -94,19 +92,13 @@ using DataStructures
         end
 
         BlockPrototype(
-            Hole(
-                target_type,
-                sc.unknown_var_locations[var_id],
-                CombinedArgChecker([SimpleArgChecker(false, -1, true)]),
-                entry.values,
-            ),
+            Hole(target_type, [], CombinedArgChecker([SimpleArgChecker(false, -1, true)]), entry.values),
             context,
             [],
             EPSILON,
             0,
             target_type,
-            nothing,
-            (var_id, branch_id),
+            entry_id,
             false,
         )
     end
@@ -123,8 +115,7 @@ using DataStructures
 
         environment = path_environment(bp.path)
 
-        bp_output_entry_id = sc.branch_entries[bp.output_var[2]]
-        cg = sc.entry_grammars[(bp_output_entry_id, bp.reverse)]
+        cg = sc.entry_grammars[(bp.root_entry, bp.reverse)]
 
         candidates = unifying_expressions(cg, environment, context, current_hole, bp.skeleton, bp.path)
 
@@ -168,8 +159,7 @@ using DataStructures
                         bp.cost + ll,
                         bp.free_parameters + new_free_parameters,
                         new_request,
-                        bp.input_vars,
-                        bp.output_var,
+                        bp.root_entry,
                         bp.reverse,
                     )
                 end,
@@ -179,8 +169,8 @@ using DataStructures
         return states[1]
     end
 
-    function create_block_prototype(sc, target_branch_id, steps, grammar)
-        bp = initial_state(sc, target_branch_id, grammar)
+    function create_block_prototype(sc, target_entry_id, steps, grammar)
+        bp = initial_state(sc, target_entry_id, grammar)
         for step in steps
             bp = next_state(sc, bp, step)
         end
@@ -221,7 +211,7 @@ using DataStructures
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
-        inp_type_id = first(get_connected_from(sc.branch_types, inp_branch_id))
+        inp_type_id = sc.branch_types[inp_branch_id]
         new_block = ProgramBlock(
             FreeVar(sc.types[inp_type_id], inp_var_id, nothing),
             sc.types[inp_type_id],
@@ -251,8 +241,8 @@ using DataStructures
         @test sc.unknown_complexity_factors[out_branch_id] == 16.0
         @test sc.complexities[out_branch_id] == 16.0
         @test sc.added_upstream_complexities[out_branch_id] == 0.0
-        @test sc.unused_explained_complexities[out_branch_id] == 0.0
-        @test sc.unmatched_complexities[out_branch_id] == 0.0
+        @test sc.unused_explained_complexities[out_branch_id] == 16.0
+        @test sc.unmatched_complexities[out_branch_id] == 16.0
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, out_branch_id))
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, out_branch_id))
     end
@@ -279,19 +269,24 @@ using DataStructures
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
-        inp_type_id = first(get_connected_from(sc.branch_types, inp_branch_id))
-        out_type_id = first(get_connected_from(sc.branch_types, out_branch_id))
+        inp_type_id = sc.branch_types[inp_branch_id]
+        out_type_id = sc.branch_types[out_branch_id]
 
         bp = create_block_prototype(
             sc,
-            out_branch_id,
+            sc.branch_entries[out_branch_id],
             [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing, (every_primitive["cdr"], 1))],
             grammar,
         )
-        new_block_result = enumeration_iteration_finished_output(sc, bp)
-        @test length(new_block_result) == 1
-        first_block_id, input_branches, target_output = new_block_result[1]
-        new_solution_paths = add_new_block(sc, first_block_id, input_branches, target_output)
+        enumeration_iteration_finished_output(sc, bp)
+        @test length(sc.blocks_to_insert) == 1
+        is_reverse, br_id, block_info = sc.blocks_to_insert[1]
+        @test is_reverse == false
+        @test br_id == out_branch_id
+        new_block_result = insert_block(sc, br_id, block_info)
+        new_block_id, input_branches, target_output = new_block_result
+        new_solution_paths = add_new_block(sc, new_block_id, input_branches, target_output)
+        first_block_id = UInt64(1)
         first_block_copy_id = first_block_id
         @test new_solution_paths == Set([])
 
@@ -324,8 +319,8 @@ using DataStructures
         first_block_known_copy_id = new_block_copy_id + 1
 
         @test sc.branch_entries[conn_child_id] == sc.branch_entries[inp_branch_id]
-        @test first(get_connected_from(sc.branch_vars, conn_child_id)) == connection_var_id
-        @test get_connected_from(sc.branch_types, conn_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
+        @test sc.branch_vars[conn_child_id] == connection_var_id
+        @test sc.branch_types[conn_child_id] == sc.branch_types[inp_branch_id]
         @test sc.incoming_paths[conn_child_id] ==
               Set([Path(OrderedDict(connection_var_id => new_block_id), Dict(), 0.0)])
         @test length(get_connected_from(sc.branch_incoming_blocks, conn_child_id)) == 1
@@ -339,7 +334,7 @@ using DataStructures
         @test sc.explained_complexity_factors[conn_child_id] == 16.0
         @test sc.complexities[conn_child_id] == 16.0
         @test sc.added_upstream_complexities[conn_child_id] == 0.0
-        @test sc.unused_explained_complexities[conn_child_id] == 0.0
+        @test sc.unused_explained_complexities[conn_child_id] == 16.0
         @test sc.unmatched_complexities[conn_child_id] === nothing
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, conn_child_id))
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, conn_child_id))
@@ -362,8 +357,8 @@ using DataStructures
         @test sc.unknown_complexity_factors[out_branch_id] == 13.0
         @test sc.complexities[out_branch_id] == 13.0
         @test sc.added_upstream_complexities[out_branch_id] == 0.0
-        @test sc.unused_explained_complexities[out_branch_id] == 0.0
-        @test sc.unmatched_complexities[out_branch_id] == 0.0
+        @test sc.unused_explained_complexities[out_branch_id] == 13.0
+        @test sc.unmatched_complexities[out_branch_id] == 13.0
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, out_branch_id))
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, out_branch_id))
     end
@@ -391,13 +386,18 @@ using DataStructures
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
 
-        bp = create_block_prototype(sc, out_branch_id, [every_primitive["concat"]], grammar)
-        new_block_result = enumeration_iteration_finished_output(sc, bp)
-        @test length(new_block_result) == 1
-        first_block_id, input_branches, target_output = new_block_result[1]
-        new_solution_paths = add_new_block(sc, first_block_id, input_branches, target_output)
-        first_block_copy_id::UInt64 = 1
+        bp = create_block_prototype(sc, sc.branch_entries[out_branch_id], [every_primitive["concat"]], grammar)
+        enumeration_iteration_finished_output(sc, bp)
+        @test length(sc.blocks_to_insert) == 1
+        is_reverse, br_id, block_info = sc.blocks_to_insert[1]
+        @test is_reverse == false
+        @test br_id == out_branch_id
+        new_block_result = insert_block(sc, br_id, block_info)
+        new_block_id, input_branches, target_output = new_block_result
+        new_solution_paths = add_new_block(sc, new_block_id, input_branches, target_output)
+        first_block_id = UInt64(1)
         @test new_solution_paths == Set([])
+        first_block_copy_id::UInt64 = 1
 
         v1_var_id::UInt64 = 3
         v2_var_id::UInt64 = 4
@@ -408,9 +408,9 @@ using DataStructures
         constraint_id::UInt64 = 1
         @test sc.constrained_contexts[constraint_id] === nothing
 
-        @test sc.branch_entries[v1_branch_id] == 3
-        @test first(get_connected_from(sc.branch_vars, v1_branch_id)) == v1_var_id
-        @test get_connected_from(sc.branch_types, v1_branch_id) == get_connected_from(sc.branch_types, inp_branch_id)
+        @test sc.branch_entries[v1_branch_id] == 5
+        @test sc.branch_vars[v1_branch_id] == v1_var_id
+        @test sc.branch_types[v1_branch_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v1_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v1_branch_id))
         @test length(get_connected_from(sc.constrained_branches, v1_branch_id)) == 1
@@ -430,9 +430,9 @@ using DataStructures
         @test length(get_connected_from(sc.related_unknown_complexity_branches, v1_branch_id)) == 1
         @test sc.related_unknown_complexity_branches[v1_branch_id, v2_branch_id] == true
 
-        @test sc.branch_entries[v2_branch_id] == 4
-        @test first(get_connected_from(sc.branch_vars, v2_branch_id)) == v2_var_id
-        @test get_connected_from(sc.branch_types, v2_branch_id) == get_connected_from(sc.branch_types, inp_branch_id)
+        @test sc.branch_entries[v2_branch_id] == 6
+        @test sc.branch_vars[v2_branch_id] == v2_var_id
+        @test sc.branch_types[v2_branch_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v2_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v2_branch_id))
         @test length(get_connected_from(sc.constrained_branches, v2_branch_id)) == 1
@@ -452,7 +452,7 @@ using DataStructures
         @test length(get_connected_from(sc.related_unknown_complexity_branches, v2_branch_id)) == 1
         @test sc.related_unknown_complexity_branches[v2_branch_id, v1_branch_id] == true
 
-        inp_type_id = first(get_connected_from(sc.branch_types, inp_branch_id))
+        inp_type_id = sc.branch_types[inp_branch_id]
         inp_type = sc.types[inp_type_id]
 
         new_block = ProgramBlock(FreeVar(inp_type, inp_var_id, nothing), inp_type, 0.0, [inp_var_id], v2_var_id, false)
@@ -473,8 +473,8 @@ using DataStructures
         v1_child_id = first(v1_children)
 
         @test sc.branch_entries[v2_child_id] == sc.branch_entries[inp_branch_id]
-        @test first(get_connected_from(sc.branch_vars, v2_child_id)) == v2_var_id
-        @test get_connected_from(sc.branch_types, v2_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
+        @test sc.branch_vars[v2_child_id] == v2_var_id
+        @test sc.branch_types[v2_child_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v2_child_id))
         @test length(get_connected_to(sc.branch_children, v2_child_id)) == 1
         @test sc.branch_children[v2_branch_id, v2_child_id] == true
@@ -492,14 +492,14 @@ using DataStructures
         @test sc.explained_complexity_factors[v2_child_id] == 16.0
         @test sc.complexities[v2_child_id] == 16.0
         @test sc.added_upstream_complexities[v2_child_id] == 0.0
-        @test sc.unused_explained_complexities[v2_child_id] == 0.0
-        @test sc.unmatched_complexities[v2_child_id] == 0.0
+        @test sc.unused_explained_complexities[v2_child_id] == 16.0
+        @test sc.unmatched_complexities[v2_child_id] == 16.0
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, v2_child_id))
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, v2_child_id))
 
-        @test sc.branch_entries[v1_child_id] == 5
-        @test first(get_connected_from(sc.branch_vars, v1_child_id)) == v1_var_id
-        @test get_connected_from(sc.branch_types, v1_child_id) == get_connected_from(sc.branch_types, inp_branch_id)
+        @test sc.branch_entries[v1_child_id] == 7
+        @test sc.branch_vars[v1_child_id] == v1_var_id
+        @test sc.branch_types[v1_child_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v1_child_id))
         @test length(get_connected_to(sc.branch_children, v1_child_id)) == 1
         @test sc.branch_children[v1_branch_id, v1_child_id] == true
@@ -513,7 +513,7 @@ using DataStructures
         @test sc.branch_is_explained[v1_child_id] == false
         @test sc.branch_is_not_copy[v1_child_id] == false
         @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
-        @test sc.unknown_complexity_factors[v1_child_id] == 6.0
+        @test sc.unknown_complexity_factors[v1_child_id] == 22.0
         @test sc.complexities[v1_child_id] == 6.0
         @test sc.unmatched_complexities[v1_child_id] == 6.0
         @test length(get_connected_from(sc.related_unknown_complexity_branches, v1_child_id)) == 1
@@ -548,8 +548,8 @@ using DataStructures
         @test sc.unknown_complexity_factors[v2_child_id] === nothing
         @test sc.complexities[v2_child_id] == 16.0
         @test sc.added_upstream_complexities[v2_child_id] == 0.0
-        @test sc.unused_explained_complexities[v2_child_id] == 0.0
-        @test sc.unmatched_complexities[v2_child_id] == 0.0
+        @test sc.unused_explained_complexities[v2_child_id] == 16.0
+        @test sc.unmatched_complexities[v2_child_id] == 16.0
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, v2_child_id))
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, v2_child_id))
 
@@ -567,12 +567,12 @@ using DataStructures
         @test sc.branch_is_not_copy[v1_child_id] == true
         @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
         @test sc.explained_min_path_costs[v1_child_id] === nothing
-        @test sc.unknown_complexity_factors[v1_child_id] == 6.0
+        @test sc.unknown_complexity_factors[v1_child_id] == 22.0
         @test sc.explained_complexity_factors[v1_child_id] == 16.0
         @test sc.complexities[v1_child_id] == 6.0
         @test sc.added_upstream_complexities[v1_child_id] == 10.0
-        @test sc.unused_explained_complexities[v1_child_id] == 0.0
-        @test sc.unmatched_complexities[v1_child_id] == 0.0
+        @test sc.unused_explained_complexities[v1_child_id] == 6.0
+        @test sc.unmatched_complexities[v1_child_id] == 6.0
         @test length(get_connected_from(sc.related_unknown_complexity_branches, v1_child_id)) == 1
         @test sc.related_unknown_complexity_branches[v1_child_id, v2_child_id] == true
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, v1_child_id))
@@ -599,8 +599,8 @@ using DataStructures
         @test sc.explained_complexity_factors[out_branch_id] == 29.0
         @test sc.complexities[out_branch_id] == 19.0
         @test sc.added_upstream_complexities[out_branch_id] == 10.0
-        @test sc.unused_explained_complexities[out_branch_id] == 0.0
-        @test sc.unmatched_complexities[out_branch_id] == 0.0
+        @test sc.unused_explained_complexities[out_branch_id] == 19.0
+        @test sc.unmatched_complexities[out_branch_id] == 19.0
         @test isempty(get_connected_from(sc.related_unknown_complexity_branches, out_branch_id))
         @test isempty(get_connected_from(sc.related_explained_complexity_branches, out_branch_id))
     end

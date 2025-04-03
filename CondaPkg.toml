@@ -1,5 +1,6 @@
 [deps]
 einops = ""
+libgfortran5 = ">=14"
 numpy = ""
 onnx = ""
 optimum = ""

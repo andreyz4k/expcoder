@@ -16,7 +16,7 @@ mutable struct SolutionContext
     branch_is_not_copy::VectorStorage{Bool}
     branch_is_not_const::VectorStorage{Bool}
 
-    branch_entries::VectorStorage{UInt64}
+    branch_entries::ConnectionGraphStorage
     branch_vars::ConnectionGraphStorage
 
     "[branch_id x type_id] -> {false, true}"
@@ -67,6 +67,12 @@ mutable struct SolutionContext
 
     "[previous_var_id x following_var_id] -> {false, true}"
     previous_vars::ConnectionGraphStorage
+    previous_branches::ConnectionGraphStorage
+
+    "[branch_id x previous_entry_id] -> {false, true}"
+    branch_prev_entries::ConnectionGraphStorage
+    "[branch_id x following_entry_id] -> {false, true}"
+    branch_foll_entries::ConnectionGraphStorage
 
     input_keys::Dict{UInt64,String}
     target_branch_id::UInt64
@@ -76,15 +82,20 @@ mutable struct SolutionContext
     total_number_of_enumerated_programs::Int64
     iterations_count::Int64
 
-    pq_input::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
-    pq_output::NDPriorityQueue{Tuple{UInt64,Bool},Float64}
-    branch_queues_unknown::Dict{UInt64,PriorityQueue}
-    branch_queues_explained::Dict{UInt64,PriorityQueue}
+    pq_forward::NDPriorityQueue{UInt64,Float64}
+    pq_reverse::NDPriorityQueue{UInt64,Float64}
+    entry_queues_forward::Dict{UInt64,PriorityQueue}
+    entry_queues_reverse::Dict{UInt64,PriorityQueue}
+    copies_queue::PriorityQueue
+    found_blocks_forward::Dict{UInt64,Vector}
+    found_blocks_reverse::Dict{UInt64,Vector}
+    blocks_to_insert::Vector
+
     branch_unknown_from_output::VectorStorage{Bool}
     branch_known_from_input::VectorStorage{Bool}
 
     entry_grammars::Dict{Tuple{UInt64,Bool},Any}
-    waiting_branches::Dict{Tuple{UInt64,Bool},Vector{UInt64}}
+    waiting_entries::Set{Tuple{UInt64,Bool}}
 
     known_var_locations::VectorStorage{Vector{Tuple{Program,Int64}}}
     unknown_var_locations::VectorStorage{Vector{Tuple{Program,Int64}}}
@@ -116,7 +127,7 @@ function create_starting_context(
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
-        VectorStorage{UInt64}(),
+        ConnectionGraphStorage(),
         ConnectionGraphStorage(),
         ConnectionGraphStorage(),
         IndexedStorage{AbstractProgramBlock}(),
@@ -143,6 +154,9 @@ function create_starting_context(
         VectorStorage{Float64}(),
         VectorStorage{Float64}(),
         ConnectionGraphStorage(),
+        ConnectionGraphStorage(),
+        ConnectionGraphStorage(),
+        ConnectionGraphStorage(),
         Dict{UInt64,String}(),
         0,
         example_count,
@@ -150,14 +164,18 @@ function create_starting_context(
         hyperparameters,
         0,
         0,
-        NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
-        NDPriorityQueue{Tuple{UInt64,Bool},Float64}(),
+        NDPriorityQueue{UInt64,Float64}(),
+        NDPriorityQueue{UInt64,Float64}(),
         Dict(),
         Dict(),
+        PriorityQueue(),
+        Dict{UInt64,Vector{UInt64}}(),
+        Dict{UInt64,Vector{UInt64}}(),
+        [],
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
         Dict{Tuple{UInt64,Bool},Any}(),
-        Dict{Tuple{UInt64,Bool},Vector{UInt64}}(),
+        Set{Tuple{UInt64,Bool}}(),
         VectorStorage{Vector{Tuple{Program,Int64}}}(),
         VectorStorage{Vector{Tuple{Program,Int64}}}(),
         verbose,
@@ -185,8 +203,8 @@ function create_starting_context(
         branch_id = increment!(sc.branches_count)
 
         sc.branch_entries[branch_id] = entry_id
-        sc.branch_vars[branch_id, var_id] = true
-        sc.branch_types[branch_id, type_id] = true
+        sc.branch_vars[branch_id] = var_id
+        sc.branch_types[branch_id] = type_id
         sc.branch_is_explained[branch_id] = true
         sc.branch_is_not_copy[branch_id] = true
         sc.branch_is_not_const[branch_id] = true
@@ -218,8 +236,8 @@ function create_starting_context(
     branch_id = increment!(sc.branches_count)
 
     sc.branch_entries[branch_id] = entry_id
-    sc.branch_vars[branch_id, var_id] = true
-    sc.branch_types[branch_id, type_id] = true
+    sc.branch_vars[branch_id] = var_id
+    sc.branch_types[branch_id] = type_id
     sc.branch_is_unknown[branch_id] = true
     sc.branch_unknown_from_output[branch_id] = true
 
@@ -429,43 +447,75 @@ function create_next_var(sc::SolutionContext)
     return v
 end
 
-function update_branch_priority(sc::SolutionContext, branch_id::UInt64, is_known::Bool)
-    if is_known
-        pq = sc.branch_known_from_input[branch_id] ? sc.pq_input : sc.pq_output
-        q = sc.branch_queues_explained[branch_id]
+const MAX_COST = 1e10
+
+function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bool)
+    if is_rev
+        pq = sc.pq_reverse
+        qs = sc.entry_queues_reverse
     else
-        pq = sc.branch_unknown_from_output[branch_id] ? sc.pq_output : sc.pq_input
-        q = sc.branch_queues_unknown[branch_id]
+        pq = sc.pq_forward
+        qs = sc.entry_queues_forward
     end
+    if !haskey(qs, entry_id)
+        return
+    end
+    q = qs[entry_id]
     if !isempty(q)
         min_cost = peek(q)[2]
-        if is_known
-            pq[(branch_id, is_known)] =
-                1 / (
-                    (
-                        sc.explained_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
-                        min_cost^sc.hyperparameters["block_cost_power"]
-                    ) * sc.explained_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"]
-                )
-            if sc.verbose
-                @info "Known $(sc.branch_known_from_input[branch_id] ? "in" : "out" ) branch $branch_id priority is $(pq[(branch_id, is_known)]) with path cost $(sc.explained_min_path_costs[branch_id]) + $(min_cost) and complexity factor $(sc.explained_complexity_factors[branch_id])"
+
+        cost = MAX_COST
+        if is_rev
+            explained_from_consts = []
+
+            for branch_id in get_connected_to(sc.branch_entries, entry_id)
+                if sc.branch_is_explained[branch_id] && sc.branch_is_not_copy[branch_id]
+                    if !isnothing(sc.explained_min_path_costs[branch_id])
+                        cost = min(
+                            cost,
+                            (
+                                sc.explained_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
+                                min_cost^sc.hyperparameters["block_cost_power"]
+                            ) * sc.explained_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"],
+                        )
+                    elseif !isnothing(sc.unknown_min_path_costs[branch_id])
+                        push!(explained_from_consts, branch_id)
+                    end
+                end
+            end
+
+            if cost == MAX_COST
+                for branch_id in explained_from_consts
+                    cost = min(
+                        cost,
+                        (
+                            sc.unknown_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
+                            min_cost^sc.hyperparameters["block_cost_power"]
+                        ) * sc.unknown_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"],
+                    )
+                end
             end
         else
-            pq[(branch_id, is_known)] =
-                1 / (
-                    (
-                        sc.unknown_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
-                        min_cost^sc.hyperparameters["block_cost_power"]
-                    ) * sc.unknown_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"]
-                )
-            if sc.verbose
-                @info "Unknown $(sc.branch_unknown_from_output[branch_id] ? "out" : "in" ) branch $branch_id priority is $(pq[(branch_id, is_known)]) with path cost $(sc.unknown_min_path_costs[branch_id]) + $(min_cost) and complexity factor $(sc.unknown_complexity_factors[branch_id])"
+            for branch_id in get_connected_to(sc.branch_entries, entry_id)
+                if sc.branch_is_unknown[branch_id]
+                    cost = min(
+                        cost,
+                        (
+                            sc.unknown_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
+                            min_cost^sc.hyperparameters["block_cost_power"]
+                        ) * sc.unknown_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"],
+                    )
+                end
             end
         end
-    elseif haskey(pq, (branch_id, is_known))
-        delete!(pq, (branch_id, is_known))
+        pq[entry_id] = 1 / cost
         if sc.verbose
-            @info "Dropped $(is_known ? "known" : "unknown") branch $branch_id"
+            @info "$(is_rev ? "Known" : "Unknown") branch $entry_id priority is $(1 / cost)"
+        end
+    elseif haskey(pq, entry_id)
+        delete!(pq, entry_id)
+        if sc.verbose
+            @info "Dropped $(is_rev ? "known" : "unknown") entry $entry_id"
         end
     end
 end
@@ -865,10 +915,7 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ProgramBlock, 
             in_complexity += sc.complexities[inp_branch_id]
             added_upstream_complexity += sc.added_upstream_complexities[inp_branch_id]
             related_brs = get_connected_from(sc.related_explained_complexity_branches, inp_branch_id)
-            merge!(
-                related_branches,
-                Dict(b_id => first(get_connected_from(sc.branch_vars, b_id)) for b_id in related_brs),
-            )
+            merge!(related_branches, Dict(b_id => sc.branch_vars[b_id] for b_id in related_brs))
         end
 
         for path in get_new_paths(sc.incoming_paths, out_branch_id)
@@ -896,8 +943,8 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ProgramBlock, 
         sc.branch_unknown_from_output[out_branch_id] ||
         any(sc.branch_unknown_from_output[parent] for parent in parents)
     )
-        _push_unmatched_complexity_to_output(sc, out_branch_id, input_branches, 0.0)
-        _push_unused_complexity_to_input(sc, out_branch_id, input_branches, 0.0)
+        # _push_unmatched_complexity_to_output(sc, out_branch_id, input_branches, 0.0)
+        # _push_unused_complexity_to_input(sc, out_branch_id, input_branches, 0.0)
         # for inp_branch_var in bl.input_vars
         #     _push_unused_complexity_to_input(sc, input_branches[inp_branch_var], input_branches, 0.0)
         # end
@@ -922,7 +969,7 @@ function update_complexity_factors_known(sc::SolutionContext, bl::ReverseProgram
     for out_var_id in bl.output_vars
         out_branch_id = output_branches[out_var_id]
         related_brs = get_connected_from(sc.related_explained_complexity_branches, out_branch_id)
-        related_branches = Dict(b_id => first(get_connected_from(sc.branch_vars, b_id)) for b_id in related_brs)
+        related_branches = Dict(b_id => sc.branch_vars[b_id] for b_id in related_brs)
         for path in get_new_paths(sc.incoming_paths, out_branch_id)
             filtered_related_branches =
                 UInt64[b_id for (b_id, var_id) in related_branches if !path_sets_var(path, var_id)]
@@ -969,7 +1016,7 @@ function update_context(sc::SolutionContext)
     end
 
     solution_paths = get_new_paths(sc.incoming_paths, sc.target_branch_id)
-    target_var = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+    target_var = sc.branch_vars[sc.target_branch_id]
     output_paths = filter(solution_paths) do solution_path
         vars_from_output = Set{UInt64}([target_var])
         vars_to_check = Set{UInt64}([target_var])
@@ -1024,18 +1071,9 @@ function vars_in_loop(sc::SolutionContext, known_var_id, unknown_var_id)
     !isempty(intersect(prev_known, foll_unknown))
 end
 
-function is_block_loops(sc::SolutionContext, bp::BlockPrototype)
-    if isnothing(bp.input_vars)
-        return false
-    end
-    if bp.reverse
-        inp_vars = [bp.output_var[1]]
-        out_vars = collect(keys(bp.input_vars))
-    else
-        out_vars = [bp.output_var[1]]
-        inp_vars = collect(keys(bp.input_vars))
-    end
-    prev_inputs = union(Set{UInt64}(), [get_connected_to(sc.previous_vars, inp_var) for inp_var in inp_vars]...)
+function is_block_loops(sc::SolutionContext, block::ProgramBlock)
+    out_vars = [block.output_var]
+    prev_inputs = union(Set{UInt64}(), [get_connected_to(sc.previous_vars, inp_var) for inp_var in block.input_vars]...)
     foll_outputs = union([get_connected_from(sc.previous_vars, out_var) for out_var in out_vars]...)
     return !isempty(intersect(prev_inputs, foll_outputs))
 end

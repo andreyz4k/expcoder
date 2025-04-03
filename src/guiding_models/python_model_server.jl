@@ -112,21 +112,26 @@ end
 
 import Redis
 
+using CondaPkg
+
 function start_server(server::PythonGuidingModelServer, is_test = false; wandb_run_id = nothing)
     @info "Starting Python model server"
     # Reset redis db
     server.model.redis_conn = get_redis_connection(server.model.redis_db)
     Redis.flushdb(server.model.redis_conn, "sync")
     cache_type = "sqlite"
-    if !isnothing(wandb_run_id)
-        cmd = `.CondaPkg/env/bin/python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type) $(wandb_run_id)`
-    else
-        cmd = `.CondaPkg/env/bin/python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
+    CondaPkg.withenv() do
+        python = CondaPkg.which("python")
+        if !isnothing(wandb_run_id)
+            cmd = `$python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type) $(wandb_run_id)`
+        else
+            cmd = `$python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
+        end
+        if is_test
+            cmd = addenv(cmd, "WANDB_MODE" => "offline")
+        end
+        server.model.process = run(pipeline(cmd, stdout = stdout, stderr = stderr); wait = false)
     end
-    if is_test
-        cmd = addenv(cmd, "WANDB_MODE" => "offline")
-    end
-    server.model.process = run(pipeline(cmd, stdout = stdout, stderr = stderr); wait = false)
     if !isnothing(server.model.load_path)
         Redis.set(server.model.redis_conn, "load_model", server.model.load_path)
         while true
@@ -141,6 +146,9 @@ end
 
 function stop_server(server::PythonGuidingModelServer, verbose = false)
     kill(server.model.process, Base.SIGINT)
+    while (process_running(server.model.process))
+        sleep(0.1)
+    end
     Redis.disconnect(server.model.redis_conn)
     if verbose
         @info "Guiding model server stopped"
@@ -168,7 +176,6 @@ function send_inputs_to_model(redis_conn::Redis.RedisConnection, model_inputs)
 end
 
 function receive_grammar_weights(sc::SolutionContext, redis_conn::Redis.RedisConnection, grammar)
-    grammar_len = length(grammar)
     while true
         response = Redis.lpop(redis_conn, sc.task_name)
         if isnothing(response)
@@ -193,71 +200,7 @@ function receive_grammar_weights(sc::SolutionContext, redis_conn::Redis.RedisCon
             @info "Already have grammar for entry $entry_id, is_rev $is_rev"
             continue
         end
-
-        log_variable = result[end-2]
-        log_lambda = result[end-1]
-        log_free_var = result[end]
-
-        sc.entry_grammars[(entry_id, is_rev)] = if !haskey(contextual_grammar_cache, grammar_len)
-            productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-            g = Grammar(log_variable, log_lambda, log_free_var, productions)
-            contextual_grammar_cache[grammar_len] = make_dummy_contextual(g)
-            contextual_grammar_cache[grammar_len]
-        else
-            prototype = contextual_grammar_cache[grammar_len]
-            production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
-            ContextualGrammar(
-                _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-                _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-                Dict(
-                    p => [
-                        _grammar_with_weights(g, production_scores, log_variable, log_lambda, log_free_var) for
-                        g in grammars
-                    ] for (p, grammars) in prototype.contextual_library
-                ),
-            )
-        end
-
-        for (branch_id) in sc.waiting_branches[(entry_id, is_rev)]
-            var_id = first(get_connected_from(sc.branch_vars, branch_id))
-            entry = sc.entries[entry_id]
-            type_id = first(get_connected_from(sc.branch_types, branch_id))
-            type = sc.types[type_id]
-            context, type = instantiate(type, empty_context)
-
-            bp = BlockPrototype(
-                Hole(
-                    type,
-                    is_rev ? sc.known_var_locations[var_id] : sc.unknown_var_locations[var_id],
-                    CombinedArgChecker([SimpleArgChecker(is_rev, -1, true)]),
-                    is_rev ? nothing : entry.values,
-                ),
-                context,
-                [],
-                EPSILON,
-                0,
-                type,
-                nothing,
-                (var_id, branch_id),
-                is_rev,
-            )
-            queue_group = is_rev ? sc.branch_queues_explained : sc.branch_queues_unknown
-            if haskey(queue_group, branch_id)
-                q = queue_group[branch_id]
-            else
-                q = PriorityQueue{BlockPrototype,Float64}()
-            end
-            if is_rev
-                enqueue_known_bp(sc, bp, q, branch_id)
-            else
-                enqueue_unknown_bp(sc, bp, q)
-            end
-            if !isempty(q)
-                queue_group[branch_id] = q
-                update_branch_priority(sc, branch_id, is_rev)
-            end
-        end
-        delete!(sc.waiting_branches, (entry_id, is_rev))
+        process_grammar_results(sc, entry_id, is_rev, result, grammar)
     end
 end
 

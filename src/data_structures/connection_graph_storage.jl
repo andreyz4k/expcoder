@@ -75,6 +75,14 @@ function drop_changes!(storage::ConnectionGraphStorage, depth)
     storage.transaction_depth = depth
 end
 
+function Base.getindex(storage::ConnectionGraphStorage, i::UInt64)
+    results = get_connected_from(storage, i)
+    if length(results) == 1
+        return first(results)
+    end
+    error("Multiple results for $i: $results")
+end
+
 function Base.getindex(storage::ConnectionGraphStorage, i::UInt64, j::UInt64)
     for k in min(length(storage.updates_stack), storage.transaction_depth):-1:1
         if haskey(storage.updates_stack[k][1], i) && in(j, storage.updates_stack[k][1][i])
@@ -130,6 +138,10 @@ function get_connected_to(storage::ConnectionGraphStorage, j::UInt64)
         end
     end
     return res
+end
+
+function Base.setindex!(storage::ConnectionGraphStorage, j::UInt64, i::UInt64)
+    setindex!(storage, true, i, j)
 end
 
 function Base.setindex!(storage::ConnectionGraphStorage, value::Bool, i::UInt64, j::UInt64)

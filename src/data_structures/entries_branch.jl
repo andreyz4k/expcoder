@@ -334,8 +334,8 @@ function _setup_new_branch(
 )
     new_branch_id = increment!(sc.branches_count)
     sc.branch_entries[new_branch_id] = new_entry_index
-    sc.branch_vars[new_branch_id, var_id] = true
-    sc.branch_types[new_branch_id, t_id] = true
+    sc.branch_vars[new_branch_id] = var_id
+    sc.branch_types[new_branch_id] = t_id
     sc.branch_is_explained[new_branch_id] = true
     if is_not_copy
         sc.branch_is_not_copy[new_branch_id] = true
@@ -573,7 +573,7 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
         collect(keys(get_connected_to(sc.branch_outgoing_blocks, out_block_copy_id))),
         collect(keys(get_connected_to(sc.branch_incoming_blocks, out_block_copy_id))),
     )
-    old_branches = Dict{UInt64,UInt64}(first(get_connected_from(sc.branch_vars, b_id)) => b_id for b_id in branch_ids)
+    old_branches = Dict{UInt64,UInt64}(sc.branch_vars[b_id] => b_id for b_id in branch_ids)
 
     old_branches[var_id] = new_branch_id
 
@@ -605,8 +605,8 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
             else
                 created_branch_id = increment!(sc.branches_count)
                 sc.branch_entries[created_branch_id] = new_entry_index
-                sc.branch_vars[created_branch_id, v_id] = true
-                sc.branch_types[created_branch_id, new_br_entry.type_id] = true
+                sc.branch_vars[created_branch_id] = v_id
+                sc.branch_types[created_branch_id] = new_br_entry.type_id
                 if sc.branch_is_unknown[b_id]
                     sc.branch_is_unknown[created_branch_id] = true
                     sc.branch_unknown_from_output[created_branch_id] = sc.branch_unknown_from_output[b_id]
@@ -651,15 +651,14 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
     next_blocks = merge([get_connected_from(sc.branch_outgoing_blocks, br_id) for br_id in unknown_old_branches]...)
     for (b_copy_id, b_id) in next_blocks
         inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, b_copy_id))
-        inputs = Dict(
-            first(get_connected_from(sc.branch_vars, b)) => haskey(out_branches, b) ? out_branches[b] : b for
-            b in inp_branches
-        )
+        inputs = Dict(sc.branch_vars[b] => haskey(out_branches, b) ? out_branches[b] : b for b in inp_branches)
         out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
         target_branches = UInt64[haskey(out_branches, b) ? out_branches[b] : b for b in out_block_branches]
 
-        input_entries = Set(sc.branch_entries[b] for b in values(inputs))
-        if any(in(sc.branch_entries[b], input_entries) for b in target_branches)
+        following_entries = union([get_connected_from(sc.branch_foll_entries, b) for b in target_branches]...)
+        union!(following_entries, [sc.branch_entries[b] for b in target_branches])
+
+        if any(in(sc.branch_entries[b], following_entries) for b in values(inputs))
             if sc.verbose
                 @info "Fixing constraint leads to a redundant block"
             end
@@ -739,14 +738,14 @@ end
 
 function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_branches, unfixed_vars)
     inp_branches = keys(get_connected_to(sc.branch_outgoing_blocks, block_copy_id))
-    all_inputs = Dict(first(get_connected_from(sc.branch_vars, b)) => b for b in inp_branches)
+    all_inputs = Dict(sc.branch_vars[b] => b for b in inp_branches)
     for (v, b) in all_inputs
         if haskey(fixed_branches, v) && sc.branch_is_explained[b] && fixed_branches[v] != b
             return false, Set(), Set()
         end
     end
     out_branches = keys(get_connected_to(sc.branch_incoming_blocks, block_copy_id))
-    target_output = Dict{UInt64,UInt64}(first(get_connected_from(sc.branch_vars, b)) => b for b in out_branches)
+    target_output = Dict{UInt64,UInt64}(sc.branch_vars[b] => b for b in out_branches)
     if isempty(unfixed_vars)
         return false, Set([(block_id, fixed_branches, target_output)]), Set()
     end
@@ -859,6 +858,28 @@ function _save_block_branch_connections(sc, block_id, block, fixed_branches, out
     block_copy_id = increment!(sc.block_copies_count)
     sc.branch_outgoing_blocks[input_br_ids, block_copy_id] = block_id
     sc.branch_incoming_blocks[out_branches, block_copy_id] = block_id
+
+    following_entries = Set{UInt64}()
+    following_branches = Set{UInt64}()
+    for br_id in out_branches
+        union!(following_entries, get_connected_from(sc.branch_foll_entries, br_id))
+        push!(following_entries, sc.branch_entries[br_id])
+        union!(following_branches, get_connected_from(sc.previous_branches, br_id))
+        push!(following_branches, br_id)
+    end
+    prev_entries = Set{UInt64}()
+    prev_branches = Set{UInt64}()
+    for br_id in input_br_ids
+        union!(prev_entries, get_connected_from(sc.branch_prev_entries, br_id))
+        push!(prev_entries, sc.branch_entries[br_id])
+        union!(prev_branches, get_connected_to(sc.previous_branches, br_id))
+        push!(prev_branches, br_id)
+    end
+
+    sc.branch_prev_entries[following_branches, prev_entries] = true
+    sc.branch_foll_entries[prev_branches, following_entries] = true
+    sc.previous_branches[prev_branches, following_branches] = true
+
     if sc.verbose
         inputs = [
             (

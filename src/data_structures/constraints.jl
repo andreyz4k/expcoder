@@ -7,7 +7,7 @@ function _find_type_branches_between(sc, old_branch_id, new_branch_id, old_type,
     if is_subtype(old_type, new_type)
         push!(out_branches, old_branch_id)
         for child_id in get_connected_from(sc.branch_children, old_branch_id)
-            child_type = sc.types[first(get_connected_from(sc.branch_types, child_id))]
+            child_type = sc.types[sc.branch_types[child_id]]
             union!(out_branches, _find_type_branches_between(sc, child_id, new_branch_id, child_type, new_type))
         end
     end
@@ -28,7 +28,7 @@ function _tighten_constraint(
     new_branches = Dict()
     out_constrained_branches = Dict()
 
-    new_type = sc.types[first(get_connected_from(sc.branch_types, new_branch_id))]
+    new_type = sc.types[sc.branch_types[new_branch_id]]
     context, new_type = instantiate(new_type, context)
     context = unify(context, new_type, sc.types[old_entry.type_id])
     if isnothing(context)
@@ -46,7 +46,7 @@ function _tighten_constraint(
             out_branches[var_id] = new_branch_id
             new_branches[branch_id] = new_branch_id
         else
-            branch_type = sc.types[first(get_connected_from(sc.branch_types, branch_id))]
+            branch_type = sc.types[sc.branch_types[branch_id]]
             context, new_type = apply_context(context, branch_type)
 
             new_type_id = push!(sc.types, new_type)
@@ -62,8 +62,8 @@ function _tighten_constraint(
             else
                 created_branch_id = increment!(sc.branches_count)
                 sc.branch_entries[created_branch_id] = new_entry_id
-                sc.branch_vars[created_branch_id, var_id] = true
-                sc.branch_types[created_branch_id, new_type_id] = true
+                sc.branch_vars[created_branch_id] = var_id
+                sc.branch_types[created_branch_id] = new_type_id
 
                 for (parent, children) in parents_children
                     # if isnothing(parent)
@@ -133,7 +133,7 @@ function tighten_constraint(sc, constraint_id, new_branch_id, old_branch_id)
         sc,
         constrained_branches,
         constrained_context_id,
-        first(get_connected_from(sc.branch_vars, new_branch_id)),
+        sc.branch_vars[new_branch_id],
         new_branch_id,
         old_entry,
     )
@@ -253,8 +253,8 @@ function _tighten_constraint(
 
                 created_branch_id = increment!(sc.branches_count)
                 sc.branch_entries[created_branch_id] = new_entry_index
-                sc.branch_vars[created_branch_id, var_id] = true
-                sc.branch_types[created_branch_id, new_br_entry.type_id] = true
+                sc.branch_vars[created_branch_id] = var_id
+                sc.branch_types[created_branch_id] = new_br_entry.type_id
                 if sc.branch_is_unknown[branch_id]
                     sc.branch_is_unknown[created_branch_id] = true
                     sc.branch_unknown_from_output[created_branch_id] = sc.branch_unknown_from_output[branch_id]
@@ -341,15 +341,8 @@ function _tighten_constraint(
 
             new_b_copy_id = _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
             if any(isa(sc.entries[e], AbductibleEntry) for e in input_entries)
-                b = first(b for b in inp_branches if haskey(out_branches, first(get_connected_from(sc.branch_vars, b))))
-                _abduct_next_block(
-                    sc,
-                    new_b_copy_id,
-                    b_id,
-                    new_branch_id,
-                    first(get_connected_from(sc.branch_vars, b)),
-                    b,
-                )
+                b = first(b for b in inp_branches if haskey(out_branches, sc.branch_vars[b]))
+                _abduct_next_block(sc, new_b_copy_id, b_id, out_branches[sc.branch_vars[b]], sc.branch_vars[b], b)
             end
             for target_branch in target_branches
                 update_complexity_factors_unknown(sc, inputs, target_branch)

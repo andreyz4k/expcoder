@@ -42,7 +42,12 @@ using solver:
     receive_grammar_weights,
     get_redis_connection,
     PythonGuidingModelServer,
-    mark_task_finished
+    mark_task_finished,
+    enumeration_iteration_insert_copy_block,
+    enumeration_iteration_insert_block,
+    is_var_on_path,
+    is_on_path,
+    _used_vars
 
 using DataStructures
 
@@ -169,11 +174,6 @@ using DataStructures
         return create_arc_task(fname, tp)
     end
 
-    _used_vars(p::FreeVar) = [p.var_id]
-    _used_vars(p::Apply) = vcat(_used_vars(p.f), _used_vars(p.x))
-    _used_vars(p::Abstraction) = _used_vars(p.b)
-    _used_vars(::Any) = []
-
     function _extract_blocks(task, target_program, verbose = false)
         vars_mapping = Dict{Any,UInt64}()
         vars_from_input = Set{Any}()
@@ -204,7 +204,7 @@ using DataStructures
                     if !haskey(vars_mapping, v)
                         vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                         push!(in_vars, vars_mapping[v])
-                    elseif v in vars_from_input
+                    elseif v in vars_from_input && !isa(p.v, FreeVar)
                         copied_vars += 1
                         push!(in_vars, length(vars_mapping) + copied_vars)
                         copy_block = ProgramBlock(
@@ -295,56 +295,6 @@ using DataStructures
         return haskey(vars_mapping, bl.input_vars[1])
     end
 
-    function is_var_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verbose = false)
-        if !isa(bp.skeleton, FreeVar)
-            return false
-        end
-        if !isa(bl.p, FreeVar)
-            return false
-        end
-        if verbose
-            @info "Check on path"
-            @info bl.output_var
-            @info vars_mapping[bl.output_var]
-            @info bp.output_var
-        end
-        if vars_mapping[bl.output_var] != bp.output_var[1]
-            return false
-        end
-        if haskey(vars_mapping, bl.p.var_id)
-            bp.skeleton.var_id == vars_mapping[bl.p.var_id]
-        else
-            true
-        end
-    end
-
-    is_on_path(prot::Hole, p, vars_mapping, final = false) = true
-    is_on_path(prot::Apply, p::Apply, vars_mapping, final = false) =
-        is_on_path(prot.f, p.f, vars_mapping, final) && is_on_path(prot.x, p.x, vars_mapping, final)
-    is_on_path(prot::Abstraction, p::Abstraction, vars_mapping, final = false) =
-        is_on_path(prot.b, p.b, vars_mapping, final)
-    is_on_path(prot, p, vars_mapping, final = false) = prot == p
-
-    function is_on_path(prot::FreeVar, p::FreeVar, vars_mapping, final = false)
-        if !haskey(vars_mapping, p.var_id)
-            if isnothing(prot.var_id)
-                vars_mapping[p.var_id] = "r$(length(vars_mapping) + 1)"
-            elseif final
-                vars_mapping[p.var_id] = prot.var_id
-            else
-                return false
-            end
-        else
-            if isnothing(prot.var_id)
-                return false
-            end
-            if vars_mapping[p.var_id] != prot.var_id
-                return false
-            end
-        end
-        true
-    end
-
     function _get_entries(sc, vars_mapping, branches)
         result = Dict()
         for (original_var, mapped_var) in vars_mapping
@@ -369,7 +319,7 @@ using DataStructures
         return result
     end
 
-    function _simulate_block_search(
+    function _simulate_copy_block_search(
         sc,
         task,
         bl::ProgramBlock,
@@ -387,148 +337,315 @@ using DataStructures
         if verbose
             @info "Simulating block search for $bl"
         end
-        if bl.p isa FreeVar
-            is_explained = true
-            branch_id = branches[vars_mapping[bl.input_vars[1]]]
-        else
-            is_explained = false
-            branch_id = branches[vars_mapping[bl.output_var]]
+
+        out_branch_id = branches[vars_mapping[bl.output_var]]
+
+        not_on_path = Set()
+        @test !isempty(sc.copies_queue)
+        while !isempty(sc.copies_queue)
+            block_info, p = peek(sc.copies_queue)
+            block_info = dequeue!(sc.copies_queue)
+            if verbose
+                @info block_info
+            end
+
+            block, _, _ = block_info
+
+            if is_var_on_path(block, bl, vars_mapping, verbose)
+                if verbose
+                    @info "on path"
+                end
+
+                found_solutions =
+                    enumeration_iteration_insert_copy_block(sc, block_info, guiding_model_channels, grammar)
+
+                if verbose
+                    @info "found end"
+                    @info "Out branch id $out_branch_id"
+                end
+
+                for (block_info_, p_) in not_on_path
+                    sc.copies_queue[block_info_] = p_
+                end
+
+                in_blocks = get_connected_from(sc.branch_incoming_blocks, out_branch_id)
+                if verbose
+                    @info "in_blocks: $in_blocks"
+                end
+                if isempty(in_blocks)
+                    children = get_connected_from(sc.branch_children, out_branch_id)
+                    if verbose
+                        @info "children: $children"
+                        @info sc.branch_children
+                    end
+                    if isempty(children)
+                        if verbose
+                            @info "Can't add block"
+                        end
+                        return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
+                    end
+                    @test length(children) == 1
+                    child_id = first(children)
+                    in_blocks = get_connected_from(sc.branch_incoming_blocks, child_id)
+                end
+                @test !isempty(in_blocks)
+                if verbose
+                    @info "in_blocks: $in_blocks"
+                end
+                created_block_id = first(values(in_blocks))
+                created_block = sc.blocks[created_block_id]
+                if verbose
+                    @info "created_block: $created_block"
+                end
+
+                updated_branches = copy(branches)
+                created_block_copy_id = first(keys(in_blocks))
+                in_branches = keys(get_connected_to(sc.branch_outgoing_blocks, created_block_copy_id))
+                for in_branch in in_branches
+                    updated_branches[sc.branch_vars[in_branch]] = in_branch
+                end
+                out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
+                for out_branch in out_branches
+                    updated_branches[sc.branch_vars[out_branch]] = out_branch
+                end
+                updated_branches = _fetch_branches_children(sc, updated_branches)
+                if verbose
+                    @info "updated_branches: $updated_branches"
+                end
+
+                updated_vars_mapping = copy(vars_mapping)
+                for (original_var, new_var) in zip(bl.input_vars, created_block.input_vars)
+                    if !haskey(updated_vars_mapping, original_var)
+                        updated_vars_mapping[original_var] = new_var
+                    end
+                end
+                if verbose
+                    @info "updated_vars_mapping: $updated_vars_mapping"
+                end
+                updated_history = vcat(branches_history, [(branches, bl)])
+
+                if isempty(rem_blocks)
+                    @test !isempty(found_solutions)
+                    for solution_path in found_solutions
+                        solution, cost = extract_solution(sc, solution_path)
+                        ll = task.log_likelihood_checker(task, solution)
+                        @test !isnothing(ll)
+                        @test !isinf(ll)
+                    end
+                end
+
+                return _check_reachable(
+                    sc,
+                    task,
+                    rem_blocks,
+                    updated_vars_mapping,
+                    updated_branches,
+                    updated_history,
+                    guiding_model_server,
+                    guiding_model_channels,
+                    grammar,
+                    run_context,
+                    mfp,
+                    verbose,
+                )
+            else
+                push!(not_on_path, (block_info, p))
+                if verbose
+                    @info "not on path"
+                end
+            end
         end
-        if !haskey((is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown), branch_id)
+        if verbose
+            @info "Failed to find block"
+        end
+        return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
+    end
+
+    function _simulate_block_search(
+        sc,
+        task,
+        bl::ProgramBlock,
+        rem_blocks,
+        branches,
+        branches_history,
+        vars_mapping,
+        guiding_model_server,
+        guiding_model_channels,
+        grammar,
+        run_context,
+        mfp,
+        verbose,
+    )
+        if bl.p isa FreeVar
+            return _simulate_copy_block_search(
+                sc,
+                task,
+                bl,
+                rem_blocks,
+                branches,
+                branches_history,
+                vars_mapping,
+                guiding_model_server,
+                guiding_model_channels,
+                grammar,
+                run_context,
+                mfp,
+                verbose,
+            )
+        end
+
+        if verbose
+            @info "Simulating block search for $bl"
+        end
+
+        out_branch_id = branches[vars_mapping[bl.output_var]]
+        # while !isempty(get_connected_from(sc.branch_children, out_branch_id))
+        #     if verbose
+        #         @info "Out branch id $out_branch_id"
+        #         @info "Children $(get_connected_from(sc.branch_children, out_branch_id))"
+        #     end
+        #     out_branch_id = first(get_connected_from(sc.branch_children, out_branch_id))
+        # end
+        entry_id = sc.branch_entries[out_branch_id]
+
+        if !haskey(sc.entry_queues_forward, entry_id)
             if verbose
                 @info "Queue is empty"
             end
             return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
         end
-        q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[branch_id]
+        q = sc.entry_queues_forward[entry_id]
         not_on_path = Set()
-        @test !isempty(q)
-        while !isempty(q)
-            (bp, p) = peek(q)
-            bp = dequeue!(q)
-            if verbose
-                @info bp
-            end
-            if (!isa(bp.skeleton, FreeVar) && is_on_path(bp.skeleton, bl.p, Dict())) ||
-               is_var_on_path(bp, bl, vars_mapping, verbose)
-                if verbose
-                    @info "on path"
+        not_on_path_bp = Set()
+        @test !isempty(sc.blocks_to_insert) || !isempty(q)
+        while !isempty(sc.blocks_to_insert) || !isempty(q)
+            if !isempty(sc.blocks_to_insert)
+                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+
+                if is_reverse != false || br_id != out_branch_id || !is_on_path(block_info[1], bl.p, Dict(), true)
+                    push!(not_on_path, (is_reverse, br_id, block_info))
+                    continue
                 end
-                out_branch_id = branches[vars_mapping[bl.output_var]]
-                while !isempty(get_connected_from(sc.branch_children, out_branch_id))
-                    if verbose
-                        @info "Out branch id $out_branch_id"
-                        @info "Children $(get_connected_from(sc.branch_children, out_branch_id))"
-                    end
-                    out_branch_id = first(get_connected_from(sc.branch_children, out_branch_id))
-                end
-                found_solutions = enumeration_iteration(
-                    run_context,
+
+                found_solutions = enumeration_iteration_insert_block(
                     sc,
-                    mfp,
+                    is_reverse,
+                    br_id,
+                    block_info,
                     guiding_model_channels,
                     grammar,
-                    bp,
-                    branch_id,
-                    is_explained,
                 )
-                if is_reversible(bp.skeleton) || state_finished(bp)
-                    if verbose
-                        @info "found end"
-                        @info "Out branch id $out_branch_id"
-                    end
 
-                    for (bp_, p_) in not_on_path
-                        q[bp_] = p_
-                    end
-
-                    in_blocks = get_connected_from(sc.branch_incoming_blocks, out_branch_id)
-                    if verbose
-                        @info "in_blocks: $in_blocks"
-                    end
-                    if isempty(in_blocks)
-                        children = get_connected_from(sc.branch_children, out_branch_id)
-                        if verbose
-                            @info "children: $children"
-                            @info sc.branch_children
-                        end
-                        if isempty(children)
-                            if verbose
-                                @info "Can't add block"
-                            end
-                            return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
-                        end
-                        @test length(children) == 1
-                        child_id = first(children)
-                        in_blocks = get_connected_from(sc.branch_incoming_blocks, child_id)
-                    end
-                    @test !isempty(in_blocks)
-                    if verbose
-                        @info "in_blocks: $in_blocks"
-                    end
-                    created_block_id = first(values(in_blocks))
-                    created_block = sc.blocks[created_block_id]
-                    if verbose
-                        @info "created_block: $created_block"
-                    end
-
-                    updated_branches = copy(branches)
-                    created_block_copy_id = first(keys(in_blocks))
-                    in_branches = keys(get_connected_to(sc.branch_outgoing_blocks, created_block_copy_id))
-                    for in_branch in in_branches
-                        updated_branches[first(get_connected_from(sc.branch_vars, in_branch))] = in_branch
-                    end
-                    out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
-                    for out_branch in out_branches
-                        updated_branches[first(get_connected_from(sc.branch_vars, out_branch))] = out_branch
-                    end
-                    updated_branches = _fetch_branches_children(sc, updated_branches)
-                    if verbose
-                        @info "updated_branches: $updated_branches"
-                    end
-
-                    updated_vars_mapping = copy(vars_mapping)
-                    for (original_var, new_var) in zip(bl.input_vars, created_block.input_vars)
-                        if !haskey(updated_vars_mapping, original_var)
-                            updated_vars_mapping[original_var] = new_var
-                        end
-                    end
-                    if verbose
-                        @info "updated_vars_mapping: $updated_vars_mapping"
-                    end
-                    updated_history = vcat(branches_history, [(branches, bl)])
-
-                    if isempty(rem_blocks)
-                        @test !isempty(found_solutions)
-                        for solution_path in found_solutions
-                            solution, cost = extract_solution(sc, solution_path)
-                            ll = task.log_likelihood_checker(task, solution)
-                            @test !isnothing(ll)
-                            @test !isinf(ll)
-                        end
-                    end
-
-                    return _check_reachable(
-                        sc,
-                        task,
-                        rem_blocks,
-                        updated_vars_mapping,
-                        updated_branches,
-                        updated_history,
-                        guiding_model_server,
-                        guiding_model_channels,
-                        grammar,
-                        run_context,
-                        mfp,
-                        verbose,
-                    )
+                if verbose
+                    @info "found end"
+                    @info "Out branch id $out_branch_id"
                 end
-            else
-                if is_explained
-                    push!(not_on_path, (bp, p))
+
+                for block_info_ in not_on_path
+                    push!(sc.blocks_to_insert, block_info_)
+                end
+
+                for (bp_, p_) in not_on_path_bp
+                    q[bp_] = p_
+                end
+
+                in_blocks = get_connected_from(sc.branch_incoming_blocks, out_branch_id)
+                if verbose
+                    @info "in_blocks: $in_blocks"
+                end
+                if isempty(in_blocks)
+                    children = get_connected_from(sc.branch_children, out_branch_id)
+                    if verbose
+                        @info "children: $children"
+                        @info sc.branch_children
+                    end
+                    if isempty(children)
+                        if verbose
+                            @info "Can't add block"
+                        end
+                        return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
+                    end
+                    @test length(children) == 1
+                    child_id = first(children)
+                    in_blocks = get_connected_from(sc.branch_incoming_blocks, child_id)
+                end
+                @test !isempty(in_blocks)
+                if verbose
+                    @info "in_blocks: $in_blocks"
+                end
+                created_block_id = first(values(in_blocks))
+                created_block = sc.blocks[created_block_id]
+                if verbose
+                    @info "created_block: $created_block"
+                end
+
+                updated_branches = copy(branches)
+                created_block_copy_id = first(keys(in_blocks))
+                in_branches = keys(get_connected_to(sc.branch_outgoing_blocks, created_block_copy_id))
+                for in_branch in in_branches
+                    updated_branches[sc.branch_vars[in_branch]] = in_branch
+                end
+                out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
+                for out_branch in out_branches
+                    updated_branches[sc.branch_vars[out_branch]] = out_branch
+                end
+                updated_branches = _fetch_branches_children(sc, updated_branches)
+                if verbose
+                    @info "updated_branches: $updated_branches"
+                end
+
+                updated_vars_mapping = copy(vars_mapping)
+                for (original_var, new_var) in zip(bl.input_vars, created_block.input_vars)
+                    if !haskey(updated_vars_mapping, original_var)
+                        updated_vars_mapping[original_var] = new_var
+                    end
                 end
                 if verbose
-                    @info "not on path"
+                    @info "updated_vars_mapping: $updated_vars_mapping"
+                end
+                updated_history = vcat(branches_history, [(branches, bl)])
+
+                if isempty(rem_blocks)
+                    @test !isempty(found_solutions)
+                    for solution_path in found_solutions
+                        solution, cost = extract_solution(sc, solution_path)
+                        ll = task.log_likelihood_checker(task, solution)
+                        @test !isnothing(ll)
+                        @test !isinf(ll)
+                    end
+                end
+
+                return _check_reachable(
+                    sc,
+                    task,
+                    rem_blocks,
+                    updated_vars_mapping,
+                    updated_branches,
+                    updated_history,
+                    guiding_model_server,
+                    guiding_model_channels,
+                    grammar,
+                    run_context,
+                    mfp,
+                    verbose,
+                )
+            else
+                bp, p = peek(q)
+                bp = dequeue!(q)
+                if verbose
+                    @info bp
+                end
+                if is_on_path(bp.skeleton, bl.p, Dict())
+                    if verbose
+                        @info "on path"
+                    end
+
+                    enumeration_iteration(run_context, sc, mfp, bp, entry_id, true)
+                else
+                    push!(not_on_path_bp, (bp, p))
+                    if verbose
+                        @info "not on path"
+                    end
                 end
             end
         end
@@ -557,14 +674,14 @@ using DataStructures
             @info "Simulating block search for $bl"
         end
         in_branch_id = branches[vars_mapping[bl.input_vars[1]]]
-        is_explained = true
-        if !haskey((is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown), in_branch_id)
+        in_entry_id = sc.branch_entries[in_branch_id]
+        if !haskey(sc.entry_queues_reverse, in_entry_id)
             if verbose
                 @info "Queue is empty"
             end
             return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
         end
-        q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[in_branch_id]
+        q = sc.entry_queues_reverse[in_entry_id]
 
         block_main_func, block_main_func_args = application_parse(bl.p)
         if verbose
@@ -578,113 +695,116 @@ using DataStructures
         end
 
         not_on_path = Set()
-        @test !isempty(q)
-        while !isempty(q)
-            (bp, p) = peek(q)
-            bp = dequeue!(q)
-            if verbose
-                @info bp
-            end
-            if is_on_path(bp.skeleton, bl.p, Dict()) ||
-               (wrapped_func !== nothing && is_on_path(bp.skeleton, wrapped_func, Dict()))
-                if verbose
-                    @info "on path"
+        @test !isempty(sc.blocks_to_insert) || !isempty(q)
+        while !isempty(sc.blocks_to_insert) || !isempty(q)
+            if !isempty(sc.blocks_to_insert)
+                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+
+                if is_reverse != true || br_id != in_branch_id || !is_on_path(block_info[1], bl.p, Dict(), true)
+                    push!(not_on_path, (is_reverse, br_id, block_info))
+                    continue
                 end
-                found_solutions = enumeration_iteration(
-                    run_context,
+
+                found_solutions = enumeration_iteration_insert_block(
                     sc,
-                    mfp,
+                    is_reverse,
+                    br_id,
+                    block_info,
                     guiding_model_channels,
                     grammar,
-                    bp,
-                    in_branch_id,
-                    is_explained,
                 )
-                if !(wrapped_func !== nothing && is_on_path(bp.skeleton, wrapped_func, Dict())) &&
-                   (is_reversible(bp.skeleton) || state_finished(bp))
-                    if verbose
-                        @info "found end"
-                    end
 
-                    for (bp_, p_) in not_on_path
-                        q[bp_] = p_
-                    end
-
-                    out_blocks = get_connected_from(sc.branch_outgoing_blocks, in_branch_id)
-                    if isempty(out_blocks)
-                        children = get_connected_from(sc.branch_children, in_branch_id)
-                        @test length(children) == 1
-                        child_id = first(children)
-                        out_blocks = get_connected_from(sc.branch_outgoing_blocks, child_id)
-                    end
-                    @test !isempty(out_blocks)
-                    if verbose
-                        @info "out_blocks: $out_blocks"
-                    end
-                    updated_branches = copy(branches)
-                    updated_vars_mapping = copy(vars_mapping)
-                    for (created_block_copy_id, created_block_id) in out_blocks
-                        created_block = sc.blocks[created_block_id]
-                        if isa(created_block, ReverseProgramBlock) && is_on_path(created_block.p, bl.p, Dict(), true)
-                            if verbose
-                                @info "created_block: $created_block"
-                                @info "created_block_copy_id: $created_block_copy_id"
-                            end
-
-                            out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
-                            for out_branch in out_branches
-                                updated_branches[first(get_connected_from(sc.branch_vars, out_branch))] = out_branch
-                            end
-                            updated_branches = _fetch_branches_children(sc, updated_branches)
-                            if verbose
-                                @info "updated_branches: $updated_branches"
-                            end
-
-                            for (original_var, new_var) in zip(bl.output_vars, created_block.output_vars)
-                                if !haskey(updated_vars_mapping, original_var)
-                                    updated_vars_mapping[original_var] = new_var
-                                end
-                            end
-                            if verbose
-                                @info "updated_vars_mapping: $updated_vars_mapping"
-                            end
-                            break
-                        end
-                    end
-
-                    updated_history = vcat(branches_history, [(branches, bl)])
-
-                    if isempty(rem_blocks)
-                        @test !isempty(found_solutions)
-                        for solution_path in found_solutions
-                            solution, cost = extract_solution(sc, solution_path)
-                            ll = task.log_likelihood_checker(task, solution)
-                            @test !isnothing(ll)
-                            @test !isinf(ll)
-                        end
-                    end
-
-                    return _check_reachable(
-                        sc,
-                        task,
-                        rem_blocks,
-                        updated_vars_mapping,
-                        updated_branches,
-                        updated_history,
-                        guiding_model_server,
-                        guiding_model_channels,
-                        grammar,
-                        run_context,
-                        mfp,
-                        verbose,
-                    )
-                end
-            else
-                if isa(bp.skeleton, FreeVar)
-                    push!(not_on_path, (bp, p))
-                end
                 if verbose
-                    @info "not on path"
+                    @info "found end"
+                end
+
+                for block_info_ in not_on_path
+                    push!(sc.blocks_to_insert, block_info_)
+                end
+
+                out_blocks = get_connected_from(sc.branch_outgoing_blocks, in_branch_id)
+                if isempty(out_blocks)
+                    children = get_connected_from(sc.branch_children, in_branch_id)
+                    @test length(children) == 1
+                    child_id = first(children)
+                    out_blocks = get_connected_from(sc.branch_outgoing_blocks, child_id)
+                end
+                @test !isempty(out_blocks)
+                if verbose
+                    @info "out_blocks: $out_blocks"
+                end
+                updated_branches = copy(branches)
+                updated_vars_mapping = copy(vars_mapping)
+                for (created_block_copy_id, created_block_id) in out_blocks
+                    created_block = sc.blocks[created_block_id]
+                    if isa(created_block, ReverseProgramBlock) && is_on_path(created_block.p, bl.p, Dict(), true)
+                        if verbose
+                            @info "created_block: $created_block"
+                            @info "created_block_copy_id: $created_block_copy_id"
+                        end
+
+                        out_branches = keys(get_connected_to(sc.branch_incoming_blocks, created_block_copy_id))
+                        for out_branch in out_branches
+                            updated_branches[sc.branch_vars[out_branch]] = out_branch
+                        end
+                        updated_branches = _fetch_branches_children(sc, updated_branches)
+                        if verbose
+                            @info "updated_branches: $updated_branches"
+                        end
+
+                        for (original_var, new_var) in zip(bl.output_vars, created_block.output_vars)
+                            if !haskey(updated_vars_mapping, original_var)
+                                updated_vars_mapping[original_var] = new_var
+                            end
+                        end
+                        if verbose
+                            @info "updated_vars_mapping: $updated_vars_mapping"
+                        end
+                        break
+                    end
+                end
+
+                updated_history = vcat(branches_history, [(branches, bl)])
+
+                if isempty(rem_blocks)
+                    @test !isempty(found_solutions)
+                    for solution_path in found_solutions
+                        solution, cost = extract_solution(sc, solution_path)
+                        ll = task.log_likelihood_checker(task, solution)
+                        @test !isnothing(ll)
+                        @test !isinf(ll)
+                    end
+                end
+
+                return _check_reachable(
+                    sc,
+                    task,
+                    rem_blocks,
+                    updated_vars_mapping,
+                    updated_branches,
+                    updated_history,
+                    guiding_model_server,
+                    guiding_model_channels,
+                    grammar,
+                    run_context,
+                    mfp,
+                    verbose,
+                )
+            else
+                bp = dequeue!(q)
+                if verbose
+                    @info bp
+                end
+                if is_on_path(bp.skeleton, bl.p, Dict()) ||
+                   (wrapped_func !== nothing && is_on_path(bp.skeleton, wrapped_func, Dict()))
+                    if verbose
+                        @info "on path"
+                    end
+                    enumeration_iteration(run_context, sc, mfp, bp, in_entry_id, false)
+                else
+                    if verbose
+                        @info "not on path"
+                    end
                 end
             end
         end
@@ -721,7 +841,7 @@ using DataStructures
             @info "Checking blocks $blocks"
         end
 
-        while !isempty(sc.waiting_branches)
+        while !isempty(sc.waiting_entries)
             sleep(0.001)
             receive_grammar_weights(sc, guiding_model_channels, grammar)
         end
@@ -834,7 +954,7 @@ using DataStructures
                 enqueue_updates(sc, guiding_model_channels, task_grammar)
                 branches = Dict()
                 for br_id in 1:sc.branches_count[]
-                    branches[first(get_connected_from(sc.branch_vars, br_id))] = br_id
+                    branches[sc.branch_vars[br_id]] = br_id
                 end
                 if verbose_test
                     @info branches
@@ -849,7 +969,7 @@ using DataStructures
                         end
                     end
                 end
-                inner_mapping[vars_mapping["out"]] = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
+                inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
                 if verbose_test
                     @info inner_mapping
                 end
@@ -2232,7 +2352,7 @@ using DataStructures
 
         @testcase_log "a416b8f3.json" begin
             task = _create_arc_task("a416b8f3.json")
-            target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = (concat \$v1 \$v1) in (columns_to_grid \$v2)"
+            target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v3 = \$v1 in let \$v2 = (concat \$v1 \$v3) in (columns_to_grid \$v2)"
 
             check_reachable(task, arc_guiding_model, grammar, target_solution)
         end
@@ -2248,16 +2368,7 @@ using DataStructures
             task = _create_arc_task("4c4377d9.json")
             target_solution = "let \$v1 = rev(\$inp0 = (rows_to_grid \$v1)) in
                 let \$v2 = rev(\$v1 = (reverse \$v2)) in
-                let \$v3 = rev(\$v1 = (rows \$v3)) in
-                let \$v4 = rev(\$v3 = (rows_to_grid \$v4)) in
-                let \$v6 = (#(lambda (lambda (rows_to_grid (concat \$1 \$0)))) \$v2 \$v4) in
-                let \$v66 = \$v6 in
-                let \$v7 = (rows \$v6) in
-                let \$v8 = (rows_to_grid \$v7) in
-                let \$v9 = (columns \$v8) in
-                let \$v10 = (columns_to_grid \$v9) in
-                let \$v11 = (zip_grid2 \$v10 \$v66) in
-                (map_grid (lambda (tuple2_first \$0)) \$v11)"
+                (#(lambda (lambda (rows_to_grid (concat \$1 \$0)))) \$v2 \$v1)"
 
             grammar3 = build_grammar(
                 vcat(

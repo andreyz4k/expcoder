@@ -280,6 +280,7 @@ class GuidingModel(nn.Module):
             F.one_hot(result_batch_tensor, 10)
             .permute(0, 3, 1, 2)
             .to(dtype=torch.float32)
+            .contiguous()
         )
 
         result_batch_mask = torch.tensor(

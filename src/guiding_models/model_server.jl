@@ -223,7 +223,7 @@ function _guiding_processing_loop(server::GuidingModelServer)
     end
 end
 
-function start_server(server::GuidingModelServer, is_test = false; wandb_run_id = nothing)
+function start_server(server::GuidingModelServer, is_test = false)
     server.registration_loop = Threads.@spawn _registration_loop(server)
     server.processing_loop = Threads.@spawn _guiding_processing_loop(server)
 end
@@ -389,3 +389,7 @@ function load_guiding_model(path)
         error("Unknown model type: $(model_info["type"])")
     end
 end
+
+function send_wandb_log(server::GuidingModelServer, log_dict) end
+
+function send_wandb_config(server::GuidingModelServer, config) end

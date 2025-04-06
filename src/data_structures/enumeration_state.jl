@@ -66,6 +66,9 @@ function enqueue_matches_with_known_var(sc, branch_id)
         else
             cost = sc.explained_min_path_costs[branch_id] + sc.unknown_min_path_costs[output_br_id]
         end
+        if sc.verbose
+            @info "Adding $((bl, Dict(var_id => branch_id), Dict(output_var_id => output_br_id))) to copies queue"
+        end
         sc.copies_queue[(bl, Dict(var_id => branch_id), Dict(output_var_id => output_br_id))] = cost + bl.cost
     end
 end
@@ -156,6 +159,9 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
             end
         else
             cost = sc.unknown_min_path_costs[branch_id] + sc.explained_min_path_costs[in_branch_id]
+        end
+        if sc.verbose
+            @info "Adding $((bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))) to copies queue"
         end
         sc.copies_queue[(bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))] = cost + bl.cost
     end

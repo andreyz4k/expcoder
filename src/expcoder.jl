@@ -195,17 +195,17 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
 end
 
 function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPrototype)
-    is_reverse = is_reversible(bp.skeleton)
     output_entry = sc.entries[bp.root_entry]
+    is_reverse =
+        is_reversible(bp.skeleton) &&
+        !isa(output_entry, AbductibleEntry) &&
+        !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
 
     p = bp.skeleton
 
-    if is_reverse &&
-       !isa(output_entry, AbductibleEntry) &&
-       !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
+    if is_reverse
         # @info "Try get reversed for $bp"
         p, input_vars, _, has_eithers, has_abductibles = try_get_reversed_values(sc, p, bp.context, bp.root_entry)
-
     else
         p, new_vars = capture_free_vars(p, bp.context)
         input_vars = []
@@ -1157,8 +1157,6 @@ function log_grammar(iteration, grammar)
     @info ""
 end
 
-using Wandb
-
 function main(; kwargs...)
     @info "Starting enumeration service"
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
@@ -1178,13 +1176,11 @@ function main(; kwargs...)
     @info "Parsed arguments $parsed_args"
 
     hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
-    lg = WandbLogger(; project = "expcoder", name = nothing, config = hyperparameters)
-    wandb_run_id = string(lg.wrun.id)
-    @info "Wandb run id $wandb_run_id"
 
     grammar_hash = hash(grammar)
     guiding_model_server = GuidingModelServer(guiding_model)
-    start_server(guiding_model_server; wandb_run_id = wandb_run_id)
+    start_server(guiding_model_server)
+    send_wandb_config(guiding_model_server, hyperparameters)
     set_current_grammar!(guiding_model, grammar)
     worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
 
@@ -1240,7 +1236,7 @@ function main(; kwargs...)
             if !haskey(traces, grammar_hash)
                 traces[grammar_hash] = (grammar, Dict{String,Any}())
             end
-            Wandb.log(lg, Dict("solved_tasks" => length(new_traces)))
+            send_wandb_log(guiding_model_server, Dict("solved_tasks" => length(new_traces)))
             for task_traces in new_traces
                 task_name = task_traces["task"].name
                 if !haskey(cur_traces, task_name)
@@ -1272,6 +1268,5 @@ function main(; kwargs...)
     finally
         stop(worker_pool)
         stop_server(guiding_model_server, true)
-        close(lg)
     end
 end

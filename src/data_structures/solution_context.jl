@@ -510,7 +510,7 @@ function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bo
         end
         pq[entry_id] = 1 / cost
         if sc.verbose
-            @info "$(is_rev ? "Known" : "Unknown") branch $entry_id priority is $(1 / cost)"
+            @info "$(is_rev ? "Known" : "Unknown") entry $entry_id priority is $(1 / cost)"
         end
     elseif haskey(pq, entry_id)
         delete!(pq, entry_id)

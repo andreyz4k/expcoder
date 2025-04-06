@@ -114,7 +114,7 @@ import Redis
 
 using CondaPkg
 
-function start_server(server::PythonGuidingModelServer, is_test = false; wandb_run_id = nothing)
+function start_server(server::PythonGuidingModelServer, is_test = false)
     @info "Starting Python model server"
     # Reset redis db
     server.model.redis_conn = get_redis_connection(server.model.redis_db)
@@ -122,11 +122,7 @@ function start_server(server::PythonGuidingModelServer, is_test = false; wandb_r
     cache_type = "sqlite"
     CondaPkg.withenv() do
         python = CondaPkg.which("python")
-        if !isnothing(wandb_run_id)
-            cmd = `$python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type) $(wandb_run_id)`
-        else
-            cmd = `$python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
-        end
+        cmd = `$python src/guiding_models/guiding_model_server.py $(server.model.redis_db) $(cache_type)`
         if is_test
             cmd = addenv(cmd, "WANDB_MODE" => "offline")
         end
@@ -207,4 +203,12 @@ end
 function mark_task_finished(redis_conn::Redis.RedisConnection, task_name)
     Redis.rpush(redis_conn, "finished_tasks", task_name)
     Redis.expire(redis_conn, task_name, 5)
+end
+
+function send_wandb_log(server::PythonGuidingModelServer, log_dict)
+    Redis.rpush(server.model.redis_conn, "wandb_logs", JSON.json(log_dict))
+end
+
+function send_wandb_config(server::PythonGuidingModelServer, config)
+    Redis.rpush(server.model.redis_conn, "wandb_config", JSON.json(config))
 end

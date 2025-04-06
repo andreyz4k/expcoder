@@ -875,14 +875,27 @@ def load_model_loop(redis_db, model):
         redis_conn.delete("load_model")
 
 
+def wandb_logs_loop(redis_db):
+    redis_conn = redis.Redis(
+        host="localhost", port=6379, db=redis_db, decode_responses=True
+    )
+    while True:
+        config_str = redis_conn.lpop("wandb_config")
+        if config_str:
+            config_dict = orjson.loads(config_str)
+            wandb.config.update(config_dict)
+        log_str = redis_conn.lpop("wandb_logs")
+        if not log_str:
+            sleep(0.001)
+            continue
+        log_dict = orjson.loads(log_str)
+        wandb.log(log_dict)
+
+
 def main():
     print("Starting guiding model server...")
     redis_db = sys.argv[1]
     cache_type = sys.argv[2]
-    wandb_run_id = None
-    if len(sys.argv) > 3:
-        wandb_run_id = sys.argv[3]
-    print(f"Wandb run id: {wandb_run_id}")
     model = guiding_model.create_model()
 
     load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
@@ -895,7 +908,6 @@ def main():
     wandb.init(
         # set the wandb project where this run will be logged
         project="expcoder",
-        id=wandb_run_id,
         # track hyperparameters and run metadata
         config={},
     )
@@ -975,6 +987,8 @@ def main():
     update_model_thread.start()
     save_model_thread = Thread(target=save_model_loop, args=(redis_db, model))
     save_model_thread.start()
+    wandb_logs_thread = Thread(target=wandb_logs_loop, args=(redis_db,))
+    wandb_logs_thread.start()
 
 
 if __name__ == "__main__":

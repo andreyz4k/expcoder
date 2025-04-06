@@ -242,22 +242,18 @@ function is_var_on_path(bp::ProgramBlock, bl::ProgramBlock, vars_mapping, verbos
         @info bp.output_var
     end
 
-    if !haskey(vars_mapping, bl.output_var) || vars_mapping[bl.output_var] != bp.output_var[1]
+    if !haskey(vars_mapping, bl.output_var) || vars_mapping[bl.output_var] != bp.output_var
         return false
     end
     if haskey(vars_mapping, bl.input_vars[1])
         bp.p.var_id == vars_mapping[bl.input_vars[1]]
     else
-        true
+        false
     end
 end
 
 function is_bp_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verbose = false)
-    if isa(bl.p, FreeVar)
-        is_var_on_path(bp, bl, vars_mapping, verbose)
-    else
-        is_on_path(bp.skeleton, bl.p, Dict())
-    end
+    is_on_path(bp.skeleton, bl.p, Dict())
 end
 
 function is_bp_on_path(bp::BlockPrototype, bl::ReverseProgramBlock, vars_mapping, verbose = false)

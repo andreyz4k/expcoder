@@ -32,6 +32,8 @@ function sort_vars_and_blocks(sc::SolutionContext)
                 push!(new_group, var_id)
                 var_groups[end] = collect(prev_vars)
                 push!(var_groups, new_group)
+            elseif min_i == 0
+                push!(var_groups[1], var_id)
             else
                 push!(var_groups[min_i], var_id)
             end
@@ -159,7 +161,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
     if !isnothing(previous_traces)
         for (trace, _) in previous_traces
             p = parse_program(trace.hit_program)
-            in_blocks, out_blocks, copy_blocks, vars_mapping = _extract_blocks(sc.task, p, false)
+            in_blocks, out_blocks, copy_blocks, vars_mapping, var_types = _extract_blocks(sc.task, p, false)
             for (var, blocks) in Iterators.flatten([out_blocks, in_blocks])
                 for (i, block) in enumerate(blocks)
                     if isa(block.p, FreeVar)

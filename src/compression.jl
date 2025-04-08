@@ -26,7 +26,7 @@ function store_precompressed_traces(traces, grammar)
 end
 
 function check_repeating_blocks(task, program)
-    in_blocks, out_blocks, copy_blocks, vars_mapping = _extract_blocks(task, program, false)
+    in_blocks, out_blocks, copy_blocks, vars_mapping, var_types = _extract_blocks(task, program, false)
     for (var, blocks) in Iterators.flatten([out_blocks, in_blocks])
         for (i, block) in enumerate(blocks)
             if isa(block.p, FreeVar)

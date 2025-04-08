@@ -228,7 +228,7 @@ function lookup_primitive(name)
     end
 end
 
-function infer_program_type(context, environment, p::Index)::Tuple{Context,Tp}
+function infer_program_type(context, environment, var_env, p::Index)::Tuple{Context,Tp}
     t = environment[p.n+1]
     if isnothing(t)
         throw(UnboundVariable())
@@ -237,31 +237,58 @@ function infer_program_type(context, environment, p::Index)::Tuple{Context,Tp}
     end
 end
 
-infer_program_type(context, environment, p::Primitive)::Tuple{Context,Tp} = instantiate(p.t, context)
+infer_program_type(context, environment, var_env, p::Primitive)::Tuple{Context,Tp} = instantiate(p.t, context)
 
-infer_program_type(context, environment, p::Invented)::Tuple{Context,Tp} = instantiate(p.t, context)
+infer_program_type(context, environment, var_env, p::Invented)::Tuple{Context,Tp} = instantiate(p.t, context)
 
-function infer_program_type(context, environment, p::Abstraction)::Tuple{Context,Tp}
+function infer_program_type(context, environment, var_env, p::Abstraction)::Tuple{Context,Tp}
     (xt, context) = makeTID(context)
-    (context, rt) = infer_program_type(context, vcat([xt], environment), p.b)
+    (context, rt) = infer_program_type(context, vcat([xt], environment), var_env, p.b)
     apply_context(context, arrow(xt, rt))
 end
 
-function infer_program_type(context, environment, p::Apply)::Tuple{Context,Tp}
+function infer_program_type(context, environment, var_env, p::Apply)::Tuple{Context,Tp}
     (rt, context) = makeTID(context)
-    (context, xt) = infer_program_type(context, environment, p.x)
-    (context, ft) = infer_program_type(context, environment, p.f)
+    (context, xt) = infer_program_type(context, environment, var_env, p.x)
+    (context, ft) = infer_program_type(context, environment, var_env, p.f)
     context = unify(context, ft, arrow(xt, rt))
     if isnothing(context)
-        error("Unification failed")
+        error("Unification failed $ft $xt $rt $(p.x) $(p.f)")
     end
     apply_context(context, rt)
 end
 
-infer_program_type(context, environment, p::FreeVar)::Tuple{Context,Tp} = instantiate(p.t, context)
-infer_program_type(context, environment, p::SetConst)::Tuple{Context,Tp} = instantiate(p.t, context)
+function infer_program_type(context, environment, var_env, p::FreeVar)::Tuple{Context,Tp}
+    (context, rt) = instantiate(p.t, context)
+    if haskey(var_env, p.var_id)
+        unify(context, var_env[p.var_id], rt)
+        context, rt = apply_context(context, rt)
+    else
+        var_env[p.var_id] = rt
+    end
+    return context, rt
+end
 
-closed_inference(p) = infer_program_type(empty_context, [], p)[2]
+infer_program_type(context, environment, var_env, p::SetConst)::Tuple{Context,Tp} = instantiate(p.t, context)
+
+function closed_inference(p)
+    var_env = Dict()
+    (context, rt) = infer_program_type(empty_context, [], var_env, p)
+    if !isempty(var_env)
+        vars_dict = Dict()
+        for (k, v) in var_env
+            _, t = apply_context(context, v)
+            if isa(k, String)
+                vars_dict[k] = t
+            else
+                vars_dict["v$k"] = t
+            end
+        end
+        return TypeNamedArgsConstructor(ARROW, vars_dict, rt)
+    else
+        return rt
+    end
+end
 
 using ParserCombinator
 
@@ -271,7 +298,7 @@ parse_whitespace = Drop(Star(Space()))
 
 parse_number = p"([0-9])+" > (s -> parse(Int64, s))
 
-parse_var_name = (E"v" + p"([0-9])+" > (s -> parse(UInt64, s))) | (p"([a-zA-Z0-9])+" > (s -> string(s)))
+parse_var_name = (E"v" + p"([0-9])+" > (s -> parse(UInt64, s))) | (p"([a-zA-Z][a-zA-Z0-9]*)" > (s -> string(s)))
 
 using AutoHashEquals
 @auto_hash_equals mutable struct MatchPrimitive <: Delegate
@@ -312,7 +339,7 @@ struct UnboundVariable <: Exception end
 parse_invented =
     P"#" + _parse_program > (p -> begin
         t = try
-            infer_program_type(empty_context, [], p)[2]
+            closed_inference(p)
         catch e
             if isa(e, ErrorException) || isa(e, UnboundVariable)
                 bt = catch_backtrace()

@@ -88,12 +88,18 @@ function _extract_blocks(task, target_program, verbose = false)
     vars_mapping = Dict{Any,UInt64}()
     vars_from_input = Set{Any}()
     vars_from_rev = Set{Any}()
-    for (arg, _) in task.task_type.arguments
+    var_types = Dict{Any,Tp}()
+    context = empty_context
+    for (arg, tp) in task.task_type.arguments
         vars_mapping[arg] = length(vars_mapping) + 1
         push!(vars_from_input, arg)
         push!(vars_from_rev, arg)
+        context, tp = instantiate(tp, context)
+        var_types[vars_mapping[arg]] = tp
     end
     vars_mapping["out"] = length(vars_mapping) + 1
+    context, tp = instantiate(task.task_type.output, context)
+    var_types[vars_mapping["out"]] = tp
     copied_vars = 0
     rev_blocks = Dict()
     out_blocks = Dict()
@@ -111,6 +117,8 @@ function _extract_blocks(task, target_program, verbose = false)
         end
         if p isa LetClause
             vars = _used_vars(p.v)
+            tp = closed_inference(p.v)
+            context, tp = instantiate(tp, context)
             if verbose
                 @info p.v
                 @info vars
@@ -119,6 +127,7 @@ function _extract_blocks(task, target_program, verbose = false)
             for v in vars
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
+                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
                     push!(in_vars, vars_mapping[v])
                 elseif v in vars_from_rev && !isa(p.v, FreeVar)
                     copied_vars += 1
@@ -128,6 +137,7 @@ function _extract_blocks(task, target_program, verbose = false)
                         ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
                     push!(copy_blocks, copy_block)
                 else
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
                     push!(in_vars, vars_mapping[v])
                 end
                 if v in vars_from_input
@@ -136,8 +146,11 @@ function _extract_blocks(task, target_program, verbose = false)
             end
             if !haskey(vars_mapping, p.var_id)
                 vars_mapping[p.var_id] = length(vars_mapping) + copied_vars + 1
+                var_types[vars_mapping[p.var_id]] = return_of_type(tp)
+            else
+                context = unify(context, var_types[vars_mapping[p.var_id]], return_of_type(tp))
             end
-            bl = ProgramBlock(p.v, t0, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
+            bl = ProgramBlock(p.v, tp, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
             if isa(p.v, FreeVar)
                 push!(copy_blocks, bl)
             else
@@ -148,12 +161,20 @@ function _extract_blocks(task, target_program, verbose = false)
             end
             p = p.b
         elseif p isa LetRevClause
+            tp = closed_inference(p.v)
+            context, tp = instantiate(tp, context)
             if !haskey(vars_mapping, p.inp_var_id)
                 vars_mapping[p.inp_var_id] = length(vars_mapping) + copied_vars + 1
+                var_types[vars_mapping[p.inp_var_id]] = return_of_type(tp)
+            else
+                context = unify(context, var_types[vars_mapping[p.inp_var_id]], return_of_type(tp))
             end
             for v in p.var_ids
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
+                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
+                else
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
                 end
                 push!(vars_from_rev, v)
                 if p.inp_var_id in vars_from_input
@@ -161,7 +182,7 @@ function _extract_blocks(task, target_program, verbose = false)
                 end
             end
 
-            bl = ReverseProgramBlock(p.v, t0, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
+            bl = ReverseProgramBlock(p.v, tp, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
             if !haskey(rev_blocks, vars_mapping[p.inp_var_id])
                 rev_blocks[vars_mapping[p.inp_var_id]] = []
             end
@@ -174,10 +195,13 @@ function _extract_blocks(task, target_program, verbose = false)
             break
         else
             vars = _used_vars(p)
+            tp = closed_inference(p)
+            context, tp = instantiate(tp, context)
             in_vars = []
             for v in unique(vars)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
+                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
                     push!(in_vars, vars_mapping[v])
                 elseif v in vars_from_rev
                     copied_vars += 1
@@ -187,18 +211,24 @@ function _extract_blocks(task, target_program, verbose = false)
                         ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
                     push!(copy_blocks, copy_block)
                 else
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
                     push!(in_vars, vars_mapping[v])
                 end
             end
-            bl = ProgramBlock(p, t0, 0.0, in_vars, vars_mapping["out"], is_reversible(p))
+            bl = ProgramBlock(p, tp, 0.0, in_vars, vars_mapping["out"], is_reversible(p))
             if !haskey(out_blocks, vars_mapping["out"])
                 out_blocks[vars_mapping["out"]] = []
             end
+            context = unify(context, var_types[vars_mapping["out"]], return_of_type(tp))
             push!(out_blocks[vars_mapping["out"]], bl)
             break
         end
     end
-    return rev_blocks, out_blocks, copy_blocks, vars_mapping
+    var_types = Dict{Any,Tp}(k => apply_context(context, v)[2] for (k, v) in var_types)
+    if verbose
+        @info "Var types $var_types"
+    end
+    return rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types
 end
 
 is_on_path(prot::Hole, p, vars_mapping, final = false) = true
@@ -238,7 +268,9 @@ function is_var_on_path(bp::ProgramBlock, bl::ProgramBlock, vars_mapping, verbos
     if verbose
         @info "Check on path"
         @info bl.output_var
-        @info vars_mapping[bl.output_var]
+        if haskey(vars_mapping, bl.output_var)
+            @info vars_mapping[bl.output_var]
+        end
         @info bp.output_var
     end
 
@@ -526,7 +558,10 @@ function build_manual_trace(
             error("Invalid target program $target_program for task $task")
         end
 
-        rev_blocks, out_blocks, copy_blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
+        rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
+            _extract_blocks(task, target_program, verbose_test)
+
+        matching_vars = Dict{Any,Any}()
 
         start_time = time()
 
@@ -631,18 +666,21 @@ function build_manual_trace(
                     bp = dequeue!(q)
                     target_blocks_group = is_forward ? out_blocks : rev_blocks
 
-                    target_var_ids = []
-                    for branch_id in get_connected_to(sc.branch_entries, entry_id)
-                        var_id = sc.branch_vars[branch_id]
-                        if haskey(rev_inner_mapping, var_id) && haskey(target_blocks_group, rev_inner_mapping[var_id])
-                            push!(target_var_ids, rev_inner_mapping[var_id])
+                    if !haskey(matching_vars, (entry_id, is_forward))
+                        entry = sc.entries[entry_id]
+                        matching_vars[(entry_id, is_forward)] = []
+                        for (var_id) in keys(target_blocks_group)
+                            if might_unify(sc.types[entry.type_id], var_types[var_id])
+                                push!(matching_vars[(entry_id, is_forward)], var_id)
+                            end
                         end
                     end
-                    if isempty(target_var_ids)
+
+                    if isempty(matching_vars[(entry_id, is_forward)])
                         update_entry_priority(sc, entry_id, !is_forward)
                         continue
                     end
-                    target_blocks = vcat([target_blocks_group[v] for v in target_var_ids]...)
+                    target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
 
                     enumeration_iteration_traced(
                         run_context,

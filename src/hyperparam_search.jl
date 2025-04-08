@@ -1,4 +1,5 @@
 using HyperTuning
+using Wandb
 
 function hyperparam_search(; kwargs...)
     sweep_tag = randstring(12)

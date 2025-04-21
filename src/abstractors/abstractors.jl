@@ -7,6 +7,7 @@ struct CombinedArgChecker
     should_be_reversible::Union{Bool,Nothing}
     max_index::Union{Int64,Nothing}
     can_have_free_vars::Union{Bool,Nothing}
+    can_only_have_free_vars::Union{Bool,Nothing}
     inner_checkers::Vector
 end
 
@@ -14,6 +15,7 @@ function CombinedArgChecker(checkers::Vector)
     should_be_reversible = nothing
     max_index = nothing
     can_have_free_vars = nothing
+    can_only_have_free_vars = nothing
     for checker in checkers
         if !isnothing(checker.should_be_reversible)
             should_be_reversible = checker.should_be_reversible
@@ -28,34 +30,43 @@ function CombinedArgChecker(checkers::Vector)
         if !isnothing(checker.can_have_free_vars)
             can_have_free_vars = checker.can_have_free_vars
         end
+        if !isnothing(checker.can_only_have_free_vars)
+            can_only_have_free_vars = checker.can_only_have_free_vars
+        end
     end
-    return CombinedArgChecker(should_be_reversible, max_index, can_have_free_vars, checkers)
+    return CombinedArgChecker(should_be_reversible, max_index, can_have_free_vars, can_only_have_free_vars, checkers)
 end
 
 Base.:(==)(c1::CombinedArgChecker, c2::CombinedArgChecker) =
     c1.should_be_reversible == c2.should_be_reversible &&
     c1.max_index == c2.max_index &&
     c1.can_have_free_vars == c2.can_have_free_vars &&
+    c1.can_only_have_free_vars == c2.can_only_have_free_vars &&
     c1.inner_checkers == c2.inner_checkers
 
-Base.hash(c::CombinedArgChecker, h::UInt64) =
-    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, hash(c.inner_checkers, h))))
+Base.hash(c::CombinedArgChecker, h::UInt64) = hash(
+    c.should_be_reversible,
+    hash(c.max_index, hash(c.can_have_free_vars, hash(c.can_only_have_free_vars, hash(c.inner_checkers, h)))),
+)
 
 function (c::CombinedArgChecker)(p::Index, skeleton, path)
-    if !isnothing(c.max_index) && (p.n) > c.max_index
+    if c.can_only_have_free_vars == true || (!isnothing(c.max_index) && (p.n) > c.max_index)
         return false
     end
     return all(checker(p, skeleton, path) for checker in c.inner_checkers)
 end
 
 function (c::CombinedArgChecker)(p::Union{Primitive,Invented}, skeleton, path)
-    if c.should_be_reversible == true && !is_reversible(p)
+    if c.can_only_have_free_vars == true || (c.should_be_reversible == true && !is_reversible(p))
         return false
     end
     return all(checker(p, skeleton, path) for checker in c.inner_checkers)
 end
 
 function (c::CombinedArgChecker)(p::SetConst, skeleton, path)
+    if c.can_only_have_free_vars == true
+        return false
+    end
     return all(checker(p, skeleton, path) for checker in c.inner_checkers)
 end
 
@@ -96,8 +107,19 @@ function combine_arg_checkers(old::CombinedArgChecker, new::ArgChecker)
     else
         new.can_have_free_vars
     end
+    can_only_have_free_vars = if isnothing(new.can_only_have_free_vars)
+        old.can_only_have_free_vars
+    else
+        new.can_only_have_free_vars
+    end
     new_checkers = vcat(old.inner_checkers, [new])
-    return CombinedArgChecker(should_be_reversible, max_index, can_have_free_vars, new_checkers)
+    return CombinedArgChecker(
+        should_be_reversible,
+        max_index,
+        can_have_free_vars,
+        can_only_have_free_vars,
+        new_checkers,
+    )
 end
 
 function combine_arg_checkers(old::CombinedArgChecker, new::CombinedArgChecker)
@@ -111,15 +133,17 @@ struct SimpleArgChecker <: ArgChecker
     should_be_reversible::Union{Bool,Nothing}
     max_index::Union{Int64,Nothing}
     can_have_free_vars::Union{Bool,Nothing}
+    can_only_have_free_vars::Union{Bool,Nothing}
 end
 
 Base.:(==)(c1::SimpleArgChecker, c2::SimpleArgChecker) =
     c1.should_be_reversible == c2.should_be_reversible &&
     c1.max_index == c2.max_index &&
-    c1.can_have_free_vars == c2.can_have_free_vars
+    c1.can_have_free_vars == c2.can_have_free_vars &&
+    c1.can_only_have_free_vars == c2.can_only_have_free_vars
 
 Base.hash(c::SimpleArgChecker, h::UInt64) =
-    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, h)))
+    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, hash(c.can_only_have_free_vars, h))))
 
 (c::SimpleArgChecker)(p, skeleton, path) = true
 
@@ -128,6 +152,7 @@ function step_arg_checker(c::SimpleArgChecker, arg::ArgTurn)
         c.should_be_reversible,
         isnothing(c.max_index) ? c.max_index : c.max_index + 1,
         c.can_have_free_vars,
+        c.can_only_have_free_vars,
     )
 end
 
@@ -218,7 +243,7 @@ end
 function __get_custom_arg_checkers(p::Abstraction, checker, indices_checkers::Dict)
     chekers, indices_checkers = __get_custom_arg_checkers(
         p.b,
-        isnothing(checker) ? checker : step_arg_checker(checker, ArgTurn(t0)),
+        isnothing(checker) ? checker : step_arg_checker(checker, ArgTurn(t0, t0)),
         Dict(i + 1 => c for (i, c) in indices_checkers),
     )
     if haskey(indices_checkers, 0)
@@ -1161,13 +1186,14 @@ struct IsPossibleSubfunction <: ArgChecker
     should_be_reversible::Nothing
     max_index::Nothing
     can_have_free_vars::Nothing
-    IsPossibleSubfunction() = new(nothing, nothing, nothing)
+    can_only_have_free_vars::Nothing
+    IsPossibleSubfunction() = new(nothing, nothing, nothing, nothing)
 end
 
 Base.:(==)(c1::IsPossibleSubfunction, c2::IsPossibleSubfunction) = true
 
 Base.hash(c::IsPossibleSubfunction, h::UInt64) =
-    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, h)))
+    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, hash(c.can_only_have_free_vars, h))))
 
 function (c::IsPossibleSubfunction)(p::Index, skeleton, path)
     return p.n != 0

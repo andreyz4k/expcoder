@@ -100,13 +100,14 @@ function value_updates(
     set_explained = false
     next_blocks = Set()
     block_created_paths = Dict{UInt64,Vector{Any}}()
-    out_types = arguments_of_type(block_type)
+    out_types = Dict(arguments_of_type(block_type))
     for i in 1:length(block.output_vars)
         out_var = block.output_vars[i]
         values = new_values[i]
         br_id = target_output[out_var]
         entry = sc.entries[sc.branch_entries[br_id]]
-        t_id = push!(sc.types, out_types[i])
+        _, out_type = instantiate(out_types[out_var], empty_context)
+        t_id = push!(sc.types, out_type)
         out_branch_id, is_new_out_branch_, is_new_nxt_block, all_fails, n_blocks, set_expl, bl_created_paths =
             updated_branches(
                 sc,
@@ -309,6 +310,32 @@ end
 
 function is_child_entry(sc, old_entry, new_entry::NoDataEntry)
     return is_subtype(sc.types[new_entry.type_id], sc.types[old_entry.type_id])
+end
+
+function is_parent_entry(sc, old_entry::Union{PatternEntry,AbductibleEntry}, new_entry::EitherEntry)
+    return is_subtype(sc.types[old_entry.type_id], sc.types[new_entry.type_id]) && all(
+        isa(new_val, EitherOptions) ? all(is_subeither(old_val, new_v) for (_, new_v) in new_val.options) :
+        is_subeither(old_val, new_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values)
+    )
+end
+
+function is_child_entry(sc, old_entry::Union{PatternEntry,AbductibleEntry}, new_entry::EitherEntry)
+    return !is_parent_entry(sc, old_entry, new_entry) &&
+           is_subtype(sc.types[new_entry.type_id], sc.types[old_entry.type_id]) &&
+           all(is_subeither(new_val, old_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values))
+end
+
+function is_parent_entry(sc, old_entry::EitherEntry, new_entry::Union{PatternEntry,AbductibleEntry})
+    return !is_child_entry(sc, old_entry, new_entry) &&
+           is_subtype(sc.types[old_entry.type_id], sc.types[new_entry.type_id]) &&
+           all(is_subeither(old_val, new_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values))
+end
+
+function is_child_entry(sc, old_entry::EitherEntry, new_entry::Union{PatternEntry,AbductibleEntry})
+    return is_subtype(sc.types[new_entry.type_id], sc.types[new_entry.type_id]) && all(
+        isa(old_val, EitherOptions) ? all(is_subeither(new_val, old_v) for (_, old_v) in old_val.options) :
+        is_subeither(new_val, old_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values)
+    )
 end
 
 function is_parent_entry(sc, old_entry, new_entry)
@@ -757,6 +784,101 @@ function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_bra
     if all(sc.branch_is_explained[br_id] for br_id in values(inputs))
         return false, Set([(block_id, new_fixed_branches, target_output)]), Set()
     end
+
+    block = sc.blocks[block_id]
+    if is_polymorphic(block.type)
+        context, block_type = instantiate(block.type, empty_context)
+        if isa(block, ProgramBlock)
+            inp_types = Dict{UInt64,Tp}()
+            for (var_id, var_tp) in arguments_of_type(block_type)
+                context, v_tp = instantiate(sc.types[sc.branch_types[new_fixed_branches[var_id]]], context)
+                if haskey(inputs, var_id)
+                    inp_types[var_id] = v_tp
+                end
+                context = unify(context, var_tp, v_tp)
+            end
+            new_branches = Dict{UInt64,UInt64}()
+            for (var_id, br_id) in inputs
+                branch_type = sc.types[sc.branch_types[br_id]]
+                context, new_branch_type = apply_context(context, inp_types[var_id])
+                _, new_branch_type = instantiate(new_branch_type, empty_context)
+                if new_branch_type != branch_type
+                    entry = sc.entries[sc.branch_entries[br_id]]
+                    new_type_id = push!(sc.types, new_branch_type)
+                    if isa(entry, NoDataEntry)
+                        new_entry = NoDataEntry(new_type_id)
+                        new_entry_id = push!(sc.entries, new_entry)
+                    else
+                        new_entry, new_entry_id = make_entry(sc, new_type_id, entry.values)
+                    end
+
+                    exact_match, parents_children = find_related_branches(sc, var_id, new_entry, new_entry_id)
+                    if !isnothing(exact_match)
+                        inputs[var_id] = exact_match
+                    else
+                        created_branch_id = increment!(sc.branches_count)
+                        sc.branch_entries[created_branch_id] = new_entry_id
+                        sc.branch_vars[created_branch_id] = var_id
+                        sc.branch_types[created_branch_id] = new_type_id
+
+                        for (parent, children) in parents_children
+                            if !isnothing(parent)
+                                deleteat!(sc.branch_children, parent, children)
+                                sc.branch_children[parent, created_branch_id] = true
+                            end
+                            sc.branch_children[created_branch_id, children] = true
+                        end
+
+                        sc.branch_is_unknown[created_branch_id] = true
+
+                        for parent in get_all_parents(sc, created_branch_id)
+                            if !isnothing(sc.unknown_min_path_costs[parent])
+                                sc.branch_unknown_from_output[created_branch_id] = sc.branch_unknown_from_output[parent]
+                                sc.unknown_min_path_costs[created_branch_id] = sc.unknown_min_path_costs[parent]
+                                break
+                            end
+                        end
+
+                        if !isa(new_entry, NoDataEntry)
+                            sc.unmatched_complexities[created_branch_id] = new_entry.complexity
+                            sc.complexities[created_branch_id] = new_entry.complexity
+                        end
+
+                        new_branches[br_id] = created_branch_id
+                        inputs[var_id] = created_branch_id
+                    end
+                end
+            end
+
+            new_fixed_branches = merge(fixed_branches, inputs)
+
+            for (old_br_id, new_br_id) in new_branches
+                if sc.branch_is_unknown[new_br_id]
+                    old_related_branches = get_connected_from(sc.related_unknown_complexity_branches, old_br_id)
+                    new_related_branches = UInt64[
+                        (haskey(new_branches, b_id) ? new_branches[b_id] : b_id) for b_id in old_related_branches
+                    ]
+                    sc.related_unknown_complexity_branches[new_br_id, new_related_branches] = true
+
+                    if !isnothing(sc.complexities[new_br_id])
+                        sc.unknown_complexity_factors[new_br_id] = branch_complexity_factor_unknown(sc, new_br_id)
+                    else
+                        sc.unknown_complexity_factors[new_br_id] = sc.unknown_complexity_factors[old_br_id]
+                    end
+                end
+            end
+        else
+            old_type = sc.types[sc.branch_types[new_fixed_branches[block.input_vars[1]]]]
+            context, in_type = instantiate(old_type, context)
+            context = unify(context, return_of_type(block_type), in_type)
+            _, new_in_type = apply_context(context, in_type)
+            _, new_norm_in_type = instantiate(new_in_type, empty_context)
+            if new_norm_in_type != old_type
+                error("New type $new_norm_in_type does not match old type $old_type")
+            end
+        end
+    end
+
     allow_fails = false
     for var_id in unfixed_vars
         br_id = inputs[var_id]

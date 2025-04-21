@@ -12,7 +12,7 @@ function DummyGuidingModel()
 end
 
 function set_current_grammar!(guiding_model::DummyGuidingModel, grammar)
-    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, UInt64(1), nothing)])
+    full_grammar = vcat(grammar, [Index(0), "lambda", FreeVar(t0, t0, UInt64(1), nothing)])
     guiding_model.grammar = full_grammar
 end
 

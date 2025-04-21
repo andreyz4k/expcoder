@@ -42,7 +42,7 @@ follow_path(skeleton::Program, path) =
         throw(WrongPath())
     end
 
-path_environment(path) = reverse(Tp[t.type for t in path if isa(t, ArgTurn)])
+path_environment(path) = reverse(Tuple{Tp,Tp}[(t.type, t.root_type) for t in path if isa(t, ArgTurn)])
 
 modify_skeleton(skeleton::Abstraction, template, path) =
     if isa(path[1], ArgTurn)
@@ -223,71 +223,29 @@ function check_valid_program_location(sc, p, var_id, is_forward)
     return true
 end
 
-capture_free_vars(p::Program, context) = _capture_free_vars(p, context, [])
+capture_new_free_vars(sc, p) = _capture_new_free_vars(sc, p, OrderedDict())
 
-_capture_free_vars(p::Program, context, captured_vars) = p, captured_vars
+_capture_new_free_vars(sc, p::Program, captured_vars_mapping) = p, captured_vars_mapping
 
-function _capture_free_vars(p::Apply, context, captured_vars)
-    new_f, captured_vars = _capture_free_vars(p.f, context, captured_vars)
-    new_x, captured_vars = _capture_free_vars(p.x, context, captured_vars)
-    Apply(new_f, new_x), captured_vars
-end
-
-function _capture_free_vars(p::Abstraction, context, captured_vars)
-    new_b, captured_vars = _capture_free_vars(p.b, context, captured_vars)
-    Abstraction(new_b), captured_vars
-end
-
-function _capture_free_vars(p::Hole, context, captured_vars)
-    _, t = apply_context(context, p.t)
-    var_id = UInt64(length(captured_vars) + 1)
-    push!(captured_vars, (var_id, t))
-
-    FreeVar(t, var_id, isempty(p.locations) ? nothing : p.locations[1]), captured_vars
-end
-
-function _capture_free_vars(p::FreeVar, context, captured_vars)
-    if isnothing(p.var_id)
-        _, t = apply_context(context, p.t)
-        var_id = UInt64(length(captured_vars) + 1)
-        push!(captured_vars, (var_id, t))
-    elseif isa(p.var_id, UInt64)
-        var_id = p.var_id
-        t = p.t
-        if !in((var_id, t), captured_vars)
-            push!(captured_vars, (var_id, t))
-        end
-    else
-        i = parse(Int, p.var_id[2:end])
-        var_id, t = captured_vars[i]
-    end
-    FreeVar(t, var_id, p.location), captured_vars
-end
-
-capture_new_free_vars(sc, p) = _capture_new_free_vars(sc, p, Dict(), [])
-
-_capture_new_free_vars(sc, p::Program, captured_vars_mapping, captured_vars) = p, captured_vars
-
-function _capture_new_free_vars(sc, p::FreeVar, captured_vars_mapping, captured_vars)
+function _capture_new_free_vars(sc, p::FreeVar, captured_vars_mapping)
     if haskey(captured_vars_mapping, p.var_id)
-        return FreeVar(p.t, captured_vars_mapping[p.var_id], p.location), captured_vars
+        return FreeVar(p.t, p.t, captured_vars_mapping[p.var_id], p.location), captured_vars_mapping
     else
         var_id = create_next_var(sc)
-        push!(captured_vars, var_id)
         captured_vars_mapping[p.var_id] = var_id
-        return FreeVar(p.t, var_id, p.location), captured_vars
+        return FreeVar(p.t, p.t, var_id, p.location), captured_vars_mapping
     end
 end
 
-function _capture_new_free_vars(sc, p::Apply, captured_vars_mapping, captured_vars)
-    new_f, captured_vars = _capture_new_free_vars(sc, p.f, captured_vars_mapping, captured_vars)
-    new_x, captured_vars = _capture_new_free_vars(sc, p.x, captured_vars_mapping, captured_vars)
-    Apply(new_f, new_x), captured_vars
+function _capture_new_free_vars(sc, p::Apply, captured_vars_mapping)
+    new_f, _ = _capture_new_free_vars(sc, p.f, captured_vars_mapping)
+    new_x, _ = _capture_new_free_vars(sc, p.x, captured_vars_mapping)
+    Apply(new_f, new_x), captured_vars_mapping
 end
 
-function _capture_new_free_vars(sc, p::Abstraction, captured_vars_mapping, captured_vars)
-    new_b, captured_vars = _capture_new_free_vars(sc, p.b, captured_vars_mapping, captured_vars)
-    Abstraction(new_b), captured_vars
+function _capture_new_free_vars(sc, p::Abstraction, captured_vars_mapping)
+    new_b, _ = _capture_new_free_vars(sc, p.b, captured_vars_mapping)
+    Abstraction(new_b), captured_vars_mapping
 end
 
 function check_reversed_program_forward(p, vars, inputs, expected_output)
@@ -330,19 +288,17 @@ function check_reversed_program_forward(p, vars, inputs, expected_output)
     end
 end
 
-function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_entry, block_id = UInt64(0))
+function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_type, root_entry, block_id = UInt64(0))
     out_entry = sc.entries[root_entry]
 
-    new_p, new_vars = capture_free_vars(p, context)
-    new_vars_count = length(new_vars)
+    new_vars_count = length(arguments_of_type(p_fix_type))
 
     calculated_values = DefaultDict(() -> [])
     for value in out_entry.values
-        calculated_value = try_run_function(run_in_reverse, [new_p, value, block_id])
+        calculated_value = try_run_function(run_in_reverse, [p, value, block_id])
         if length(calculated_value) != new_vars_count
             @warn p
-            @warn new_p
-            @warn new_vars
+            @warn p_fix_type
             @warn value
             @warn calculated_value
         end
@@ -357,14 +313,16 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_
     has_abductibles = false
     unfixed_vars = []
 
-    for (var_id, t) in new_vars
+    for (var_id, t) in arguments_of_type(p_fix_type)
         vals = calculated_values[var_id]
         complexity_summary, max_summary, options_count = get_complexity_summary(vals, t)
-        t_id = push!(sc.types, t)
+        _, t_norm = instantiate(t, empty_context)
+        t_root = p_type.arguments[var_id]
+        t_norm_id = push!(sc.types, t_norm)
         if any(isa(value, EitherOptions) for value in vals)
             has_eithers = true
             new_entry = EitherEntry(
-                t_id,
+                t_norm_id,
                 vals,
                 complexity_summary,
                 max_summary,
@@ -374,7 +332,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_
             push!(unfixed_vars, var_id)
         elseif any(isa(value, PatternWrapper) for value in vals)
             new_entry = PatternEntry(
-                t_id,
+                t_norm_id,
                 vals,
                 complexity_summary,
                 max_summary,
@@ -384,7 +342,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_
         elseif any(isa(value, AbductibleValue) for value in vals)
             has_abductibles = true
             new_entry = AbductibleEntry(
-                t_id,
+                t_norm_id,
                 vals,
                 complexity_summary,
                 max_summary,
@@ -394,7 +352,7 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_
             push!(unfixed_vars, var_id)
         else
             new_entry = ValueEntry(
-                t_id,
+                t_norm_id,
                 vals,
                 complexity_summary,
                 max_summary,
@@ -406,26 +364,11 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, context, root_
             throw(EnumerationException())
         end
         entry_index = push!(sc.entries, new_entry)
-        push!(new_entries, (var_id, entry_index, t_id))
+        push!(new_entries, (var_id, entry_index, (t, t_root)))
     end
 
-    return new_p, new_entries, unfixed_vars, has_eithers, has_abductibles
+    return new_entries, unfixed_vars, has_eithers, has_abductibles
 end
-
-function _fill_holes(p::Hole, context)
-    new_context, t = apply_context(context, p.t)
-    FreeVar(t, nothing, isempty(p.locations) ? nothing : p.locations[1]), new_context
-end
-function _fill_holes(p::Apply, context)
-    new_f, new_context = _fill_holes(p.f, context)
-    new_x, new_context = _fill_holes(p.x, new_context)
-    Apply(new_f, new_x), new_context
-end
-function _fill_holes(p::Abstraction, context)
-    new_b, new_context = _fill_holes(p.b, context)
-    Abstraction(new_b), new_context
-end
-_fill_holes(p::Program, context) = p, context
 
 function try_run_function(f::Function, xs)
     try
@@ -461,19 +404,21 @@ function _update_block_type(block_type, input_types)
         return block_type
     end
     context, block_type = instantiate(block_type, empty_context)
-    for (arg_type, inp_type) in zip(arguments_of_type(block_type), input_types)
+    for (var_id, inp_type) in input_types
         context, inp_type = instantiate(inp_type, context)
+        arg_type = block_type.arguments[var_id]
         context = unify(context, arg_type, inp_type)
         if isnothing(context)
             error("Can't unify $arg_type with $inp_type")
         end
     end
     context, block_type = apply_context(context, block_type)
-    return block_type
+    _, return_type = instantiate(return_of_type(block_type), empty_context)
+    return return_type
 end
 
 function _update_block_output_type(block_type, output_type)
-    return block_type
+    # return block_type
     if !is_polymorphic(block_type)
         return block_type
     end
@@ -501,7 +446,7 @@ function try_run_block(
     for _ in 1:sc.example_count
         push!(inputs, Dict())
     end
-    input_types = []
+    input_types = Dict()
     has_non_consts = false
     for var_id in block.input_vars
         fixed_branch_id = fixed_branches[var_id]
@@ -509,7 +454,7 @@ function try_run_block(
             has_non_consts = true
         end
         entry = sc.entries[sc.branch_entries[fixed_branch_id]]
-        push!(input_types, sc.types[entry.type_id])
+        input_types[var_id] = sc.types[entry.type_id]
         for i in 1:sc.example_count
             inputs[i][var_id] = entry.values[i]
         end

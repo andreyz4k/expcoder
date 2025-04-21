@@ -68,13 +68,13 @@ using solver:
 
     function capture_free_vars(p::Hole, max_var = UInt64(0))
         var_id = max_var + 1
-        FreeVar(t0, var_id, nothing), max_var + 1
+        FreeVar(t0, t0, var_id, nothing), max_var + 1
     end
 
     function capture_free_vars(p::FreeVar, max_var = UInt64(0))
         if isnothing(p.var_id)
             var_id = max_var + 1
-            FreeVar(t0, var_id, p.location), max_var + 1
+            FreeVar(t0, t0, var_id, p.location), max_var + 1
         else
             p, max_var
         end
@@ -112,14 +112,15 @@ using solver:
                             Apply(every_primitive["eq?"], Index(0)),
                             Hole(
                                 t0,
+                                t0,
                                 [],
                                 step_arg_checker(
                                     step_arg_checker(
                                         CombinedArgChecker([
-                                            SimpleArgChecker(false, -1, true),
+                                            SimpleArgChecker(false, -1, true, nothing),
                                             all_abstractors[every_primitive["rev_select_grid"]][1][1][2],
                                         ]),
-                                        ArgTurn(tcolor),
+                                        ArgTurn(tcolor, tcolor),
                                     ),
                                     (every_primitive["eq?"], 2),
                                 ),
@@ -128,9 +129,9 @@ using solver:
                         ),
                     ),
                 ),
-                Hole(tgrid(tcolor), [], nothing, nothing),
+                Hole(tgrid(tcolor), tgrid(tcolor), [], nothing, nothing),
             ),
-            Hole(tgrid(tcolor), [], nothing, nothing),
+            Hole(tgrid(tcolor), tgrid(tcolor), [], nothing, nothing),
         )
         @test is_reversible(select_background)
 

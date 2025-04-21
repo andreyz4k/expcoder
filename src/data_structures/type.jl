@@ -15,9 +15,11 @@ struct TypeConstructor <: Tp
     end
 end
 
+using DataStructures
+
 struct TypeNamedArgsConstructor <: Tp
     name::String
-    arguments::Dict{String,Tp}
+    arguments::OrderedDict{Union{String,UInt64},Tp}
     output::Tp
     is_poly::Bool
 
@@ -151,7 +153,7 @@ function instantiate(t::TypeNamedArgsConstructor, context, bindings = nothing)
     if isnothing(bindings)
         bindings = Dict()
     end
-    new_arguments = Dict()
+    new_arguments = OrderedDict{Union{String,UInt64},Tp}()
     for (k, x) in t.arguments
         (context, new_x) = instantiate(x, context, bindings)
         new_arguments[k] = new_x
@@ -342,7 +344,7 @@ function apply_context(context, t::TypeNamedArgsConstructor)
     if !is_polymorphic(t)
         (context, t)
     end
-    new_argtypes = Dict()
+    new_argtypes = OrderedDict{Union{String,UInt64},Tp}()
     for (k, x) in t.arguments
         context, xt = apply_context(context, x)
         new_argtypes[k] = xt
@@ -369,17 +371,18 @@ parse_function_type = Delayed()
 parse_tparam = parse_simple_type | (P"\(" + parse_function_type + P"\)")
 parse_tcon_arrow = (parse_tparam+E" -> ")[1:end] + parse_tparam |> (x -> arrow(x...))
 
-parse_named_arg = parse_token + E":" + parse_tparam |> (x -> (x[1], x[2]))
+parse_named_arg = parse_token + E":" + parse_tparam |> (x -> (String(x[1]), x[2]))
 
 parse_tncon_arrow =
     (parse_named_arg+E" -> ")[1:end] + parse_simple_type |>
-    (x -> TypeNamedArgsConstructor(ARROW, Dict(x[1:end-1]), x[end]))
+    (x -> TypeNamedArgsConstructor(ARROW, OrderedDict(x[1:end-1]), x[end]))
 
 parse_function_type.matcher = parse_tcon_arrow | parse_tncon_arrow
 
 parse_nargs_seq = Repeat(parse_named_arg + E", ", 1, ALL) + parse_simple_type
 parse_tncon.matcher =
-    parse_token + E"(" + parse_nargs_seq + E")" |> (x -> TypeNamedArgsConstructor(x[1], Dict(x[2:end-1]), x[end]))
+    parse_token + E"(" + parse_nargs_seq + E")" |>
+    (x -> TypeNamedArgsConstructor(x[1], OrderedDict(x[2:end-1]), x[end]))
 
 type_parser.matcher = parse_function_type | parse_simple_type
 

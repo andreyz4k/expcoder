@@ -67,6 +67,12 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
     new_explained_branches = Set(get_new_values(sc.branch_is_not_copy))
     updated_factors_unknown_branches = Set(get_new_values(sc.unknown_complexity_factors))
     updated_factors_explained_branches = Set(get_new_values(sc.explained_complexity_factors))
+    if sc.verbose
+        @info "New unknown branches: $new_unknown_branches"
+        @info "New explained branches: $new_explained_branches"
+        @info "Updated factors unknown branches: $updated_factors_unknown_branches"
+        @info "Updated factors explained branches: $updated_factors_explained_branches"
+    end
     for branch_id in new_explained_branches
         if !sc.branch_is_not_copy[branch_id]
             continue
@@ -100,15 +106,34 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
     end
 end
 
+function allow_vars_only(p::Apply)
+    return Apply(allow_vars_only(p.f), allow_vars_only(p.x))
+end
+
+function allow_vars_only(p::Abstraction)
+    return Abstraction(allow_vars_only(p.b))
+end
+
+function allow_vars_only(p::Hole)
+    candidates_filter = combine_arg_checkers(p.candidates_filter, SimpleArgChecker(nothing, nothing, nothing, true))
+    return Hole(p.t, p.root_t, p.locations, candidates_filter, p.possible_values)
+end
+
+function allow_vars_only(p::Program)
+    return p
+end
+
 function block_state_successors(sc::SolutionContext, max_free_parameters, bp::BlockPrototype)::Vector{BlockPrototype}
     current_hole = follow_path(bp.skeleton, bp.path)
     if !isa(current_hole, Hole)
         error("Error during following path")
     end
     request = current_hole.t
+    root_request = current_hole.root_t
 
     context = bp.context
     context, request = apply_context(context, request)
+    context, root_request = apply_context(context, root_request)
     if isarrow(request)
         return [
             BlockPrototype(
@@ -117,18 +142,23 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
                     (Abstraction(
                         Hole(
                             request.arguments[2],
+                            root_request.arguments[2],
                             current_hole.locations,
-                            step_arg_checker(current_hole.candidates_filter, ArgTurn(request.arguments[1])),
+                            step_arg_checker(
+                                current_hole.candidates_filter,
+                                ArgTurn(request.arguments[1], root_request.arguments[1]),
+                            ),
                             current_hole.possible_values,
                         ),
                     )),
                     bp.path,
                 ),
                 context,
-                vcat(bp.path, [ArgTurn(request.arguments[1])]),
+                vcat(bp.path, [ArgTurn(request.arguments[1], root_request.arguments[1])]),
                 bp.cost,
                 bp.free_parameters,
                 bp.request,
+                bp.root_request,
                 bp.root_entry,
                 bp.reverse,
             ),
@@ -140,13 +170,15 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
 
         candidates = unifying_expressions(cg, environment, context, current_hole, bp.skeleton, bp.path)
 
-        bps = map(candidates) do (candidate, argument_types, context, ll)
+        bps = map(candidates) do (candidate, argument_types, root_argument_types, context, ll)
             if isa(candidate, Abstraction)
                 new_free_parameters = 0
-                application_template =
-                    Apply(candidate, Hole(argument_types[1], [], current_hole.candidates_filter, nothing))
+                application_template = Apply(
+                    candidate,
+                    Hole(argument_types[1], root_argument_types[1], [], current_hole.candidates_filter, nothing),
+                )
                 new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
-                new_path = vcat(bp.path, [LeftTurn(), ArgTurn(argument_types[1])])
+                new_path = vcat(bp.path, [LeftTurn(), ArgTurn(argument_types[1], root_argument_types[1])])
             else
                 new_free_parameters = number_of_free_parameters(candidate)
 
@@ -168,7 +200,7 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
 
                         application_template = Apply(
                             application_template,
-                            Hole(argument_types[i], [(candidate, i)], arg_checker, nothing),
+                            Hole(argument_types[i], root_argument_types[i], [(candidate, i)], arg_checker, nothing),
                         )
                     end
                     new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
@@ -176,6 +208,10 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
                 end
             end
             context, new_request = apply_context(context, bp.request)
+            context, new_root_request = apply_context(context, bp.root_request)
+            if is_reversible(new_skeleton) && !isa(sc.entries[bp.root_entry], AbductibleEntry)
+                new_skeleton = allow_vars_only(new_skeleton)
+            end
             return BlockPrototype(
                 new_skeleton,
                 context,
@@ -183,6 +219,7 @@ function block_state_successors(sc::SolutionContext, max_free_parameters, bp::Bl
                 bp.cost + ll,
                 bp.free_parameters + new_free_parameters,
                 new_request,
+                new_root_request,
                 bp.root_entry,
                 bp.reverse,
             )
@@ -203,32 +240,40 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
 
     p = bp.skeleton
 
+    arg_types = _get_prev_free_vars(p)
+    _, return_type = apply_context(bp.context, bp.root_request)
+    if !isempty(arg_types)
+        new_arg_types = OrderedDict{Union{String,UInt64},Tp}()
+        for (var_id, (t, fix_t)) in arg_types
+            _, t = apply_context(bp.context, t)
+            new_arg_types[var_id] = t
+        end
+        p_type = TypeNamedArgsConstructor(ARROW, new_arg_types, return_type)
+    else
+        p_type = return_type
+    end
+    fix_context = unify(bp.context, return_type, bp.request)
+    _, p_fix_type = apply_context(fix_context, p_type)
+
     if is_reverse
         # @info "Try get reversed for $bp"
-        p, input_vars, _, has_eithers, has_abductibles = try_get_reversed_values(sc, p, bp.context, bp.root_entry)
+        input_vars, _, has_eithers, has_abductibles = try_get_reversed_values(sc, p, p_type, p_fix_type, bp.root_entry)
     else
-        p, new_vars = capture_free_vars(p, bp.context)
         input_vars = []
-        for (var_id, t) in new_vars
-            t_id = push!(sc.types, t)
-            entry = NoDataEntry(t_id)
+        for (var_id, t) in arguments_of_type(p_fix_type)
+            _, t_norm = instantiate(t, empty_context)
+            t_norm_id = push!(sc.types, t_norm)
+            entry = NoDataEntry(t_norm_id)
             entry_index = push!(sc.entries, entry)
-            push!(input_vars, (var_id, entry_index, t_id))
-            continue
+            t_root = p_type.arguments[var_id]
+            push!(input_vars, (var_id, entry_index, (t, t_root)))
         end
 
         has_eithers = false
         has_abductibles = false
     end
 
-    arg_types = [sc.types[v[3]] for v in input_vars]
-    if isempty(arg_types)
-        p_type = return_of_type(bp.request)
-    else
-        p_type = arrow(arg_types..., return_of_type(bp.request))
-    end
-    # _, p_type = instantiate(p_type, empty_context)
-    block_info = (p, p_type, bp.cost, input_vars, has_eithers, has_abductibles, bp.context, is_reverse)
+    block_info = (p, p_type, p_fix_type, bp.cost, input_vars, has_eithers, has_abductibles, is_reverse)
 
     if !haskey(sc.found_blocks_forward, bp.root_entry)
         sc.found_blocks_forward[bp.root_entry] = []
@@ -250,7 +295,7 @@ end
 
 function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
     output_var_id = sc.branch_vars[output_branch_id]
-    p, p_type, cost, input_vars, has_eithers, has_abductibles, context, is_reverse = block_info
+    p, p_type, p_fix_type, cost, input_vars, has_eithers, has_abductibles, is_reverse = block_info
     if !check_valid_program_location(sc, p, output_var_id, true)
         return nothing
     end
@@ -268,12 +313,12 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
         if isa(bl, ReverseProgramBlock) || isa(bl.p, FreeVar)
             continue
         end
-        if is_on_path(p, bl.p, Dict(), true)
+        if is_on_path(p, bl.p, Dict())
             if sc.verbose
                 @info "Found matching parent block $bl"
                 @info "Bp $p"
             end
-            p = bl.p
+            # p = bl.p
             block_id = bl_id
             block = bl
             break
@@ -282,7 +327,18 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
 
     if isnothing(block_id)
         new_p, new_vars = capture_new_free_vars(sc, p)
-        block = ProgramBlock(new_p, p_type, cost, new_vars, output_var_id, is_reverse)
+
+        if !isempty(new_vars)
+            arg_types = OrderedDict{Union{String,UInt64},Tp}(
+                new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars
+            )
+            new_p_type = TypeNamedArgsConstructor(ARROW, arg_types, return_of_type(p_type))
+        else
+            new_p_type = p_type
+        end
+
+        block =
+            ProgramBlock(new_p, new_p_type, cost, [new_vars[v] for (v, _, _) in input_vars], output_var_id, is_reverse)
         block_id = push!(sc.blocks, block)
         sc.block_root_branches[block_id] = output_branch_id
 
@@ -292,11 +348,11 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
         end
     end
 
-    new_branches = []
+    input_branches = Dict{UInt64,UInt64}()
     if is_reverse
         if has_eithers
-            _, input_vars, _, _, _ =
-                try_get_reversed_values(sc, p, context, sc.branch_entries[output_branch_id], block_id)
+            input_vars, _, _, _ =
+                try_get_reversed_values(sc, p, p_type, p_fix_type, sc.branch_entries[output_branch_id], block_id)
         end
 
         out_entry = sc.entries[sc.branch_entries[output_branch_id]]
@@ -348,12 +404,12 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
                 push!(either_var_ids, var_id)
             end
 
-            push!(new_branches, (var_id, branch_id, entry.type_id))
+            input_branches[var_id] = branch_id
         end
 
-        if length(new_branches) > 1
-            for (_, branch_id, _) in new_branches
-                inds = [b_id for (_, b_id, _) in new_branches if b_id != branch_id]
+        if length(input_branches) > 1
+            for (_, branch_id) in input_branches
+                inds = [b_id for (_, b_id) in input_branches if b_id != branch_id]
                 sc.related_unknown_complexity_branches[branch_id, inds] = true
             end
         end
@@ -372,7 +428,7 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
     else
         min_path_cost = sc.unknown_min_path_costs[output_branch_id] + cost
         complexity_factor = sc.unknown_complexity_factors[output_branch_id]
-        for (var_id, (_, entry_index, t_id)) in zip(block.input_vars, input_vars)
+        for (var_id, (_, entry_index, _)) in zip(block.input_vars, input_vars)
             entry = sc.entries[entry_index]
             exact_match, parents_children = find_related_branches(sc, var_id, entry, entry_index)
 
@@ -397,77 +453,73 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             sc.unknown_min_path_costs[branch_id] = min_path_cost
             sc.unknown_complexity_factors[branch_id] = complexity_factor
 
-            push!(new_branches, (var_id, branch_id, t_id))
-        end
-
-        constrained_branches = [b_id for (_, b_id, t_id) in new_branches if is_polymorphic(sc.types[t_id])]
-        constrained_vars = [v_id for (v_id, _, t_id) in new_branches if is_polymorphic(sc.types[t_id])]
-        if length(constrained_branches) >= 2
-            context_id = push!(sc.constraint_contexts, context)
-            new_constraint_id = increment!(sc.constraints_count)
-            # @info "Added new constraint with type only $new_constraint_id"
-            sc.constrained_branches[constrained_branches, new_constraint_id] = constrained_vars
-            sc.constrained_vars[constrained_vars, new_constraint_id] = constrained_branches
-            sc.constrained_contexts[new_constraint_id] = context_id
+            input_branches[var_id] = branch_id
         end
     end
-
-    input_branches = Dict{UInt64,UInt64}(var_id => branch_id for (var_id, branch_id, _) in new_branches)
     return block_id, input_branches, Dict{UInt64,UInt64}(output_var_id => output_branch_id)
 end
 
-function create_wrapping_program_prototype(
-    sc::SolutionContext,
-    p,
-    cost,
-    root_entry,
-    output_vars,
-    var_id::UInt64,
-    input_type,
-    context,
-)
+function create_wrapping_program_prototype(sc::SolutionContext, bp::BlockPrototype, output_vars, var_id::UInt64)
     var_ind = findfirst(v_info -> v_info[1] == var_id, output_vars)
 
-    unknown_entry = sc.entries[output_vars[var_ind][2]]
-    unknown_type_id = unknown_entry.type_id
-
-    cg = sc.entry_grammars[(root_entry, true)]
+    cg = sc.entry_grammars[(bp.root_entry, true)]
 
     candidate_functions = unifying_expressions(
         cg,
-        Tp[],
-        context,
-        Hole(input_type, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
-        Hole(input_type, [], CombinedArgChecker([SimpleArgChecker(true, -1, false)]), nothing),
+        Tuple{Tp,Tp}[],
+        bp.context,
+        Hole(
+            bp.request,
+            bp.root_request,
+            [],
+            CombinedArgChecker([SimpleArgChecker(true, -1, false, nothing)]),
+            nothing,
+        ),
+        Hole(
+            bp.request,
+            bp.root_request,
+            [],
+            CombinedArgChecker([SimpleArgChecker(true, -1, false, nothing)]),
+            nothing,
+        ),
         [],
     )
 
-    wrapper, arg_types, new_context, wrap_cost =
+    wrapper, arg_types, arg_root_types, new_context, wrap_cost =
         first(v for v in candidate_functions if v[1] == every_primitive["rev_fix_param"])
 
-    unknown_type = sc.types[unknown_type_id]
+    unknown_entry = sc.entries[output_vars[var_ind][2]]
+    unknown_type, unknown_root_type = output_vars[var_ind][3]
     new_context = unify(new_context, unknown_type, arg_types[2])
+    new_context = unify(new_context, unknown_root_type, arg_root_types[2])
     if isnothing(new_context)
         error("Can't unify $(unknown_type) with $(arg_types[2])")
     end
     new_context, fixer_type = apply_context(new_context, arg_types[3])
+    new_context, fixer_root_type = apply_context(new_context, arg_root_types[3])
 
     custom_arg_checkers = _get_custom_arg_checkers(wrapper)
-    filled_p, new_context = _fill_holes(p, new_context)
 
     wrapped_p = Apply(
-        Apply(Apply(wrapper, filled_p), FreeVar(unknown_type, "r$var_ind", nothing)),
-        Hole(fixer_type, [(wrapper, 3)], CombinedArgChecker([custom_arg_checkers[3]]), unknown_entry.values),
+        Apply(Apply(wrapper, bp.skeleton), FreeVar(unknown_root_type, unknown_type, var_id, nothing)),
+        Hole(
+            fixer_type,
+            fixer_root_type,
+            [(wrapper, 3)],
+            CombinedArgChecker([custom_arg_checkers[3]]),
+            unknown_entry.values,
+        ),
     )
 
     new_bp = BlockPrototype(
         wrapped_p,
         new_context,
         [RightTurn()],
-        cost + wrap_cost + 0.001,
-        number_of_free_parameters(filled_p),
-        input_type,
-        root_entry,
+        bp.cost + wrap_cost + 0.001,
+        number_of_free_parameters(bp.skeleton),
+        bp.request,
+        bp.root_request,
+        bp.root_entry,
         true,
     )
     return new_bp
@@ -497,24 +549,38 @@ end
 
 _collect_var_locations(p, var_locations) = var_locations
 
-function create_reversed_block(sc::SolutionContext, p::Program, context, path, root_entry::UInt64, cost, input_type)
-    new_p, output_vars, unfixed_vars, has_eithers, has_abductibles = try_get_reversed_values(sc, p, context, root_entry)
+function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
+    p = bp.skeleton
+    arg_types = _get_prev_free_vars(p)
+    _, return_type = apply_context(bp.context, bp.root_request)
+    if !isempty(arg_types)
+        new_arg_types = OrderedDict{Union{String,UInt64},Tp}()
+        for (var_id, (t, fix_t)) in arg_types
+            _, t = apply_context(bp.context, t)
+            new_arg_types[var_id] = t
+        end
+        p_type = TypeNamedArgsConstructor(ARROW, new_arg_types, return_type)
+    else
+        p_type = return_type
+    end
+    fix_context = unify(bp.context, return_type, bp.request)
+    _, p_fix_type = apply_context(fix_context, p_type)
+
+    output_vars, unfixed_vars, has_eithers, has_abductibles =
+        try_get_reversed_values(sc, p, p_type, p_fix_type, bp.root_entry)
+
     if isempty(output_vars)
         throw(EnumerationException())
     end
     if isempty(unfixed_vars)
-        arg_types = [sc.types[v[3]] for v in output_vars]
-        p_type = arrow(arg_types..., input_type)
-        # _, p_type = instantiate(p_type, empty_context)
+        block_info = (p, p_type, bp.cost, output_vars, has_eithers, has_abductibles)
 
-        block_info = (new_p, p_type, cost, output_vars, has_eithers, has_abductibles)
-
-        if !haskey(sc.found_blocks_reverse, root_entry)
-            sc.found_blocks_reverse[root_entry] = []
+        if !haskey(sc.found_blocks_reverse, bp.root_entry)
+            sc.found_blocks_reverse[bp.root_entry] = []
         end
-        push!(sc.found_blocks_reverse[root_entry], block_info)
+        push!(sc.found_blocks_reverse[bp.root_entry], block_info)
 
-        for branch_id in get_connected_to(sc.branch_entries, root_entry)
+        for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
             if sc.branch_is_explained[branch_id] &&
                sc.branch_is_not_copy[branch_id] &&
                !isnothing(sc.explained_min_path_costs[branch_id]) &&
@@ -532,10 +598,7 @@ function create_reversed_block(sc::SolutionContext, p::Program, context, path, r
     else
         unfinished_prototypes = []
         for var_id in unfixed_vars
-            push!(
-                unfinished_prototypes,
-                create_wrapping_program_prototype(sc, p, cost, root_entry, output_vars, var_id, input_type, context),
-            )
+            push!(unfinished_prototypes, create_wrapping_program_prototype(sc, bp, output_vars, var_id))
         end
         drop_changes!(sc, sc.transaction_depth - 1)
         start_transaction!(sc, sc.transaction_depth + 1)
@@ -564,7 +627,7 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
             continue
         end
 
-        if is_on_path(p, bl.p, Dict(), true)
+        if is_on_path(p, bl.p, Dict())
             if sc.verbose
                 @info "Found matching parent block $bl"
                 @info "Bp $p"
@@ -577,7 +640,13 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
 
     if isnothing(block_id)
         new_p, new_vars = capture_new_free_vars(sc, p)
-        block = ReverseProgramBlock(new_p, p_type, cost, [input_var_id], new_vars)
+
+        arg_types = OrderedDict{Union{String,UInt64},Tp}(
+            new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars
+        )
+        p_type = TypeNamedArgsConstructor(ARROW, arg_types, return_of_type(p_type))
+
+        block = ReverseProgramBlock(new_p, p_type, cost, [input_var_id], [new_vars[v] for (v, _, _) in output_vars])
         var_locations = collect_var_locations(new_p)
         for (var_id, locations) in var_locations
             sc.known_var_locations[var_id] = collect(locations)
@@ -651,15 +720,7 @@ end
 
 function enumeration_iteration_finished(sc::SolutionContext, bp::BlockPrototype)
     if bp.reverse
-        return create_reversed_block(
-            sc,
-            bp.skeleton,
-            bp.context,
-            bp.path,
-            bp.root_entry,
-            bp.cost,
-            return_of_type(bp.request),
-        )
+        return create_reversed_block(sc, bp)
     else
         enumeration_iteration_finished_output(sc, bp)
         return []
@@ -739,7 +800,7 @@ function enumeration_iteration(
 )
     sc.iterations_count += 1
     q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
-    if (is_reversible(bp.skeleton) && !isa(sc.entries[entry_id], AbductibleEntry)) || state_finished(bp)
+    if state_finished(bp)
         if sc.verbose
             @info "Checking finished $bp"
         end

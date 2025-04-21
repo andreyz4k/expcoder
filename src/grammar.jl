@@ -52,40 +52,37 @@ function lse(l::Vector{Float64})::Float64
     return largest + log(sum(exp(z - largest) for z in l))
 end
 
-function _get_free_var_types(p::FreeVar)
-    if isnothing(p.var_id)
-        return [p.t]
-    else
-        return []
-    end
+function _get_prev_free_vars(p::FreeVar)
+    return OrderedDict{Union{String,UInt64},Tuple{Tp,Tp}}(p.var_id => (p.t, p.fix_t))
 end
 
-function _get_free_var_types(p::Apply)
-    return vcat(_get_free_var_types(p.f), _get_free_var_types(p.x))
+function _get_prev_free_vars(p::Apply)
+    return merge(_get_prev_free_vars(p.f), _get_prev_free_vars(p.x))
 end
 
-function _get_free_var_types(p::Abstraction)
-    return _get_free_var_types(p.b)
+function _get_prev_free_vars(p::Abstraction)
+    return _get_prev_free_vars(p.b)
 end
 
-function _get_free_var_types(p::Program)
-    return []
+function _get_prev_free_vars(p::Program)
+    return OrderedDict{Union{String,UInt64},Tuple{Tp,Tp}}()
 end
 
 function unifying_expressions(
     cg::ContextualGrammar,
-    environment::Vector{Tp},
+    environment::Vector{Tuple{Tp,Tp}},
     context,
     current_hole::Hole,
     skeleton,
     path,
-)::Vector{Tuple{Program,Vector{Tp},Context,Float64}}
+)::Vector{Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64}}
     #  given a grammar environment requested type and typing context,
     #    what are all of the possible leaves that we might use?
     #    These could be productions in the grammar or they could be variables.
     #    Yields a sequence of:
     #    (leaf, argument types, context with leaf return type unified with requested type, normalized log likelihood)
     request = current_hole.t
+    root_request = current_hole.root_t
 
     if isempty(current_hole.locations)
         g = cg.no_context
@@ -102,78 +99,101 @@ function unifying_expressions(
         in_lambda_wrapper = false
     end
 
-    if in_lambda_wrapper
+    if in_lambda_wrapper || candidates_filter.can_only_have_free_vars == true
         variable_candidates = []
     else
-        variable_candidates = collect(skipmissing(map(enumerate(environment)) do (j, t)
-            p = Index(j - 1)
-            if !candidates_filter(p, skeleton, path)
-                return missing
-            end
-            ll = g.log_variable
-            (new_context, t) = apply_context(context, t)
-            return_type = return_of_type(t)
-            if might_unify(return_type, request)
-                new_context = unify(new_context, return_type, request)
-                if isnothing(new_context)
+        variable_candidates = collect(
+            skipmissing(map(enumerate(environment)) do (j, (t, root_t))
+                p = Index(j - 1)
+                if !candidates_filter(p, skeleton, path)
                     return missing
                 end
-                (new_context, t) = apply_context(new_context, t)
-                return (p, arguments_of_type(t), new_context, ll)
-            else
-                return missing
-            end
-        end))
+                ll = g.log_variable
+                (new_context, t) = apply_context(context, t)
+                return_type = return_of_type(t)
+                if might_unify(return_type, request)
+                    new_context = unify(new_context, return_type, request)
+                    if isnothing(new_context)
+                        return missing
+                    end
+                    (new_context, root_t) = apply_context(new_context, root_t)
+                    new_context = unify(new_context, return_of_type(root_t), root_request)
+                    if isnothing(new_context)
+                        return missing
+                    end
+                    (new_context, t) = apply_context(new_context, t)
+                    (new_context, root_t) = apply_context(new_context, root_t)
+                    return (p, arguments_of_type(t), arguments_of_type(root_t), new_context, ll)
+                else
+                    return missing
+                end
+            end),
+        )
 
         nv = log(length(variable_candidates))
-        variable_candidates =
-            Tuple{Program,Vector{Tp},Context,Float64}[(p, t, k, ll - nv) for (p, t, k, ll) in variable_candidates]
+        variable_candidates = Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64}[
+            (p, t, rt, k, ll - nv) for (p, t, rt, k, ll) in variable_candidates
+        ]
     end
 
-    grammar_candidates = collect(
-        Tuple{Program,Vector{Tp},Context,Float64},
-        skipmissing(map(g.library) do (p, t, ll)
-            if in_lambda_wrapper && p != every_primitive["rev_fix_param"]
-                return missing
-            end
-
-            for (f, ind) in current_hole.locations
-                if violates_symmetry(f, p, ind)
+    if candidates_filter.can_only_have_free_vars == true
+        grammar_candidates = []
+    else
+        grammar_candidates = collect(
+            Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64},
+            skipmissing(map(g.library) do (p, t, ll)
+                if in_lambda_wrapper && p != every_primitive["rev_fix_param"]
                     return missing
                 end
-            end
 
-            if !candidates_filter(p, skeleton, path)
-                return missing
-            end
+                for (f, ind) in current_hole.locations
+                    if violates_symmetry(f, p, ind)
+                        return missing
+                    end
+                end
 
-            if !might_unify(return_of_type(t), request)
-                return missing
-            else
-                new_context, t = instantiate(t, context)
-                new_context = unify(new_context, return_of_type(t), request)
-                if isnothing(new_context)
+                if !candidates_filter(p, skeleton, path)
                     return missing
                 end
-                (new_context, t) = apply_context(new_context, t)
-                return (p, arguments_of_type(t), new_context, ll)
-            end
-        end),
-    )
+
+                if !might_unify(return_of_type(t), request)
+                    return missing
+                else
+                    new_context, new_t = instantiate(t, context)
+                    new_context = unify(new_context, return_of_type(new_t), request)
+                    if isnothing(new_context)
+                        return missing
+                    end
+                    new_context, root_t = instantiate(t, new_context)
+                    new_context = unify(new_context, return_of_type(root_t), root_request)
+                    if isnothing(new_context)
+                        return missing
+                    end
+                    (new_context, new_t) = apply_context(new_context, new_t)
+                    (new_context, root_t) = apply_context(new_context, root_t)
+                    return (p, arguments_of_type(new_t), arguments_of_type(root_t), new_context, ll)
+                end
+            end),
+        )
+    end
 
     if !isempty(grammar_candidates)
         lambda_context, arg_type = instantiate(t0, context)
+        lambda_context, arg_root_type = instantiate(t0, context)
         lambda_context, lambda_type = apply_context(lambda_context, request)
+        lambda_context, lambda_root_type = apply_context(lambda_context, current_hole.root_t)
         lambda_candidates = [(
             Abstraction(
                 Hole(
                     lambda_type,
+                    lambda_root_type,
                     current_hole.locations,
-                    step_arg_checker(candidates_filter, ArgTurn(arg_type)),
+                    step_arg_checker(candidates_filter, ArgTurn(arg_type, arg_root_type)),
                     nothing,
                 ),
             ),
             [arg_type],
+            [arg_root_type],
             lambda_context,
             g.log_lambda,
         )]
@@ -183,37 +203,54 @@ function unifying_expressions(
 
     free_var_candidates = []
     if candidates_filter.can_have_free_vars
-        if !isa(skeleton, Hole)
-            p = FreeVar(request, nothing, isempty(current_hole.locations) ? nothing : current_hole.locations[1])
-            if candidates_filter(p, skeleton, path)
-                push!(free_var_candidates, (p, [], context, g.log_free_var))
-            end
-        end
+        prev_free_vars = _get_prev_free_vars(skeleton)
 
-        for (i, t) in enumerate(_get_free_var_types(skeleton))
-            (new_context, t) = apply_context(context, t)
-            return_type = return_of_type(t)
+        for (var_id, (t, fix_t)) in prev_free_vars
+            (new_context, fix_t) = apply_context(context, fix_t)
+            (new_context, t) = apply_context(new_context, t)
+            return_type = return_of_type(fix_t)
             if might_unify(return_type, request)
                 new_context = unify(new_context, return_type, request)
                 if isnothing(new_context)
                     continue
                 end
+                new_context = unify(new_context, return_of_type(t), root_request)
+                if isnothing(new_context)
+                    continue
+                end
                 (new_context, t) = apply_context(new_context, t)
-                p = FreeVar(t, "r$i", isempty(current_hole.locations) ? nothing : current_hole.locations[1])
+                (new_context, fix_t) = apply_context(new_context, fix_t)
+                p = FreeVar(t, fix_t, var_id, isempty(current_hole.locations) ? nothing : current_hole.locations[1])
                 if candidates_filter(p, skeleton, path)
-                    push!(free_var_candidates, (p, [], new_context, g.log_free_var))
+                    push!(free_var_candidates, (p, [], [], new_context, g.log_free_var))
                 end
             end
         end
+
+        if !isa(skeleton, Hole)
+            p = FreeVar(
+                root_request,
+                request,
+                UInt64(length(prev_free_vars) + 1),
+                isempty(current_hole.locations) ? nothing : current_hole.locations[1],
+            )
+            if candidates_filter(p, skeleton, path)
+                push!(free_var_candidates, (p, [], [], context, g.log_free_var))
+            end
+        end
+
         nv = log(length(free_var_candidates))
-        free_var_candidates =
-            Tuple{Program,Vector{Tp},Context,Float64}[(p, t, k, ll - nv) for (p, t, k, ll) in free_var_candidates]
+        free_var_candidates = Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64}[
+            (p, t, rt, k, ll - nv) for (p, t, rt, k, ll) in free_var_candidates
+        ]
     end
 
     candidates = vcat(variable_candidates, grammar_candidates, lambda_candidates, free_var_candidates)
     if !isempty(candidates)
-        z = lse([ll for (_, _, _, ll) in candidates])
-        candidates = Tuple{Program,Vector{Tp},Context,Float64}[(p, t, k, z - ll) for (p, t, k, ll) in candidates]
+        z = lse([ll for (_, _, _, _, ll) in candidates])
+        candidates = Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64}[
+            (p, t, rt, k, z - ll) for (p, t, rt, k, ll) in candidates
+        ]
     end
 
     if !isnothing(current_hole.possible_values)
@@ -229,9 +266,10 @@ function unifying_expressions(
         end
         for candidate in const_candidates
             p = SetConst(request, candidate)
+            new_context = unify(context, request, root_request)
 
             if candidates_filter(p, skeleton, path)
-                push!(candidates, (p, [], context, 0.001))
+                push!(candidates, (p, [], [], new_context, 0.001))
             end
         end
     end

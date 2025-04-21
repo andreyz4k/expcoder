@@ -5,6 +5,7 @@ struct LeftTurn <: Turn end
 struct RightTurn <: Turn end
 struct ArgTurn <: Turn
     type::Tp
+    root_type::Tp
 end
 
 Base.:(==)(a::ArgTurn, b::ArgTurn) = a.type == b.type
@@ -18,6 +19,7 @@ struct BlockPrototype
     cost::Float64
     free_parameters::Int64
     request::Tp
+    root_request::Tp
     root_entry::UInt64
     reverse::Bool
 end
@@ -29,6 +31,7 @@ Base.:(==)(a::BlockPrototype, b::BlockPrototype) =
     a.cost == b.cost &&
     a.free_parameters == b.free_parameters &&
     a.request == b.request &&
+    a.root_request == b.root_request &&
     a.root_entry == b.root_entry &&
     a.reverse == b.reverse
 
@@ -36,7 +39,13 @@ Base.hash(a::BlockPrototype, h::UInt) = hash(
     a.skeleton,
     hash(
         a.context,
-        hash(a.path, hash(a.cost, hash(a.free_parameters, hash(a.request, hash(a.root_entry, hash(a.reverse, h)))))),
+        hash(
+            a.path,
+            hash(
+                a.cost,
+                hash(a.free_parameters, hash(a.request, hash(a.root_request, hash(a.root_entry, hash(a.reverse, h))))),
+            ),
+        ),
     ),
 )
 
@@ -51,7 +60,7 @@ function enqueue_matches_with_known_var(sc, branch_id)
     for (pr, output_var_id, output_br_id, prev_matches_count) in matching_with_known_candidates(sc, entry, branch_id)
         bl = ProgramBlock(
             pr,
-            arrow(tp, tp),
+            TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(var_id => tp), tp),
             EPSILON + MATCH_DUPLICATES_PENALTY * prev_matches_count,
             [var_id],
             output_var_id,
@@ -145,7 +154,7 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
         matching_with_unknown_candidates(sc, entry, branch_id)
         bl = ProgramBlock(
             pr,
-            arrow(in_type, in_type),
+            TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(in_var_id => in_type), in_type),
             EPSILON + MATCH_DUPLICATES_PENALTY * prev_matches_count,
             [in_var_id],
             var_id,
@@ -179,7 +188,7 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
             if haskey(sc.found_blocks_forward, entry_id)
                 for block_info in sc.found_blocks_forward[entry_id]
                     foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
-                    if all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[4])
+                    if all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
                         if sc.verbose
                             @info "Adding $((false, branch_id, block_info)) to insert queue"
                         end

@@ -127,17 +127,23 @@ function _extract_blocks(task, target_program, verbose = false)
             for v in vars
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
-                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
+                    var_types[vars_mapping[v]] = tp.arguments[v]
                     push!(in_vars, vars_mapping[v])
                 elseif v in vars_from_rev && !isa(p.v, FreeVar)
                     copied_vars += 1
                     out_var = length(vars_mapping) + copied_vars
                     push!(in_vars, out_var)
-                    copy_block =
-                        ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
+                    copy_block = ProgramBlock(
+                        FreeVar(t0, t0, vars_mapping[v], nothing),
+                        t0,
+                        0.0,
+                        [vars_mapping[v]],
+                        out_var,
+                        false,
+                    )
                     push!(copy_blocks, copy_block)
                 else
-                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments[v])
                     push!(in_vars, vars_mapping[v])
                 end
                 if v in vars_from_input
@@ -172,9 +178,9 @@ function _extract_blocks(task, target_program, verbose = false)
             for v in p.var_ids
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
-                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
+                    var_types[vars_mapping[v]] = tp.arguments[v]
                 else
-                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments[v])
                 end
                 push!(vars_from_rev, v)
                 if p.inp_var_id in vars_from_input
@@ -190,7 +196,7 @@ function _extract_blocks(task, target_program, verbose = false)
             p = p.b
         elseif p isa FreeVar
             in_var = vars_mapping[p.var_id]
-            bl = ProgramBlock(FreeVar(t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
+            bl = ProgramBlock(FreeVar(t0, t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
             push!(copy_blocks, bl)
             break
         else
@@ -201,17 +207,23 @@ function _extract_blocks(task, target_program, verbose = false)
             for v in unique(vars)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
-                    var_types[vars_mapping[v]] = tp.arguments["v$v"]
+                    var_types[vars_mapping[v]] = tp.arguments[v]
                     push!(in_vars, vars_mapping[v])
                 elseif v in vars_from_rev
                     copied_vars += 1
                     out_var = length(vars_mapping) + copied_vars
                     push!(in_vars, out_var)
-                    copy_block =
-                        ProgramBlock(FreeVar(t0, vars_mapping[v], nothing), t0, 0.0, [vars_mapping[v]], out_var, false)
+                    copy_block = ProgramBlock(
+                        FreeVar(t0, t0, vars_mapping[v], nothing),
+                        t0,
+                        0.0,
+                        [vars_mapping[v]],
+                        out_var,
+                        false,
+                    )
                     push!(copy_blocks, copy_block)
                 else
-                    context = unify(context, var_types[vars_mapping[v]], tp.arguments["v$v"])
+                    context = unify(context, var_types[vars_mapping[v]], tp.arguments[v])
                     push!(in_vars, vars_mapping[v])
                 end
             end
@@ -231,26 +243,20 @@ function _extract_blocks(task, target_program, verbose = false)
     return rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types
 end
 
-is_on_path(prot::Hole, p, vars_mapping, final = false) = true
-is_on_path(prot::Apply, p::Apply, vars_mapping, final = false) =
-    is_on_path(prot.f, p.f, vars_mapping, final) && is_on_path(prot.x, p.x, vars_mapping, final)
-is_on_path(prot::Abstraction, p::Abstraction, vars_mapping, final = false) =
-    is_on_path(prot.b, p.b, vars_mapping, final)
-is_on_path(prot, p, vars_mapping, final = false) = prot == p
+is_on_path(prot::Hole, p, vars_mapping) = true
+is_on_path(prot::Apply, p::Apply, vars_mapping) =
+    is_on_path(prot.f, p.f, vars_mapping) && is_on_path(prot.x, p.x, vars_mapping)
+is_on_path(prot::Abstraction, p::Abstraction, vars_mapping) = is_on_path(prot.b, p.b, vars_mapping)
+is_on_path(prot, p, vars_mapping) = prot == p
 
-function is_on_path(prot::FreeVar, p::FreeVar, vars_mapping, final = false)
+function is_on_path(prot::FreeVar, p::FreeVar, vars_mapping)
     if !haskey(vars_mapping, p.var_id)
-        if isnothing(prot.var_id)
-            vars_mapping[p.var_id] = "r$(length(vars_mapping) + 1)"
-        elseif final
-            vars_mapping[p.var_id] = prot.var_id
-        else
+        if in(prot.var_id, values(vars_mapping))
             return false
+        else
+            vars_mapping[p.var_id] = prot.var_id
         end
     else
-        if isnothing(prot.var_id)
-            return false
-        end
         if vars_mapping[p.var_id] != prot.var_id
             return false
         end
@@ -284,11 +290,11 @@ function is_var_on_path(bp::ProgramBlock, bl::ProgramBlock, vars_mapping, verbos
     end
 end
 
-function is_bp_on_path(bp::BlockPrototype, bl::ProgramBlock, vars_mapping, verbose = false)
+function is_bp_on_path(bp::BlockPrototype, bl::ProgramBlock, verbose = false)
     is_on_path(bp.skeleton, bl.p, Dict())
 end
 
-function is_bp_on_path(bp::BlockPrototype, bl::ReverseProgramBlock, vars_mapping, verbose = false)
+function is_bp_on_path(bp::BlockPrototype, bl::ReverseProgramBlock, verbose = false)
     block_main_func, block_main_func_args = application_parse(bl.p)
     if verbose
         @info "block_main_func: $block_main_func"
@@ -327,7 +333,7 @@ function enumeration_iteration_insert_block_traced(
             return []
         end
         new_block_id, input_branches, target_output = new_block_result
-        filtered_target_blocks = filter(bl -> is_on_path(block_info[1], bl.p, Dict(), true), target_blocks)
+        filtered_target_blocks = filter(bl -> is_on_path(block_info[1], bl.p, Dict()), target_blocks)
         if isempty(filtered_target_blocks)
             if sc.verbose
                 @info "No target blocks for $block_info"
@@ -340,7 +346,7 @@ function enumeration_iteration_insert_block_traced(
         target_block = filtered_target_blocks[1]
 
         new_block = sc.blocks[new_block_id]
-        if isa(new_block, ProgramBlock) || is_on_path(new_block.p, target_block.p, Dict(), true)
+        if isa(new_block, ProgramBlock) || is_on_path(new_block.p, target_block.p, Dict())
             if sc.verbose
                 @info "Got new block $new_block"
                 @info "Target block $target_block"
@@ -474,7 +480,7 @@ function enumeration_iteration_traced(
 )
     sc.iterations_count += 1
     q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
-    if (is_reversible(bp.skeleton) && !isa(sc.entries[entry_id], AbductibleEntry)) || state_finished(bp)
+    if state_finished(bp)
         if sc.verbose
             @info "Checking finished $bp"
             @info "Target blocks $target_blocks"
@@ -487,7 +493,7 @@ function enumeration_iteration_traced(
             end
 
             for new_bp in unfinished_prototypes
-                if any(is_bp_on_path(new_bp, bl, vars_mapping) for bl in target_blocks)
+                if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
                     if sc.verbose
                         @info "On path $new_bp"
                         @info "Enqueing $new_bp"
@@ -506,7 +512,7 @@ function enumeration_iteration_traced(
             @info "Target blocks $target_blocks"
         end
         for new_bp in block_state_successors(sc, max_free_parameters, bp)
-            if any(is_bp_on_path(new_bp, bl, vars_mapping) for bl in target_blocks)
+            if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
                 if sc.verbose
                     @info "On path $new_bp"
                     @info "Enqueing $new_bp"

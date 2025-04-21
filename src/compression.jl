@@ -33,7 +33,7 @@ function check_repeating_blocks(task, program)
                 continue
             end
             for j in 1:i-1
-                if !isa(blocks[j].p, FreeVar) && is_on_path(block.p, blocks[j].p, Dict(), true)
+                if !isa(blocks[j].p, FreeVar) && is_on_path(block.p, blocks[j].p, Dict())
                     return false
                 end
             end

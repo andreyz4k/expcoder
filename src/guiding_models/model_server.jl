@@ -316,14 +316,22 @@ function process_grammar_results(sc::SolutionContext, entry_id, is_rev, result, 
     type_id = entry.type_id
     type = sc.types[type_id]
     context, type = instantiate(type, empty_context)
+    context, root_type = instantiate(t0, context)
 
     bp = BlockPrototype(
-        Hole(type, [], CombinedArgChecker([SimpleArgChecker(is_rev, -1, true)]), is_rev ? nothing : entry.values),
+        Hole(
+            type,
+            root_type,
+            [],
+            CombinedArgChecker([SimpleArgChecker(is_rev, -1, true, nothing)]),
+            is_rev ? nothing : entry.values,
+        ),
         context,
         [],
         EPSILON,
         0,
         type,
+        root_type,
         entry_id,
         is_rev,
     )

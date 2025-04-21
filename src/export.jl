@@ -168,11 +168,11 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
                         continue
                     end
                     if isa(block, ProgramBlock)
-                        if all(!is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_blocks)
+                        if all(!is_on_path(block.p, b.p, Dict()) for b in prev_trace_blocks)
                             push!(prev_trace_blocks, block)
                         end
                     else
-                        if all(!is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_rev_blocks)
+                        if all(!is_on_path(block.p, b.p, Dict()) for b in prev_trace_rev_blocks)
                             push!(prev_trace_rev_blocks, block)
                         end
                     end
@@ -210,10 +210,10 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             block_dict["_is_reversible"] = block.is_reversible
             block_dict["_var_id"] = block.output_var
             block_dict["_is_on_prev_trace"] =
-                !isa(block.p, FreeVar) && any(is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_blocks)
+                !isa(block.p, FreeVar) && any(is_on_path(block.p, b.p, Dict()) for b in prev_trace_blocks)
         else
             block_dict["_var_id"] = block.input_vars[1]
-            block_dict["_is_on_prev_trace"] = any(is_on_path(block.p, b.p, Dict(), true) for b in prev_trace_rev_blocks)
+            block_dict["_is_on_prev_trace"] = any(is_on_path(block.p, b.p, Dict()) for b in prev_trace_rev_blocks)
         end
 
         add_vertex!(data, "b$block_copy_id", block_dict)

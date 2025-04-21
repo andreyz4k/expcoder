@@ -115,8 +115,8 @@ function reverse_rev_fold()
         )
     end
     return [
-        (_is_reversible_subfunction, SimpleArgChecker(true, -1, false)),
-        (_has_no_holes, SimpleArgChecker(false, -1, false)),
+        (_is_reversible_subfunction, SimpleArgChecker(true, -1, false, nothing)),
+        (_has_no_holes, SimpleArgChecker(false, -1, false, nothing)),
     ],
     _reverse_rev_fold
 end

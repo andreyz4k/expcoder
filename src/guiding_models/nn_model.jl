@@ -92,8 +92,8 @@ function _build_likelihood_summary(
             p.b,
             context,
             vcat([request.arguments[1]], environment),
-            step_arg_checker(checker, ArgTurn(request.arguments[1])),
-            vcat(path, [ArgTurn(request.arguments[1])]),
+            step_arg_checker(checker, ArgTurn(request.arguments[1], request.arguments[1])),
+            vcat(path, [ArgTurn(request.arguments[1], request.arguments[1])]),
             locations,
             var_types,
             summary,
@@ -201,18 +201,26 @@ function _build_likelihood_summary(
                 if isnothing(new_context)
                     continue
                 end
-                free_var_candidates += 1
-                if isa(f, FreeVar) && f.var_id == var_id
-                    (new_context, t) = apply_context(new_context, t)
-                    var_types[f.var_id] = t
-                    is_free_var = true
-                    next_requests = ([], new_context)
+                p = FreeVar(request, request, var_id, isempty(locations) ? nothing : locations[1])
+                if checker(p, full_p, path)
+                    free_var_candidates += 1
+                    if isa(f, FreeVar) && f.var_id == var_id
+                        (new_context, t) = apply_context(new_context, t)
+                        var_types[f.var_id] = t
+                        is_free_var = true
+                        next_requests = ([], new_context)
+                    end
                 end
             end
         end
 
         if !isa(full_p, FreeVar)
-            p = FreeVar(request, nothing, isempty(locations) ? nothing : locations[1])
+            p = FreeVar(
+                request,
+                request,
+                UInt64(maximum(keys(var_types); init = 0) + 1),
+                isempty(locations) ? nothing : locations[1],
+            )
             if checker(p, full_p, path)
                 free_var_candidates += 1
                 if isa(f, FreeVar) && !haskey(var_types, f.var_id)
@@ -249,8 +257,8 @@ function _build_likelihood_summary(
             f.b,
             context,
             vcat([arg_types[2]], environment),
-            step_arg_checker(checker, ArgTurn(arg_types[2])),
-            vcat(path, [LeftTurn(), ArgTurn(arg_types[2])]),
+            step_arg_checker(checker, ArgTurn(arg_types[2], arg_types[2])),
+            vcat(path, [LeftTurn(), ArgTurn(arg_types[2], arg_types[2])]),
             locations,
             var_types,
             summary,
@@ -325,7 +333,7 @@ function build_likelihood_summary(grammar, request, p, is_reversed)
         p,
         context,
         [],
-        CombinedArgChecker([SimpleArgChecker(is_reversed, -1, true)]),
+        CombinedArgChecker([SimpleArgChecker(is_reversed, -1, true, nothing)]),
         [],
         [],
         Dict(),

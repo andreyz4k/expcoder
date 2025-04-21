@@ -58,9 +58,10 @@ struct IsPossibleSelector <: ArgChecker
     should_be_reversible::Bool
     max_index::Union{Int64,Nothing}
     can_have_free_vars::Union{Bool,Nothing}
+    can_only_have_free_vars::Nothing
     step_to_eq::Int64
     IsPossibleSelector(max_index, can_have_free_vars, step_to_eq) =
-        new(false, max_index, can_have_free_vars, step_to_eq)
+        new(false, max_index, can_have_free_vars, nothing, step_to_eq)
 end
 
 Base.:(==)(c1::IsPossibleSelector, c2::IsPossibleSelector) =

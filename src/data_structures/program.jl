@@ -56,16 +56,18 @@ Base.:(==)(p::Invented, q::Invented) = p.b == q.b
 
 struct Hole <: Program
     t::Tp
+    root_t::Tp
     locations::Vector{Tuple{Program,Int64}}
     candidates_filter::Any
     possible_values::Any
     hash_value::UInt64
-    Hole(t::Tp, locations, candidates_filter::Any, possible_values) = new(
+    Hole(t::Tp, root_t::Tp, locations, candidates_filter::Any, possible_values) = new(
         t,
+        root_t,
         locations,
         candidates_filter,
         possible_values,
-        hash(t, hash(locations, hash(candidates_filter, hash(possible_values)))),
+        hash(t, hash(root_t, hash(locations, hash(candidates_filter, hash(possible_values))))),
     )
 end
 
@@ -77,11 +79,12 @@ Base.:(==)(p::Hole, q::Hole) =
 
 struct FreeVar <: Program
     t::Tp
-    var_id::Union{UInt64,Nothing,String}
+    fix_t::Tp
+    var_id::Union{UInt64,String}
     location::Union{Nothing,Tuple{Program,Int64}}
     hash_value::UInt64
-    FreeVar(t::Tp, var_id::Union{UInt64,Nothing,String}, location::Union{Nothing,Tuple{Program,Int64}}) =
-        new(t, var_id, location, hash(t, hash(var_id, hash(location))))
+    FreeVar(t::Tp, fix_t::Tp, var_id::Union{UInt64,String}, location::Union{Nothing,Tuple{Program,Int64}}) =
+        new(t, fix_t, var_id, location, hash(t, hash(var_id, hash(location))))
 end
 Base.:(==)(p::FreeVar, q::FreeVar) = p.t == q.t && p.var_id == q.var_id && p.location == q.location
 
@@ -126,9 +129,7 @@ show_program(p::Apply, is_function::Bool) =
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
 show_program(p::Primitive, is_function::Bool) = [p.name]
-show_program(p::FreeVar, is_function::Bool) =
-    isnothing(p.var_id) ? vcat(["FREE_VAR("], show_type(p.t, true), [")"]) :
-    ["\$", (isa(p.var_id, UInt64) ? "v" : ""), "$(p.var_id)"]
+show_program(p::FreeVar, is_function::Bool) = ["\$", (isa(p.var_id, UInt64) ? "v" : ""), "$(p.var_id)"]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
 show_program(p::SetConst, is_function::Bool) = vcat(["Const("], show_type(p.t, true), [", ", p.value, ")"])
@@ -272,17 +273,13 @@ end
 infer_program_type(context, environment, var_env, p::SetConst)::Tuple{Context,Tp} = instantiate(p.t, context)
 
 function closed_inference(p)
-    var_env = Dict()
+    var_env = OrderedDict()
     (context, rt) = infer_program_type(empty_context, [], var_env, p)
     if !isempty(var_env)
-        vars_dict = Dict()
+        vars_dict = OrderedDict{Union{String,UInt64},Tp}()
         for (k, v) in var_env
             _, t = apply_context(context, v)
-            if isa(k, String)
-                vars_dict[k] = t
-            else
-                vars_dict["v$k"] = t
-            end
+            vars_dict[k] = t
         end
         return TypeNamedArgsConstructor(ARROW, vars_dict, rt)
     else
@@ -328,7 +325,7 @@ parse_primitive = MatchPrimitive(parse_token)
 
 parse_variable = P"\$" + parse_number > Index
 
-parse_free_variable = P"\$" + parse_var_name > (v -> FreeVar(t0, v, nothing))
+parse_free_variable = P"\$" + parse_var_name > (v -> FreeVar(t0, t0, v, nothing))
 
 parse_fixed_real = P"real" + parse_token > (v -> Primitive(treal, "real", parse(Float64, v)))
 
@@ -392,7 +389,7 @@ parse_object.matcher =
 
 parse_const_clause = P"Const\(" + type_parser + P", " + parse_object + P"\)" |> (v -> SetConst(v[1], v[2]))
 
-parse_hole = P"\?\?\(" + type_parser + P"\)" > (t -> Hole(t, [], nothing, nothing))
+parse_hole = P"\?\?\(" + type_parser + P"\)" > (t -> Hole(t, t, [], nothing, nothing))
 
 _parse_program.matcher =
     parse_application |

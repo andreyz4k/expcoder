@@ -30,7 +30,12 @@ using solver:
     _get_custom_arg_checkers,
     step_arg_checker,
     combine_arg_checkers,
-    insert_block
+    insert_block,
+    tlist,
+    t2,
+    allow_vars_only,
+    is_reversible,
+    AbductibleEntry
 
 using DataStructures
 
@@ -84,6 +89,7 @@ using DataStructures
         entry = sc.entries[entry_id]
         target_type = sc.types[entry.type_id]
         context, target_type = instantiate(target_type, empty_context)
+        context, root_type = instantiate(t0, context)
 
         if !haskey(sc.entry_grammars, (entry_id, false))
             productions = Tuple{Program,Tp,Float64}[(p, p.t, 0.0) for p in grammar]
@@ -92,12 +98,19 @@ using DataStructures
         end
 
         BlockPrototype(
-            Hole(target_type, [], CombinedArgChecker([SimpleArgChecker(false, -1, true)]), entry.values),
+            Hole(
+                target_type,
+                root_type,
+                [],
+                CombinedArgChecker([SimpleArgChecker(false, -1, true, nothing)]),
+                entry.values,
+            ),
             context,
             [],
             EPSILON,
             0,
             target_type,
+            root_type,
             entry_id,
             false,
         )
@@ -121,7 +134,7 @@ using DataStructures
 
         states = collect(
             skipmissing(
-                map(candidates) do (candidate, argument_types, context, ll)
+                map(candidates) do (candidate, argument_types, arg_root_types, context, ll)
                     if candidate != target_candidate
                         return missing
                     end
@@ -145,13 +158,17 @@ using DataStructures
 
                             application_template = Apply(
                                 application_template,
-                                Hole(argument_types[i], [(candidate, i)], arg_checker, nothing),
+                                Hole(argument_types[i], arg_root_types[i], [(candidate, i)], arg_checker, nothing),
                             )
                         end
                         new_skeleton = modify_skeleton(bp.skeleton, application_template, bp.path)
                         new_path = vcat(bp.path, [LeftTurn() for _ in 2:length(argument_types)], [RightTurn()])
                     end
                     context, new_request = apply_context(context, bp.request)
+                    context, new_root_request = apply_context(context, bp.root_request)
+                    if is_reversible(new_skeleton) && !isa(sc.entries[bp.root_entry], AbductibleEntry)
+                        new_skeleton = allow_vars_only(new_skeleton)
+                    end
                     return BlockPrototype(
                         new_skeleton,
                         context,
@@ -159,6 +176,7 @@ using DataStructures
                         bp.cost + ll,
                         bp.free_parameters + new_free_parameters,
                         new_request,
+                        new_root_request,
                         bp.root_entry,
                         bp.reverse,
                     )
@@ -213,7 +231,7 @@ using DataStructures
         out_branch_id::UInt64 = 2
         inp_type_id = sc.branch_types[inp_branch_id]
         new_block = ProgramBlock(
-            FreeVar(sc.types[inp_type_id], inp_var_id, nothing),
+            FreeVar(sc.types[inp_type_id], sc.types[inp_type_id], inp_var_id, nothing),
             sc.types[inp_type_id],
             0.0,
             [inp_var_id],
@@ -275,7 +293,7 @@ using DataStructures
         bp = create_block_prototype(
             sc,
             sc.branch_entries[out_branch_id],
-            [every_primitive["cdr"], FreeVar(sc.types[out_type_id], nothing, (every_primitive["cdr"], 1))],
+            [every_primitive["cdr"], FreeVar(tlist(t2), sc.types[out_type_id], UInt64(1), (every_primitive["cdr"], 1))],
             grammar,
         )
         enumeration_iteration_finished_output(sc, bp)
@@ -294,7 +312,7 @@ using DataStructures
         connection_branch_id::UInt64 = 3
 
         new_block = ProgramBlock(
-            FreeVar(sc.types[inp_type_id], inp_var_id, nothing),
+            FreeVar(sc.types[inp_type_id], sc.types[inp_type_id], inp_var_id, nothing),
             sc.types[inp_type_id],
             0.0,
             [inp_var_id],
@@ -386,7 +404,19 @@ using DataStructures
         inp_branch_id::UInt64 = 1
         out_branch_id::UInt64 = 2
 
-        bp = create_block_prototype(sc, sc.branch_entries[out_branch_id], [every_primitive["concat"]], grammar)
+        out_type_id = sc.branch_types[out_branch_id]
+
+        bp = create_block_prototype(
+            sc,
+            sc.branch_entries[out_branch_id],
+            [
+                every_primitive["concat"],
+                FreeVar(tlist(t2), sc.types[out_type_id], UInt64(1), (every_primitive["concat"], 1)),
+                FreeVar(tlist(t2), sc.types[out_type_id], UInt64(2), (every_primitive["concat"], 2)),
+            ],
+            grammar,
+        )
+
         enumeration_iteration_finished_output(sc, bp)
         @test length(sc.blocks_to_insert) == 1
         is_reverse, br_id, block_info = sc.blocks_to_insert[1]
@@ -423,7 +453,7 @@ using DataStructures
         @test sc.branch_outgoing_blocks[v1_branch_id, first_block_copy_id] == first_block_id
         @test sc.branch_is_unknown[v1_branch_id] == true
         @test sc.branch_is_explained[v1_branch_id] == false
-        @test sc.unknown_min_path_costs[v1_branch_id] == 2.49004698910567
+        @test sc.unknown_min_path_costs[v1_branch_id] == 3.183194169665615
         @test sc.unknown_complexity_factors[v1_branch_id] == 20.0
         @test sc.complexities[v1_branch_id] == 10.0
         @test sc.unmatched_complexities[v1_branch_id] == 10.0
@@ -445,7 +475,7 @@ using DataStructures
         @test sc.branch_outgoing_blocks[v2_branch_id, first_block_copy_id] == first_block_id
         @test sc.branch_is_unknown[v2_branch_id] == true
         @test sc.branch_is_explained[v2_branch_id] == false
-        @test sc.unknown_min_path_costs[v2_branch_id] == 2.49004698910567
+        @test sc.unknown_min_path_costs[v2_branch_id] == 3.183194169665615
         @test sc.unknown_complexity_factors[v2_branch_id] == 20.0
         @test sc.complexities[v2_branch_id] == 10.0
         @test sc.unmatched_complexities[v2_branch_id] == 10.0
@@ -455,7 +485,14 @@ using DataStructures
         inp_type_id = sc.branch_types[inp_branch_id]
         inp_type = sc.types[inp_type_id]
 
-        new_block = ProgramBlock(FreeVar(inp_type, inp_var_id, nothing), inp_type, 0.0, [inp_var_id], v2_var_id, false)
+        new_block = ProgramBlock(
+            FreeVar(inp_type, inp_type, inp_var_id, nothing),
+            inp_type,
+            0.0,
+            [inp_var_id],
+            v2_var_id,
+            false,
+        )
         new_block_id = push!(sc.blocks, new_block)
 
         new_solution_paths =
@@ -512,7 +549,7 @@ using DataStructures
         @test sc.branch_is_unknown[v1_child_id] == true
         @test sc.branch_is_explained[v1_child_id] == false
         @test sc.branch_is_not_copy[v1_child_id] == false
-        @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
+        @test sc.unknown_min_path_costs[v1_child_id] == 3.183194169665615
         @test sc.unknown_complexity_factors[v1_child_id] == 22.0
         @test sc.complexities[v1_child_id] == 6.0
         @test sc.unmatched_complexities[v1_child_id] == 6.0
@@ -565,7 +602,7 @@ using DataStructures
         @test sc.branch_is_unknown[v1_child_id] == true
         @test sc.branch_is_explained[v1_child_id] == true
         @test sc.branch_is_not_copy[v1_child_id] == true
-        @test sc.unknown_min_path_costs[v1_child_id] == 2.49004698910567
+        @test sc.unknown_min_path_costs[v1_child_id] == 3.183194169665615
         @test sc.explained_min_path_costs[v1_child_id] === nothing
         @test sc.unknown_complexity_factors[v1_child_id] == 22.0
         @test sc.explained_complexity_factors[v1_child_id] == 16.0
@@ -595,7 +632,7 @@ using DataStructures
         @test sc.branch_is_unknown[out_branch_id] == true
         @test sc.branch_is_explained[out_branch_id] == true
         @test sc.branch_is_not_copy[out_branch_id] == true
-        @test sc.explained_min_path_costs[out_branch_id] == 2.49004698910567
+        @test sc.explained_min_path_costs[out_branch_id] == 3.183194169665615
         @test sc.explained_complexity_factors[out_branch_id] == 29.0
         @test sc.complexities[out_branch_id] == 19.0
         @test sc.added_upstream_complexities[out_branch_id] == 10.0

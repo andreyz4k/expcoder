@@ -3,13 +3,14 @@ struct IsPossibleReversibleSubfunction <: ArgChecker
     should_be_reversible::Bool
     max_index::Nothing
     can_have_free_vars::Nothing
-    IsPossibleReversibleSubfunction() = new(true, nothing, nothing)
+    can_only_have_free_vars::Nothing
+    IsPossibleReversibleSubfunction() = new(true, nothing, nothing, nothing)
 end
 
 Base.:(==)(c1::IsPossibleReversibleSubfunction, c2::IsPossibleReversibleSubfunction) = true
 
 Base.hash(c::IsPossibleReversibleSubfunction, h::UInt64) =
-    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, h)))
+    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, hash(c.can_only_have_free_vars, h))))
 
 (c::IsPossibleReversibleSubfunction)(p, skeleton, path) = true
 
@@ -29,13 +30,14 @@ struct IsPossibleFixableParam <: ArgChecker
     should_be_reversible::Nothing
     max_index::Nothing
     can_have_free_vars::Nothing
-    IsPossibleFixableParam() = new(nothing, nothing, nothing)
+    can_only_have_free_vars::Nothing
+    IsPossibleFixableParam() = new(nothing, nothing, nothing, nothing)
 end
 
 Base.:(==)(c1::IsPossibleFixableParam, c2::IsPossibleFixableParam) = true
 
 Base.hash(c::IsPossibleFixableParam, h::UInt64) =
-    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, h)))
+    hash(c.should_be_reversible, hash(c.max_index, hash(c.can_have_free_vars, hash(c.can_only_have_free_vars, h))))
 
 function (c::IsPossibleFixableParam)(p::Index, skeleton, path)
     return has_index(follow_path(skeleton, vcat(path[begin:end-1], [LeftTurn(), RightTurn()])), p.n)
@@ -53,21 +55,8 @@ _get_free_vars(p::Abstraction) = _get_free_vars(p.b)
 _get_free_vars(p::Program) = []
 
 function (c::IsPossibleFixableParam)(p::FreeVar, skeleton, path)
-    if isnothing(p.var_id)
-        return false
-    end
-    body_free_vars = _get_free_vars(follow_path(skeleton, path[begin:end-1]))
-    unfixed_free_vars = filter(v -> isnothing(v.var_id), body_free_vars)
-    all_free_vars = _get_free_var_types(skeleton)
-    index_shift = length(all_free_vars) - length(unfixed_free_vars)
-    if in(p, body_free_vars)
-        return true
-    end
-    i = parse(Int, p.var_id[2:end])
-    if i > index_shift
-        return true
-    end
-    return false
+    body_free_vars = _get_prev_free_vars(follow_path(skeleton, path[begin:end-1]))
+    return haskey(body_free_vars, p.var_id)
 end
 
 step_arg_checker(::IsPossibleFixableParam, arg) = nothing
@@ -142,7 +131,7 @@ function reverse_fix_param()
     return [
         (_is_reversible_subfunction, IsPossibleReversibleSubfunction()),
         (_is_fixable_param, IsPossibleFixableParam()),
-        (_has_no_holes, SimpleArgChecker(false, -1, false)),
+        (_has_no_holes, SimpleArgChecker(false, -1, false, nothing)),
     ],
     _reverse_fix_param
 end

@@ -208,7 +208,7 @@ using DataStructures
                         copied_vars += 1
                         push!(in_vars, length(vars_mapping) + copied_vars)
                         copy_block = ProgramBlock(
-                            FreeVar(t0, vars_mapping[v], nothing),
+                            FreeVar(t0, t0, vars_mapping[v], nothing),
                             t0,
                             0.0,
                             [vars_mapping[v]],
@@ -250,7 +250,7 @@ using DataStructures
                 p = p.b
             elseif p isa FreeVar
                 in_var = vars_mapping[p.var_id]
-                bl = ProgramBlock(FreeVar(t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
+                bl = ProgramBlock(FreeVar(t0, t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
                 push!(blocks, bl)
                 break
             else
@@ -264,7 +264,7 @@ using DataStructures
                         copied_vars += 1
                         push!(in_vars, length(vars_mapping) + copied_vars)
                         copy_block = ProgramBlock(
-                            FreeVar(t0, vars_mapping[v], nothing),
+                            FreeVar(t0, t0, vars_mapping[v], nothing),
                             t0,
                             0.0,
                             [vars_mapping[v]],
@@ -456,7 +456,7 @@ using DataStructures
             end
         end
         if verbose
-            @info "Failed to find block"
+            @info "Failed to find block $bl"
         end
         return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
     end
@@ -522,7 +522,7 @@ using DataStructures
             if !isempty(sc.blocks_to_insert)
                 is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
 
-                if is_reverse != false || br_id != out_branch_id || !is_on_path(block_info[1], bl.p, Dict(), true)
+                if is_reverse != false || br_id != out_branch_id || !is_on_path(block_info[1], bl.p, Dict())
                     push!(not_on_path, (is_reverse, br_id, block_info))
                     continue
                 end
@@ -650,7 +650,7 @@ using DataStructures
             end
         end
         if verbose
-            @info "Failed to find block"
+            @info "Failed to find block $bl"
         end
         return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
     end
@@ -700,7 +700,7 @@ using DataStructures
             if !isempty(sc.blocks_to_insert)
                 is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
 
-                if is_reverse != true || br_id != in_branch_id || !is_on_path(block_info[1], bl.p, Dict(), true)
+                if is_reverse != true || br_id != in_branch_id || !is_on_path(block_info[1], bl.p, Dict())
                     push!(not_on_path, (is_reverse, br_id, block_info))
                     continue
                 end
@@ -737,7 +737,7 @@ using DataStructures
                 updated_vars_mapping = copy(vars_mapping)
                 for (created_block_copy_id, created_block_id) in out_blocks
                     created_block = sc.blocks[created_block_id]
-                    if isa(created_block, ReverseProgramBlock) && is_on_path(created_block.p, bl.p, Dict(), true)
+                    if isa(created_block, ReverseProgramBlock) && is_on_path(created_block.p, bl.p, Dict())
                         if verbose
                             @info "created_block: $created_block"
                             @info "created_block_copy_id: $created_block_copy_id"
@@ -809,7 +809,7 @@ using DataStructures
             end
         end
         if verbose
-            @info "Failed to find block"
+            @info "Failed to find block $bl"
         end
         return Set(), Set([(_get_entries(sc, vars_mapping, branches), bl)])
     end

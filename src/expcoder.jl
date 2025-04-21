@@ -337,6 +337,8 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             new_p_type = p_type
         end
 
+        _, new_p_type = instantiate(new_p_type, empty_context)
+
         block =
             ProgramBlock(new_p, new_p_type, cost, [new_vars[v] for (v, _, _) in input_vars], output_var_id, is_reverse)
         block_id = push!(sc.blocks, block)

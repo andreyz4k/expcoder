@@ -399,9 +399,9 @@ function try_evaluate_program(p, xs, workspace)
     try_run_function(run_with_arguments, [p, xs, workspace])
 end
 
-function _update_block_type(block_type, input_types)
+function _update_block_type(block_type, input_types, target_type)
     if !is_polymorphic(block_type)
-        return block_type
+        return return_of_type(block_type)
     end
     context, block_type = instantiate(block_type, empty_context)
     for (var_id, inp_type) in input_types
@@ -411,6 +411,11 @@ function _update_block_type(block_type, input_types)
         if isnothing(context)
             error("Can't unify $arg_type with $inp_type")
         end
+    end
+    context, target_type = instantiate(target_type, context)
+    context = unify(context, return_of_type(block_type), target_type)
+    if isnothing(context)
+        error("Can't unify $(return_of_type(block_type)) with $target_type")
     end
     context, block_type = apply_context(context, block_type)
     _, return_type = instantiate(return_of_type(block_type), empty_context)
@@ -498,7 +503,7 @@ function try_run_block(
         sc,
         block,
         block_id,
-        _update_block_type(block.type, input_types),
+        _update_block_type(block.type, input_types, sc.types[expected_output.type_id]),
         target_output,
         outs,
         fixed_branches,

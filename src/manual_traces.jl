@@ -341,7 +341,7 @@ function enumeration_iteration_insert_block_traced(
                 @info "Target blocks $target_blocks"
                 @info "Vars mapping $vars_mapping"
             end
-            return []
+            throw(EnumerationException())
         end
         target_block = filtered_target_blocks[1]
 
@@ -421,7 +421,7 @@ function enumeration_iteration_insert_copy_block_traced(
                 @info "Target blocks $target_blocks"
                 @info "Vars mapping $vars_mapping"
             end
-            return []
+            throw(EnumerationException())
         end
         target_block = filtered_target_blocks[1]
 

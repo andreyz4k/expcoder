@@ -2452,5 +2452,56 @@ using DataStructures
             hit, cost = test_build_manual_trace(task, target_solution, grammar3)
             @test !isnothing(hit)
         end
+
+        @testcase_log "3af2c5a8.json" begin
+            task = _create_arc_task("3af2c5a8.json")
+            target_solution = "let \$v1 = Const(list(list(color)), Vector{Any}[]) in
+                let \$v2 = rev(\$inp0 = (rows_to_grid \$v2)) in
+                let \$v3 = (#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0))) \$v2) in
+                let \$v4 = (rows \$v3) in
+                let \$v5 = (#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0))) \$v4) in
+                let \$v6 = (columns \$v5) in
+                (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$v1 \$v6)"
+            grammar3 = build_grammar(
+                vcat(
+                    sample_library,
+                    [
+                        "#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0))",
+                        "#(lambda (lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (\$7 (tuple2_first \$0)) (\$7 (tuple2_first \$2)))) 1)) (not (gt? (abs (- (\$6 (tuple2_first \$0)) (\$6 (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$0)))))",
+                        "#(lambda (lambda (lambda (rev_grid_elements (#(lambda (lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (\$7 (tuple2_first \$0)) (\$7 (tuple2_first \$2)))) 1)) (not (gt? (abs (- (\$6 (tuple2_first \$0)) (\$6 (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$0))))) (lambda (tuple2_second \$0)) (lambda (tuple2_first \$0)) \$2) \$1 \$0))))",
+                        "#(lambda (lambda (lambda (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$3)) (map_set (lambda (tuple2 (tuple2 (tuple2 (+ (tuple2_first (tuple2_first (tuple2_first \$0))) Const(int, 1)) (tuple2_second (tuple2_first (tuple2_first \$0)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$1) \$0)))))",
+                        "#(lambda (lambda (lambda (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) (map_set (lambda (tuple2 \$0 \$3)) (map_set (lambda (tuple2 \$0 \$2)) (map_set (lambda (tuple2_first \$0)) \$0)))))))",
+                        "#(lambda (lambda (lambda (rev_fix_param (rev_select_grid (lambda (eq? \$0 \$3)) \$1 \$0) \$2 (lambda Const(color, 0))))))",
+                        "#(lambda (lambda (lambda (rev_grid_elements (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (not (gt? (+ (abs (- (tuple2_first (tuple2_first \$0)) (tuple2_first (tuple2_first \$2)))) (abs (- (tuple2_second (tuple2_first \$0)) (tuple2_second (tuple2_first \$2))))) 1))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$2)) \$1 \$0))))",
+                        "#(lambda (lambda (lambda (rev_select_set (lambda (eq? (tuple2_second \$0) \$3)) \$1 \$0))))",
+                        "#(lambda (lambda (lambda (rev_select_set (lambda (eq? (tuple2_second (tuple2_first \$0)) \$3)) \$1 \$0))))",
+                        "#(lambda (lambda (lambda (rev_grid_elements (#(lambda (lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (\$7 (tuple2_first \$0)) (\$7 (tuple2_first \$2)))) 1)) (not (gt? (abs (- (\$6 (tuple2_first \$0)) (\$6 (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$0))))) (lambda (tuple2_first \$0)) (lambda (tuple2_second \$0)) \$2) \$1 \$0))))",
+                        "#(lambda (lambda (lambda (rev_select_grid (lambda (eq? \$0 \$3)) \$1 \$0))))",
+                        "#(lambda (lambda (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) (map_set (lambda (tuple2 \$0 \$2)) \$0))))",
+                        "#(lambda (rows_to_grid (reverse \$0)))",
+                        "#(lambda (columns_to_grid (reverse (rows \$0))))",
+                        "#(lambda (lambda (columns_to_grid (concat \$1 \$0))))",
+                        "#(lambda (lambda (lambda (#(lambda (lambda (lambda (rev_grid_elements (#(lambda (lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (\$7 (tuple2_first \$0)) (\$7 (tuple2_first \$2)))) 1)) (not (gt? (abs (- (\$6 (tuple2_first \$0)) (\$6 (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$0))))) (lambda (tuple2_second \$0)) (lambda (tuple2_first \$0)) \$2) \$1 \$0)))) (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) \$2) \$1 \$0))))",
+                        "#(lambda (lambda (map_set (lambda (tuple2 \$0 \$2)) \$0)))",
+                        "#(lambda (lambda (rows_to_grid (concat \$1 \$0))))",
+                        "#(lambda (columns_to_grid (rows \$0)))",
+                        "#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) (columns \$0) (columns \$0)))",
+                        "#(lambda (lambda (lambda (rev_fix_param (#(lambda (lambda (lambda (rev_select_set (lambda (eq? (tuple2_second \$0) \$3)) \$1 \$0)))) \$2 \$1 \$0) \$2 (lambda Const(color, 1))))))",
+                        "#(lambda (#(lambda (rows_to_grid (reverse \$0))) (columns \$0)))",
+                        "#(lambda (lambda (#(lambda (lambda (lambda (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) (map_set (lambda (tuple2 \$0 \$3)) (map_set (lambda (tuple2 \$0 \$2)) (map_set (lambda (tuple2_first \$0)) \$0))))))) \$1 Const(set(tuple2(int, int)), Set([(0, 0), (1, 2), (0, 2), (2, 0), (0, 1), (2, 2), (2, 1), (1, 0)])) \$0)))",
+                        "#(lambda (lambda (lambda (#(lambda (lambda (lambda (rev_grid_elements (#(lambda (lambda (lambda (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (\$7 (tuple2_first \$0)) (\$7 (tuple2_first \$2)))) 1)) (not (gt? (abs (- (\$6 (tuple2_first \$0)) (\$6 (tuple2_first \$2)))) 1)))) \$0))) \$1 \$0))) empty_set (map_set (lambda (map_set (lambda (tuple2 \$0 (tuple2_second \$1))) (tuple2_first \$0))) \$0))))) (lambda (tuple2_first \$0)) (lambda (tuple2_second \$0)) \$2) \$1 \$0)))) (#(lambda (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first \$0) (tuple2_first \$1)) (+ (tuple2_second \$0) (tuple2_second \$1)))) \$1) \$0 (lambda (tuple2 (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_first \$0)) (collect \$0)) max_int) (fold (lambda (lambda (if (gt? \$0 \$1) \$1 \$0))) (map (lambda (tuple2_second \$0)) (collect \$0)) max_int))))) (tuple2_first (tuple2_first \$1)))) (tuple2_second (tuple2_first \$0))) (tuple2_second \$0))) \$0)) \$2) \$1 \$0))))",
+                        "#(lambda (lambda (#(lambda (lambda (rows_to_grid (concat \$1 \$0)))) \$1 (reverse \$0))))",
+                        "#(lambda (#(lambda (lambda (#(lambda (lambda (rows_to_grid (concat \$1 \$0)))) \$1 (reverse \$0)))) \$0 \$0))",
+                        "#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0)))",
+                        "#(lambda (lambda (lambda (\$2 (rows (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$1 \$0))))))",
+                        "#(lambda (#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0))) (rows (#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0))) \$0))))",
+                        "#(lambda (#(lambda (#(lambda (lambda (columns_to_grid (concat \$1 \$0)))) \$0 (reverse \$0))) (columns \$0)))",
+                        "#(lambda (#(lambda (lambda (rows_to_grid (concat \$1 \$0)))) \$0 (reverse \$0)))",
+                    ],
+                ),
+            )
+            hit, cost = test_build_manual_trace(task, target_solution, grammar3)
+            @test !isnothing(hit)
+        end
     end
 end

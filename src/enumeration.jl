@@ -361,6 +361,9 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_
             )
         end
         if !sc.traced && new_entry == out_entry
+            if sc.verbose
+                @info "Running $p in reverse leads to the same entry $out_entry $calculated_values"
+            end
             throw(EnumerationException())
         end
         entry_index = push!(sc.entries, new_entry)

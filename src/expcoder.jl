@@ -283,11 +283,15 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
     for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
         if sc.branch_is_unknown[branch_id]
             foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
-            if all(!in(entry_id, foll_entries) for (_, entry_id, _) in input_vars)
+            if sc.traced || all(!in(entry_id, foll_entries) for (_, entry_id, _) in input_vars)
                 if sc.verbose
                     @info "Adding $((false, branch_id, block_info)) to insert queue"
                 end
                 push!(sc.blocks_to_insert, (false, branch_id, block_info))
+            else
+                if sc.verbose
+                    @info "Skipping $((false, branch_id, block_info)) because of following entries $foll_entries"
+                end
             end
         end
     end
@@ -588,11 +592,15 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
                !isnothing(sc.explained_min_path_costs[branch_id]) &&
                sc.branch_is_not_const[branch_id]
                 prev_entries = get_connected_from(sc.branch_prev_entries, branch_id)
-                if all(!in(entry_id, prev_entries) for (_, entry_id, _) in output_vars)
+                if sc.traced || all(!in(entry_id, prev_entries) for (_, entry_id, _) in output_vars)
                     if sc.verbose
                         @info "Adding $((true, branch_id, block_info)) to insert queue"
                     end
                     push!(sc.blocks_to_insert, (true, branch_id, block_info))
+                else
+                    if sc.verbose
+                        @info "Skipping $((true, branch_id, block_info)) because of previous entries $prev_entries"
+                    end
                 end
             end
         end

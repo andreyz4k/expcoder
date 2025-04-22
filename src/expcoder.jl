@@ -240,7 +240,7 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
 
     p = bp.skeleton
 
-    arg_types = _get_prev_free_vars(p)
+    arg_types = _get_free_vars(p)
     _, return_type = apply_context(bp.context, bp.root_request)
     if !isempty(arg_types)
         new_arg_types = OrderedDict{Union{String,UInt64},Tp}()
@@ -557,7 +557,7 @@ _collect_var_locations(p, var_locations) = var_locations
 
 function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
     p = bp.skeleton
-    arg_types = _get_prev_free_vars(p)
+    arg_types = _get_free_vars(p)
     _, return_type = apply_context(bp.context, bp.root_request)
     if !isempty(arg_types)
         new_arg_types = OrderedDict{Union{String,UInt64},Tp}()

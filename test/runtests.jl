@@ -1,7 +1,7 @@
 
 using Distributed
 if myid() != 1
-    # cd("julia_enumerator/test")
+    # cd("test")
 else
     cd("..")
     addprocs(Threads.nthreads())

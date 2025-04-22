@@ -47,7 +47,7 @@ using solver:
     enumeration_iteration_insert_block,
     is_var_on_path,
     is_on_path,
-    _get_prev_free_vars
+    _get_free_vars
 
 using DataStructures
 
@@ -194,7 +194,7 @@ using DataStructures
                 @info copied_vars
             end
             if p isa LetClause
-                vars = _get_prev_free_vars(p.v)
+                vars = _get_free_vars(p.v)
                 if verbose
                     @info p.v
                     @info vars
@@ -254,7 +254,7 @@ using DataStructures
                 push!(blocks, bl)
                 break
             else
-                vars = _get_prev_free_vars(p)
+                vars = _get_free_vars(p)
                 in_vars = []
                 for v in keys(vars)
                     if !haskey(vars_mapping, v)

@@ -52,19 +52,19 @@ function lse(l::Vector{Float64})::Float64
     return largest + log(sum(exp(z - largest) for z in l))
 end
 
-function _get_prev_free_vars(p::FreeVar)
+function _get_free_vars(p::FreeVar)
     return OrderedDict{Union{String,UInt64},Tuple{Tp,Tp}}(p.var_id => (p.t, p.fix_t))
 end
 
-function _get_prev_free_vars(p::Apply)
-    return merge(_get_prev_free_vars(p.f), _get_prev_free_vars(p.x))
+function _get_free_vars(p::Apply)
+    return merge(_get_free_vars(p.f), _get_free_vars(p.x))
 end
 
-function _get_prev_free_vars(p::Abstraction)
-    return _get_prev_free_vars(p.b)
+function _get_free_vars(p::Abstraction)
+    return _get_free_vars(p.b)
 end
 
-function _get_prev_free_vars(p::Program)
+function _get_free_vars(p::Program)
     return OrderedDict{Union{String,UInt64},Tuple{Tp,Tp}}()
 end
 
@@ -203,7 +203,7 @@ function unifying_expressions(
 
     free_var_candidates = []
     if candidates_filter.can_have_free_vars
-        prev_free_vars = _get_prev_free_vars(skeleton)
+        prev_free_vars = _get_free_vars(skeleton)
 
         for (var_id, (t, fix_t)) in prev_free_vars
             (new_context, fix_t) = apply_context(context, fix_t)

@@ -111,7 +111,7 @@ function _extract_blocks(task, target_program, verbose = false)
             @info copied_vars
         end
         if p isa LetClause
-            vars = _get_prev_free_vars(p.v)
+            vars = _get_free_vars(p.v)
             tp = closed_inference(p.v)
             context, tp = instantiate(tp, context)
             if verbose
@@ -195,7 +195,7 @@ function _extract_blocks(task, target_program, verbose = false)
             push!(copy_blocks, bl)
             break
         else
-            vars = _get_prev_free_vars(p)
+            vars = _get_free_vars(p)
             tp = closed_inference(p)
             context, tp = instantiate(tp, context)
             in_vars = []

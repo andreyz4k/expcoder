@@ -26,7 +26,6 @@ mutable struct SolutionContext
     block_copies_count::CountStorage
 
     constraints_count::CountStorage
-    constraint_contexts::IndexedStorage{Context}
 
     "[parent_branch_id x child_branch_id] -> {false, true}"
     branch_children::ConnectionGraphStorage
@@ -133,7 +132,6 @@ function create_starting_context(
         IndexedStorage{AbstractProgramBlock}(),
         CountStorage(),
         CountStorage(),
-        IndexedStorage{Context}(),
         ConnectionGraphStorage(),
         ValueGraphStorage(),
         ValueGraphStorage(),
@@ -324,7 +322,6 @@ function start_transaction!(sc::SolutionContext, depth)
     start_transaction!(sc.blocks, depth)
     start_transaction!(sc.block_copies_count, depth)
     start_transaction!(sc.constraints_count, depth)
-    start_transaction!(sc.constraint_contexts, depth)
     start_transaction!(sc.branch_children, depth)
     start_transaction!(sc.branch_incoming_blocks, depth)
     start_transaction!(sc.branch_outgoing_blocks, depth)
@@ -368,7 +365,6 @@ function save_changes!(sc::SolutionContext, depth)
     save_changes!(sc.blocks, depth)
     save_changes!(sc.block_copies_count, depth)
     save_changes!(sc.constraints_count, depth)
-    save_changes!(sc.constraint_contexts, depth)
     save_changes!(sc.branch_children, depth)
     save_changes!(sc.branch_incoming_blocks, depth)
     save_changes!(sc.branch_outgoing_blocks, depth)
@@ -412,7 +408,6 @@ function drop_changes!(sc::SolutionContext, depth)
     drop_changes!(sc.blocks, depth)
     drop_changes!(sc.block_copies_count, depth)
     drop_changes!(sc.constraints_count, depth)
-    drop_changes!(sc.constraint_contexts, depth)
     drop_changes!(sc.branch_children, depth)
     drop_changes!(sc.branch_incoming_blocks, depth)
     drop_changes!(sc.branch_outgoing_blocks, depth)

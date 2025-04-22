@@ -44,18 +44,8 @@ function (c::IsPossibleFixableParam)(p::Index, skeleton, path)
 end
 (c::IsPossibleFixableParam)(p, skeleton, path) = false
 
-function _get_free_vars(p::FreeVar)
-    return [p]
-end
-
-function _get_free_vars(p::Apply)
-    return vcat(_get_free_vars(p.f), _get_free_vars(p.x))
-end
-_get_free_vars(p::Abstraction) = _get_free_vars(p.b)
-_get_free_vars(p::Program) = []
-
 function (c::IsPossibleFixableParam)(p::FreeVar, skeleton, path)
-    body_free_vars = _get_prev_free_vars(follow_path(skeleton, path[begin:end-1]))
+    body_free_vars = _get_free_vars(follow_path(skeleton, path[begin:end-1]))
     return haskey(body_free_vars, p.var_id)
 end
 

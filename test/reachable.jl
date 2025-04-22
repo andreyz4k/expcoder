@@ -47,7 +47,7 @@ using solver:
     enumeration_iteration_insert_block,
     is_var_on_path,
     is_on_path,
-    _used_vars
+    _get_prev_free_vars
 
 using DataStructures
 
@@ -194,13 +194,13 @@ using DataStructures
                 @info copied_vars
             end
             if p isa LetClause
-                vars = _used_vars(p.v)
+                vars = _get_prev_free_vars(p.v)
                 if verbose
                     @info p.v
                     @info vars
                 end
                 in_vars = []
-                for v in vars
+                for v in keys(vars)
                     if !haskey(vars_mapping, v)
                         vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                         push!(in_vars, vars_mapping[v])
@@ -254,9 +254,9 @@ using DataStructures
                 push!(blocks, bl)
                 break
             else
-                vars = _used_vars(p)
+                vars = _get_prev_free_vars(p)
                 in_vars = []
-                for v in unique(vars)
+                for v in keys(vars)
                     if !haskey(vars_mapping, v)
                         vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                         push!(in_vars, vars_mapping[v])
@@ -2353,6 +2353,13 @@ using DataStructures
         @testcase_log "a416b8f3.json" begin
             task = _create_arc_task("a416b8f3.json")
             target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v3 = \$v1 in let \$v2 = (concat \$v1 \$v3) in (columns_to_grid \$v2)"
+
+            check_reachable(task, arc_guiding_model, grammar, target_solution)
+        end
+
+        @testcase_log "a416b8f3_2.json" begin
+            task = _create_arc_task("a416b8f3.json")
+            target_solution = "let \$v1 = rev(\$inp0 = (columns_to_grid \$v1)) in let \$v2 = (concat \$v1 \$v1) in (columns_to_grid \$v2)"
 
             check_reachable(task, arc_guiding_model, grammar, target_solution)
         end

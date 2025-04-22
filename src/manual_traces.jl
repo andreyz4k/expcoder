@@ -79,11 +79,6 @@ function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServ
     return traces
 end
 
-_used_vars(p::FreeVar) = [p.var_id]
-_used_vars(p::Apply) = vcat(_used_vars(p.f), _used_vars(p.x))
-_used_vars(p::Abstraction) = _used_vars(p.b)
-_used_vars(::Any) = []
-
 function _extract_blocks(task, target_program, verbose = false)
     vars_mapping = Dict{Any,UInt64}()
     vars_from_input = Set{Any}()
@@ -116,7 +111,7 @@ function _extract_blocks(task, target_program, verbose = false)
             @info copied_vars
         end
         if p isa LetClause
-            vars = _used_vars(p.v)
+            vars = _get_prev_free_vars(p.v)
             tp = closed_inference(p.v)
             context, tp = instantiate(tp, context)
             if verbose
@@ -124,7 +119,7 @@ function _extract_blocks(task, target_program, verbose = false)
                 @info vars
             end
             in_vars = UInt64[]
-            for v in vars
+            for v in keys(vars)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                     var_types[vars_mapping[v]] = tp.arguments[v]
@@ -200,11 +195,11 @@ function _extract_blocks(task, target_program, verbose = false)
             push!(copy_blocks, bl)
             break
         else
-            vars = _used_vars(p)
+            vars = _get_prev_free_vars(p)
             tp = closed_inference(p)
             context, tp = instantiate(tp, context)
             in_vars = []
-            for v in unique(vars)
+            for v in keys(vars)
                 if !haskey(vars_mapping, v)
                     vars_mapping[v] = length(vars_mapping) + copied_vars + 1
                     var_types[vars_mapping[v]] = tp.arguments[v]

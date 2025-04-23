@@ -218,7 +218,7 @@ function _build_likelihood_summary(
             p = FreeVar(
                 request,
                 request,
-                UInt64(maximum(keys(var_types); init = 0) + 1),
+                UInt64(maximum(filter(k -> isa(k, UInt64), keys(var_types)); init = 0) + 1),
                 isempty(locations) ? nothing : locations[1],
             )
             if checker(p, full_p, path)

@@ -32,7 +32,13 @@ using solver:
         "any" => 1.0,
         "either" => 0.0,
     )
-    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+    hyperparameters = Dict{String,Any}(
+        "path_cost_power" => 1.0,
+        "complexity_power" => 1.0,
+        "block_cost_power" => 1.0,
+        "explained_penalty_power" => 1.0,
+        "explained_penalty_mult" => 5.0,
+    )
 
     function test_solve_task(task, verbose = false)
         guiding_model_server = GuidingModelServer(guiding_model)

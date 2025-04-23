@@ -491,8 +491,12 @@ function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bo
                 end
             end
         else
+            entry_is_explained = false
             for branch_id in get_connected_to(sc.branch_entries, entry_id)
                 if sc.branch_is_unknown[branch_id]
+                    if sc.branch_is_explained[branch_id]
+                        entry_is_explained = true
+                    end
                     cost = min(
                         cost,
                         (
@@ -501,6 +505,9 @@ function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bo
                         ) * sc.unknown_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"],
                     )
                 end
+            end
+            if entry_is_explained
+                cost = cost^sc.hyperparameters["explained_penalty_power"] * sc.hyperparameters["explained_penalty_mult"]
             end
         end
         pq[entry_id] = 1 / cost

@@ -3,7 +3,7 @@ using Wandb
 
 function hyperparam_search(; kwargs...)
     sweep_tag = randstring(12)
-    group_tag = "hyperparam_search"
+    group_tag = "hyperparam_search2"
     @info "Starting hyperparameter search with group tag $group_tag and sweep tag $sweep_tag"
 
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
@@ -46,6 +46,8 @@ function hyperparam_search(; kwargs...)
             @unpack path_cost_power,
             complexity_power,
             block_cost_power,
+            explained_penalty_power,
+            explained_penalty_mult,
             weight_int,
             weight_list,
             weight_color,
@@ -60,6 +62,8 @@ function hyperparam_search(; kwargs...)
                 "path_cost_power" => path_cost_power,
                 "complexity_power" => complexity_power,
                 "block_cost_power" => block_cost_power,
+                "explained_penalty_power" => explained_penalty_power,
+                "explained_penalty_mult" => explained_penalty_mult,
             )
             type_weights = Dict{String,Any}(
                 "int" => weight_int,
@@ -132,22 +136,43 @@ function hyperparam_search(; kwargs...)
         end
 
         scenario = Scenario(
-            path_cost_power = (-3.0 .. 5.0),
-            complexity_power = (-3.0 .. 5.0),
-            block_cost_power = (-3.0 .. 5.0),
-            weight_int = [0.5, 1.0, 2.0],
-            weight_list = [0.5, 1.0, 2.0],
-            weight_color = [0.5, 1.0, 2.0],
-            weight_bool = [0.5, 1.0, 2.0],
-            weight_float = [0.5, 1.0, 2.0],
-            weight_grid = [0.5, 1.0, 2.0],
-            weight_tuple2 = [0.5, 1.0, 2.0],
-            weight_set = [0.5, 1.0, 2.0],
-            weight_any = [0.0, 0.1, 0.5, 1.0, 2.0],
-            weight_either = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0],
-            max_trials = 200,
+            path_cost_power = (-3.0 .. 8.0),
+            complexity_power = (-3.0 .. 8.0),
+            block_cost_power = (-3.0 .. 8.0),
+            explained_penalty_power = (1.0 .. 8.0),
+            explained_penalty_mult = (1.0 .. 20.0),
+            weight_int = [0.5, 1.0, 2.0, 4.0],
+            weight_list = [0.5, 1.0, 2.0, 4.0],
+            weight_color = [0.5, 1.0, 2.0, 4.0],
+            weight_bool = [0.5, 1.0, 2.0, 4.0],
+            weight_float = [0.5, 1.0, 2.0, 4.0],
+            weight_grid = [0.5, 1.0, 2.0, 4.0],
+            weight_tuple2 = [0.5, 1.0, 2.0, 4.0],
+            weight_set = [0.5, 1.0, 2.0, 4.0],
+            weight_any = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0],
+            weight_either = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 4.0],
+            max_trials = 60,
             batch_size = 1,
         )
+        # scenario = Scenario(
+        #     path_cost_power = [1.0, 1.0],
+        #     complexity_power = [1.0, 1.0],
+        #     block_cost_power = [1.0, 1.0],
+        #     explained_penalty_power = [1.0, 1.0],
+        #     explained_penalty_mult = [1.0, 1.0],
+        #     weight_int = [1.0, 1.0],
+        #     weight_list = [1.0, 1.0],
+        #     weight_color = [1.0, 1.0],
+        #     weight_bool = [1.0, 1.0],
+        #     weight_float = [1.0, 1.0],
+        #     weight_grid = [1.0, 1.0],
+        #     weight_tuple2 = [1.0, 1.0],
+        #     weight_set = [1.0, 1.0],
+        #     weight_any = [1.0, 1.0],
+        #     weight_either = [0.0, 0.0],
+        #     max_trials = 1,
+        #     batch_size = 1,
+        # )
 
         HyperTuning.optimize(objective, scenario)
 

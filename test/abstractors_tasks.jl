@@ -35,7 +35,13 @@ using solver:
     program_timeout = 3.0
     maximum_solutions = 10
     verbose = false
-    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+    hyperparameters = Dict{String,Any}(
+        "path_cost_power" => 1.0,
+        "complexity_power" => 1.0,
+        "block_cost_power" => 1.0,
+        "explained_penalty_power" => 1.0,
+        "explained_penalty_mult" => 5.0,
+    )
     guiding_model = get_guiding_model("dummy")
     grammar = get_starting_grammar()
     set_current_grammar!(guiding_model, grammar)

@@ -181,7 +181,10 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
 
     entry_id = sc.branch_entries[branch_id]
     entry = sc.entries[entry_id]
-    if !isa(entry, NoDataEntry) && sc.complexities[branch_id] > 0
+    if !isa(entry, NoDataEntry) &&
+       sc.complexities[branch_id] > 0 &&
+       !(isa(entry, PatternEntry) && all(v -> v == PatternWrapper(any_object), entry.values)) &&
+       !(isa(entry, AbductibleEntry) && all(v -> v == AbductibleValue(any_object), entry.values))
         if !haskey(sc.entry_grammars, (entry_id, false))
             generate_grammar(sc, guiding_model_channels, entry_id, false, branch_id)
         else

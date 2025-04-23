@@ -1246,7 +1246,13 @@ function main(; kwargs...)
 
     @info "Parsed arguments $parsed_args"
 
-    hyperparameters = Dict{String,Any}("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+    hyperparameters = Dict{String,Any}(
+        "path_cost_power" => 1.0,
+        "complexity_power" => 1.0,
+        "block_cost_power" => 1.0,
+        "explained_penalty_power" => 1.0,
+        "explained_penalty_mult" => 5.0,
+    )
 
     grammar_hash = hash(grammar)
     guiding_model_server = GuidingModelServer(guiding_model)

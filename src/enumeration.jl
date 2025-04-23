@@ -118,6 +118,7 @@ const illegal_combinations1 = Set([
     #  bootstrap target
     (2, "map", "empty"),
     (2, "fold", "empty"),
+    (2, "fold_set", "empty_set"),
     (2, "index", "empty"),
     (2, "index", "repeat"),
     (3, "index2", "repeat_grid"),
@@ -128,20 +129,25 @@ const illegal_combinations2 = Set([
     ("*", "0"),
     ("*", "1"),
     ("zip", "empty"),
-    ("left", "left"),
-    ("left", "right"),
-    ("right", "right"),
-    ("right", "left"),
     ("abs", "abs"),
     ("tuple2_first", "tuple2"),
     ("tuple2_second", "tuple2"),
-    #   ("tower_embed","tower_embed")
 ])
+
+const legal_filters = Dict(
+    "max_int" => [(3, "fold"), (3, "fold_set"), (2, "rev_fold"), (2, "rev_fold_set")],
+    "min_int" => [(3, "fold"), (3, "fold_set"), (2, "rev_fold"), (2, "rev_fold_set")],
+)
 
 function violates_symmetry(f::Primitive, a, n)
     a = application_function(a)
     if !isa(a, Primitive)
         return false
+    end
+    if haskey(legal_filters, a.name)
+        if !in((n, f.name), legal_filters[a.name])
+            return true
+        end
     end
     return in((n, f.name, a.name), illegal_combinations1) || in((f.name, a.name), illegal_combinations2)
 end

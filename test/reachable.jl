@@ -922,7 +922,13 @@ using DataStructures
                 "either" => 0.0,
             )
 
-            hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
+            hyperparameters = Dict(
+                "path_cost_power" => 1.0,
+                "complexity_power" => 1.0,
+                "block_cost_power" => 1.0,
+                "explained_penalty_power" => 1.0,
+                "explained_penalty_mult" => 5.0,
+            )
 
             target_program = parse_program(target_solution)
 

@@ -3,7 +3,7 @@ using Wandb
 
 function hyperparam_search(; kwargs...)
     sweep_tag = randstring(12)
-    group_tag = "hyperparam_search2"
+    group_tag = "hyperparam_search3"
     @info "Starting hyperparameter search with group tag $group_tag and sweep tag $sweep_tag"
 
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
@@ -48,11 +48,11 @@ function hyperparam_search(; kwargs...)
             block_cost_power,
             explained_penalty_power,
             explained_penalty_mult,
+            match_duplicates_penalty,
             weight_int,
             weight_list,
             weight_color,
             weight_bool,
-            weight_float,
             weight_grid,
             weight_tuple2,
             weight_set,
@@ -64,13 +64,13 @@ function hyperparam_search(; kwargs...)
                 "block_cost_power" => block_cost_power,
                 "explained_penalty_power" => explained_penalty_power,
                 "explained_penalty_mult" => explained_penalty_mult,
+                "match_duplicates_penalty" => match_duplicates_penalty,
             )
             type_weights = Dict{String,Any}(
                 "int" => weight_int,
                 "list" => weight_list,
                 "color" => weight_color,
                 "bool" => weight_bool,
-                "float" => weight_float,
                 "grid" => weight_grid,
                 "tuple2" => weight_tuple2,
                 "set" => weight_set,
@@ -91,7 +91,6 @@ function hyperparam_search(; kwargs...)
                         "weight_list" => weight_list,
                         "weight_color" => weight_color,
                         "weight_bool" => weight_bool,
-                        "weight_float" => weight_float,
                         "weight_grid" => weight_grid,
                         "weight_tuple2" => weight_tuple2,
                         "weight_set" => weight_set,
@@ -136,22 +135,22 @@ function hyperparam_search(; kwargs...)
         end
 
         scenario = Scenario(
-            path_cost_power = (-3.0 .. 8.0),
-            complexity_power = (-3.0 .. 8.0),
-            block_cost_power = (-3.0 .. 8.0),
+            path_cost_power = (-3.0 .. 3.5),
+            complexity_power = (1.0 .. 2.5),
+            block_cost_power = (5.0 .. 8.0),
             explained_penalty_power = (1.0 .. 8.0),
             explained_penalty_mult = (1.0 .. 20.0),
-            weight_int = [0.5, 1.0, 2.0, 4.0],
-            weight_list = [0.5, 1.0, 2.0, 4.0],
-            weight_color = [0.5, 1.0, 2.0, 4.0],
+            match_duplicates_penalty = (1.0 .. 100.0),
+            weight_int = [1.0, 2.0],
+            weight_list = [1.0, 2.0],
+            weight_color = [2.0, 4.0],
             weight_bool = [0.5, 1.0, 2.0, 4.0],
-            weight_float = [0.5, 1.0, 2.0, 4.0],
-            weight_grid = [0.5, 1.0, 2.0, 4.0],
-            weight_tuple2 = [0.5, 1.0, 2.0, 4.0],
-            weight_set = [0.5, 1.0, 2.0, 4.0],
-            weight_any = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0],
-            weight_either = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 4.0],
-            max_trials = 60,
+            weight_grid = [1.0, 1.0],
+            weight_tuple2 = [0.5, 2.0, 4.0],
+            weight_set = [1.0, 1.0],
+            weight_any = [0.0, 0.1],
+            weight_either = [0.0, 0.1, 0.2, 0.5, 4.0],
+            max_trials = 600,
             batch_size = 1,
         )
         # scenario = Scenario(
@@ -160,11 +159,11 @@ function hyperparam_search(; kwargs...)
         #     block_cost_power = [1.0, 1.0],
         #     explained_penalty_power = [1.0, 1.0],
         #     explained_penalty_mult = [1.0, 1.0],
+        #     match_duplicates_penalty = [3.0, 3.0],
         #     weight_int = [1.0, 1.0],
         #     weight_list = [1.0, 1.0],
         #     weight_color = [1.0, 1.0],
         #     weight_bool = [1.0, 1.0],
-        #     weight_float = [1.0, 1.0],
         #     weight_grid = [1.0, 1.0],
         #     weight_tuple2 = [1.0, 1.0],
         #     weight_set = [1.0, 1.0],

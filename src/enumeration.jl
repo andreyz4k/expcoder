@@ -721,9 +721,11 @@ function log_results(sc, hits)
     if !isempty(sc.stats)
         @info "Got $(length(sc.stats["run"])) guidance responses"
     end
-    for (k, ts) in sc.stats
-        @info "Average model $k time $(mean(ts))"
-        @info "Maximum model $k time $(maximum(ts))"
-        @info "Total model $k time $(sum(ts))"
+    if sc.verbose
+        for (k, ts) in sc.stats
+            @info "Average model $k time $(mean(ts))"
+            @info "Maximum model $k time $(maximum(ts))"
+            @info "Total model $k time $(sum(ts))"
+        end
     end
 end

@@ -50,7 +50,6 @@ Base.hash(a::BlockPrototype, h::UInt) = hash(
 )
 
 EPSILON = 1e-3
-MATCH_DUPLICATES_PENALTY = 3
 
 function enqueue_matches_with_known_var(sc, branch_id)
     var_id = sc.branch_vars[branch_id]
@@ -61,7 +60,7 @@ function enqueue_matches_with_known_var(sc, branch_id)
         bl = ProgramBlock(
             pr,
             TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(var_id => tp), tp),
-            EPSILON + MATCH_DUPLICATES_PENALTY * prev_matches_count,
+            EPSILON + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count,
             [var_id],
             output_var_id,
             false,
@@ -155,7 +154,7 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
         bl = ProgramBlock(
             pr,
             TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(in_var_id => in_type), in_type),
-            EPSILON + MATCH_DUPLICATES_PENALTY * prev_matches_count,
+            EPSILON + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count,
             [in_var_id],
             var_id,
             false,

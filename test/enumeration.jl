@@ -22,11 +22,8 @@ using solver:
         "list" => 1.0,
         "color" => 1.0,
         "bool" => 1.0,
-        "float" => 1.0,
         "grid" => 1.0,
         "tuple2" => 1.0,
-        "tuple3" => 1.0,
-        "coord" => 1.0,
         "set" => 1.0,
         "any" => 1.0,
         "either" => 0.0,
@@ -41,6 +38,7 @@ using solver:
         "block_cost_power" => 1.0,
         "explained_penalty_power" => 1.0,
         "explained_penalty_mult" => 5.0,
+        "match_duplicates_penalty" => 3.0,
     )
     guiding_model = get_guiding_model("dummy")
     grammar_strs = [

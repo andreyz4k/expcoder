@@ -418,7 +418,7 @@ _gather_info(p::Invented, fill_indices, args) = _gather_info(p.b, fill_indices, 
 
 function _gather_info(p::Apply, fill_indices, args)
     x_info = _gather_info(p.x, fill_indices, [])
-    f_info = _gather_info(p.f, fill_indices, vcat(args, [x_info.p]))
+    f_info = _gather_info(p.f, fill_indices, vcat(args, [(0, x_info.p)]))
     indices = vcat(f_info.indices, x_info.indices)
     var_ids = vcat(f_info.var_ids, x_info.var_ids)
     return ApplyInfo(Apply(f_info.p, x_info.p), f_info, x_info, indices, var_ids)
@@ -426,10 +426,10 @@ end
 
 function _gather_info(p::Abstraction, fill_indices, args)
     new_fill_indices = Dict(i + 1 => c for (i, c) in fill_indices)
-    if !isempty(args) && isa(args[end], Abstraction)
-        new_fill_indices[0] = args[end]
+    if !isempty(args) && isa(args[end][2], Abstraction)
+        new_fill_indices[0] = (args[end][1] + 1, args[end][2])
     end
-    b_info = _gather_info(p.b, new_fill_indices, view(args, 1:length(args)-1))
+    b_info = _gather_info(p.b, new_fill_indices, [(i + 1, a) for (i, a) in view(args, 1:length(args)-1)])
     return AbstractionInfo(Abstraction(b_info.p), b_info, [i - 1 for i in b_info.indices if i > 0], b_info.var_ids)
 end
 
@@ -448,7 +448,8 @@ shift_indices(p, shift, threshold) = p
 
 function _gather_info(p::Index, fill_indices, args)
     if haskey(fill_indices, p.n)
-        shifted_p = shift_indices(fill_indices[p.n], p.n, 0)
+        fill_shift, filler = fill_indices[p.n]
+        shifted_p = shift_indices(filler, fill_shift, 0)
         return _gather_info(shifted_p, fill_indices, args)
     else
         return IndexInfo(p, [p.n], [])
@@ -465,7 +466,7 @@ function gather_info(p::BoundAbstraction)
         arg = p.arguments[end-i]
         if isa(arg, BoundAbstraction)
             arg_info = gather_info(arg)
-            filled_indices[i] = arg_info.p
+            filled_indices[i] = (0, arg_info.p)
         end
     end
     _gather_info(p.p, filled_indices, [])

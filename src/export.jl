@@ -63,21 +63,21 @@ function sort_vars_and_blocks(sc::SolutionContext)
         end
     end
     max_depth = length(var_groups)
-    out_var_depths = Dict{UInt64,Float64}()
+    out_var_depths = Dict{UInt64,Tuple{Int,Float64}}()
     out_block_depths = Dict{UInt64,Float64}()
     for (i, group) in enumerate(var_groups)
         for var_id in group
-            out_var_depths[var_id] = (i - max_depth / 2) * 20 + (rand() - 0.5) * 10
+            out_var_depths[var_id] = (i, (i - max_depth / 2) * 20 + (rand() - 0.5) * 10)
         end
     end
     for block_id in 1:length(sc.blocks)
         block = sc.blocks[UInt64(block_id)]
         if isa(block, ProgramBlock)
-            depth = out_var_depths[block.output_var]
-            out_block_depths[block_id] = depth - 10 + (rand() - 0.5) * 10
+            i = out_var_depths[block.output_var][1]
+            out_block_depths[block_id] = (i - max_depth / 2) * 20 - 10 + (rand() - 0.5) * 10
         else
-            depth = out_var_depths[block.input_vars[1]]
-            out_block_depths[block_id] = depth + 10 + (rand() - 0.5) * 10
+            i = out_var_depths[block.input_vars[1]][1]
+            out_block_depths[block_id] = (i - max_depth / 2) * 20 + 10 + (rand() - 0.5) * 10
         end
     end
     return out_var_depths, out_block_depths
@@ -115,7 +115,8 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_unmatched_complexity" => sc.unmatched_complexities[branch_id],
             "_added_upstream_complexity" => sc.added_upstream_complexities[branch_id],
             "_unused_explained_complexity" => sc.unused_explained_complexities[branch_id],
-            "_depth" => get(vars_depths, sc.branch_vars[branch_id], -200) + rand(),
+            "_depth" => get(vars_depths, sc.branch_vars[branch_id], (-1, -200))[2] + rand(),
+            "_depth_index" => get(vars_depths, sc.branch_vars[branch_id], (-1, -200))[1],
             "_related_explained_branches" =>
                 string(get_connected_from(sc.related_explained_complexity_branches, branch_id)),
             "_related_unknown_branches" =>

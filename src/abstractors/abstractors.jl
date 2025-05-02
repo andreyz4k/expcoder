@@ -425,11 +425,15 @@ function _gather_info(p::Apply, fill_indices, args)
 end
 
 function _gather_info(p::Abstraction, fill_indices, args)
-    new_fill_indices = Dict(i + 1 => c for (i, c) in fill_indices)
+    new_fill_indices = Dict(i + 1 => (k + 1, c) for (i, (k, c)) in fill_indices)
     if !isempty(args) && isa(args[end][2], Abstraction)
         new_fill_indices[0] = (args[end][1] + 1, args[end][2])
     end
-    b_info = _gather_info(p.b, new_fill_indices, [(i + 1, a) for (i, a) in view(args, 1:length(args)-1)])
+    # @info p
+    new_args = [(i + 1, a) for (i, a) in view(args, 1:length(args)-1)]
+    # @info "New args $new_args"
+    # @info "New fill indices $new_fill_indices"
+    b_info = _gather_info(p.b, new_fill_indices, new_args)
     return AbstractionInfo(Abstraction(b_info.p), b_info, [i - 1 for i in b_info.indices if i > 0], b_info.var_ids)
 end
 
@@ -450,6 +454,7 @@ function _gather_info(p::Index, fill_indices, args)
     if haskey(fill_indices, p.n)
         fill_shift, filler = fill_indices[p.n]
         shifted_p = shift_indices(filler, fill_shift, 0)
+        # @info "Shifted $(fill_indices[p.n]) $(p.n) to $shifted_p"
         return _gather_info(shifted_p, fill_indices, args)
     else
         return IndexInfo(p, [p.n], [])

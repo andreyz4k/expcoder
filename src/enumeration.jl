@@ -663,11 +663,7 @@ function add_new_block(sc::SolutionContext, block_id, inputs, target_output)
     else
         block = sc.blocks[block_id]
         _save_block_branch_connections(sc, block_id, block, inputs, UInt64[b_id for (_, b_id) in target_output])
-        if all(sc.branch_is_unknown[branch_id] for (var_id, branch_id) in inputs)
-            update_complexity_factors_unknown(sc, inputs, target_output[block.output_var])
-        else
-            # error("Not implemented")
-        end
+        update_complexity_factors_unknown(sc, inputs, target_output[block.output_var])
     end
     if sc.verbose
         @info "Inserted block $block_id"

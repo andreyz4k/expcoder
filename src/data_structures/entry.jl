@@ -133,8 +133,11 @@ function matching_with_known_candidates(sc, entry::ValueEntry, known_branch_id)
             end
             unknown_entry_id = sc.branch_entries[unknown_branch_id]
             unknown_entry = sc.entries[unknown_entry_id]
-            if unknown_entry_id == known_entry_id ||
-               (!isa(unknown_entry, ValueEntry) && match_with_entry(sc, unknown_entry, entry))
+            if unknown_entry_id == known_entry_id || (
+                !isa(unknown_entry, ValueEntry) &&
+                entry_has_data(unknown_entry) &&
+                match_with_entry(sc, unknown_entry, entry)
+            )
                 prev_matches_count = _get_prev_matches_count(sc, unknown_var_id, known_entry_id)
                 push!(
                     results,
@@ -447,6 +450,9 @@ match_with_entry(sc, entry::NoDataEntry, other::PatternEntry) =
 
 function matching_with_unknown_candidates(sc, entry::PatternEntry, branch_id)
     results = []
+    if !entry_has_data(entry)
+        return results
+    end
     var_id = sc.branch_vars[branch_id]
 
     types = get_sub_types(sc.types, entry.type_id)
@@ -482,7 +488,7 @@ end
 
 function matching_with_known_candidates(sc, entry::PatternEntry, known_branch_id)
     results = []
-    if entry.complexity == 0
+    if entry.complexity == 0 || !entry_has_data(entry)
         return results
     end
     types = get_super_types(sc.types, entry.type_id)
@@ -502,8 +508,11 @@ function matching_with_known_candidates(sc, entry::PatternEntry, known_branch_id
             end
             unknown_entry_id = sc.branch_entries[unknown_branch_id]
             unknown_entry = sc.entries[unknown_entry_id]
-            if unknown_entry_id == known_entry_id ||
-               (!isa(unknown_entry, ValueEntry) && match_with_entry(sc, unknown_entry, entry))
+            if unknown_entry_id == known_entry_id || (
+                !isa(unknown_entry, ValueEntry) &&
+                entry_has_data(unknown_entry) &&
+                match_with_entry(sc, unknown_entry, entry)
+            )
                 prev_matches_count = _get_prev_matches_count(sc, unknown_var_id, known_entry_id)
                 push!(
                     results,

@@ -107,9 +107,9 @@ entry_has_data(entry::EitherEntry) = true
 
 _value_has_data(v::AbductibleValue) = _value_has_data(v.value)
 _value_has_data(v::PatternWrapper) = _value_has_data(v.value)
-_value_has_data(v::Array) = any(_value_has_data, v)
-_value_has_data(v::Set) = any(_value_has_data, v)
-_value_has_data(v::Tuple) = any(_value_has_data, v)
+_value_has_data(v::Array) = isempty(v) || any(_value_has_data, v)
+_value_has_data(v::Set) = isempty(v) || any(_value_has_data, v)
+_value_has_data(v::Tuple) = isempty(v) || any(_value_has_data, v)
 _value_has_data(v::Nothing) = false
 _value_has_data(v::AnyObject) = false
 _value_has_data(v) = true
@@ -211,6 +211,30 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
                             sc.unknown_min_path_costs[branch_id] + block_info[4]
                     end
                 end
+            end
+        end
+    elseif isa(entry, PatternEntry)
+        if !haskey(sc.found_blocks_forward, entry_id)
+            sc.found_blocks_forward[entry_id] = []
+            block_info = (
+                SetConst(sc.types[entry.type_id], entry.values[1]),
+                sc.types[entry.type_id],
+                sc.types[entry.type_id],
+                0.001,
+                [],
+                false,
+                false,
+                true,
+            )
+            push!(sc.found_blocks_forward[entry_id], block_info)
+        end
+        for block_info in sc.found_blocks_forward[entry_id]
+            foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
+            if all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
+                if sc.verbose
+                    @info "Adding $((false, branch_id, block_info)) to insert queue"
+                end
+                sc.blocks_to_insert[(branch_id, block_info)] = sc.unknown_min_path_costs[branch_id] + block_info[4]
             end
         end
     end

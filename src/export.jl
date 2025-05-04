@@ -104,6 +104,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_is_explained" => sc.branch_is_explained[branch_id],
             "_is_not_copy" => sc.branch_is_not_copy[branch_id],
             "_is_not_const" => sc.branch_is_not_const[branch_id],
+            "_has_data" => entry_has_data(entry),
             "_entry_id" => entry_id,
             "_type" => string(sc.types[entry.type_id]),
             "_entry_type" => typeof(entry),

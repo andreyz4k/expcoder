@@ -210,10 +210,12 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
         if isa(block, ProgramBlock)
             block_dict["_is_reversible"] = block.is_reversible
             block_dict["_var_id"] = block.output_var
+            block_dict["_depth_index"] = get(vars_depths, block.output_var, (-1, -200))[1]
             block_dict["_is_on_prev_trace"] =
                 !isa(block.p, FreeVar) && any(is_on_path(block.p, b.p, Dict()) for b in prev_trace_blocks)
         else
             block_dict["_var_id"] = block.input_vars[1]
+            block_dict["_depth_index"] = get(vars_depths, block.input_vars[1], (-1, -200))[1]
             block_dict["_is_on_prev_trace"] = any(is_on_path(block.p, b.p, Dict()) for b in prev_trace_rev_blocks)
         end
 

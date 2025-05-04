@@ -279,6 +279,7 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
         sc.found_blocks_forward[bp.root_entry] = []
     end
     push!(sc.found_blocks_forward[bp.root_entry], block_info)
+    sc.blocks_found += 1
 
     for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
         if sc.branch_is_unknown[branch_id]
@@ -287,7 +288,7 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
                 if sc.verbose
                     @info "Adding $((false, branch_id, block_info)) to insert queue"
                 end
-                push!(sc.blocks_to_insert, (false, branch_id, block_info))
+                sc.blocks_to_insert[(branch_id, block_info)] = sc.unknown_min_path_costs[branch_id] + block_info[4]
             else
                 if sc.verbose
                     @info "Skipping $((false, branch_id, block_info)) because of following entries $foll_entries"
@@ -462,6 +463,8 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             input_branches[var_id] = branch_id
         end
     end
+
+    sc.blocks_inserted += 1
     return block_id, input_branches, Dict{UInt64,UInt64}(output_var_id => output_branch_id)
 end
 
@@ -585,6 +588,7 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
             sc.found_blocks_reverse[bp.root_entry] = []
         end
         push!(sc.found_blocks_reverse[bp.root_entry], block_info)
+        sc.rev_blocks_found += 1
 
         for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
             if sc.branch_is_explained[branch_id] &&
@@ -596,7 +600,8 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
                     if sc.verbose
                         @info "Adding $((true, branch_id, block_info)) to insert queue"
                     end
-                    push!(sc.blocks_to_insert, (true, branch_id, block_info))
+                    sc.rev_blocks_to_insert[(branch_id, block_info)] =
+                        sc.explained_min_path_costs[branch_id] + block_info[3]
                 else
                     if sc.verbose
                         @info "Skipping $((true, branch_id, block_info)) because of previous entries $prev_entries"
@@ -725,6 +730,7 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
         end
     end
 
+    sc.rev_blocks_inserted += 1
     return block_id, Dict{UInt64,UInt64}(input_var_id => input_branch_id), new_branches
 end
 
@@ -760,7 +766,6 @@ function enumeration_iteration_insert_block(
             if sc.verbose
                 @info "Got results $found_solutions"
             end
-            sc.total_number_of_enumerated_programs += 1
         else
             found_solutions = []
         end
@@ -790,7 +795,7 @@ function enumeration_iteration_insert_copy_block(sc::SolutionContext, block_info
         if sc.verbose
             @info "Got results $new_solution_paths"
         end
-        sc.total_number_of_enumerated_programs += 1
+        sc.copy_blocks_inserted += 1
         enqueue_updates(sc, guiding_model_channels, grammar)
         return new_solution_paths
     end
@@ -808,7 +813,6 @@ function enumeration_iteration(
     entry_id::UInt64,
     is_forward::Bool,
 )
-    sc.iterations_count += 1
     q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
     if state_finished(bp)
         if sc.verbose
@@ -876,7 +880,7 @@ function solve_task(
         enqueue_updates(sc, guiding_model_channels, grammar)
         save_changes!(sc, 0)
 
-        phase = 1
+        phase = 4
 
         while (!(enumeration_timed_out(enumeration_timeout))) &&
                   (
@@ -884,57 +888,59 @@ function solve_task(
                       !isempty(sc.pq_reverse) ||
                       !isempty(sc.copies_queue) ||
                       !isempty(sc.blocks_to_insert) ||
+                      !isempty(sc.rev_blocks_to_insert) ||
                       !isempty(sc.waiting_entries)
                   ) &&
                   length(hits) < maximum_solutions
             receive_grammar_weights(sc, guiding_model_channels, grammar)
 
-            if !isempty(sc.blocks_to_insert)
-                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+            phase = (phase + 1) % 5
 
-                found_solutions = enumeration_iteration_insert_block(
-                    sc,
-                    is_reverse,
-                    br_id,
-                    block_info,
-                    guiding_model_channels,
-                    grammar,
-                )
-                sc.iterations_count += 1
-            else
-                if phase == 3
-                    phase = 1
-
-                    if isempty(sc.copies_queue)
-                        continue
-                    end
-                    sc.iterations_count += 1
-                    block_info = dequeue!(sc.copies_queue)
-
-                    found_solutions =
-                        enumeration_iteration_insert_copy_block(sc, block_info, guiding_model_channels, grammar)
-                else
-                    if phase == 1
-                        pq = sc.pq_forward
-                        is_forward = true
-                        phase = 2
-                    else
-                        pq = sc.pq_reverse
-                        is_forward = false
-                        phase = 3
-                    end
-                    if isempty(pq)
-                        sleep(0.0001)
-                        continue
-                    end
-                    entry_id = draw(pq)
-                    q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
-                    bp = dequeue!(q)
-
-                    enumeration_iteration(run_context, sc, max_free_parameters, bp, entry_id, is_forward)
-                    found_solutions = []
+            if phase == 2
+                if isempty(sc.blocks_to_insert)
+                    continue
                 end
+                br_id, block_info = dequeue!(sc.blocks_to_insert)
+
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, false, br_id, block_info, guiding_model_channels, grammar)
+            elseif phase == 3
+                if isempty(sc.rev_blocks_to_insert)
+                    continue
+                end
+                br_id, block_info = dequeue!(sc.rev_blocks_to_insert)
+
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, true, br_id, block_info, guiding_model_channels, grammar)
+            elseif phase == 4
+                if isempty(sc.copies_queue)
+                    continue
+                end
+                block_info = dequeue!(sc.copies_queue)
+
+                found_solutions =
+                    enumeration_iteration_insert_copy_block(sc, block_info, guiding_model_channels, grammar)
+            else
+                if phase == 0
+                    pq = sc.pq_forward
+                    is_forward = true
+                else
+                    pq = sc.pq_reverse
+                    is_forward = false
+                end
+                if isempty(pq)
+                    sleep(0.0001)
+                    continue
+                end
+                entry_id = draw(pq)
+                q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
+                bp = dequeue!(q)
+
+                enumeration_iteration(run_context, sc, max_free_parameters, bp, entry_id, is_forward)
+                found_solutions = []
             end
+
+            sc.iterations_count += 1
 
             for solution_path in found_solutions
                 solution, cost, trace_values = extract_solution(sc, solution_path)

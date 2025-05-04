@@ -520,29 +520,24 @@ using DataStructures
         @test !isempty(sc.blocks_to_insert) || !isempty(q)
         while !isempty(sc.blocks_to_insert) || !isempty(q)
             if !isempty(sc.blocks_to_insert)
-                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+                (br_id, block_info), cost = peek(sc.blocks_to_insert)
+                br_id, block_info = dequeue!(sc.blocks_to_insert)
 
-                if is_reverse != false || br_id != out_branch_id || !is_on_path(block_info[1], bl.p, Dict())
-                    push!(not_on_path, (is_reverse, br_id, block_info))
+                if br_id != out_branch_id || !is_on_path(block_info[1], bl.p, Dict())
+                    push!(not_on_path, (br_id, block_info, cost))
                     continue
                 end
 
-                found_solutions = enumeration_iteration_insert_block(
-                    sc,
-                    is_reverse,
-                    br_id,
-                    block_info,
-                    guiding_model_channels,
-                    grammar,
-                )
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, false, br_id, block_info, guiding_model_channels, grammar)
 
                 if verbose
                     @info "found end"
                     @info "Out branch id $out_branch_id"
                 end
 
-                for block_info_ in not_on_path
-                    push!(sc.blocks_to_insert, block_info_)
+                for (br_id_, block_info_, cost_) in not_on_path
+                    sc.blocks_to_insert[(br_id_, block_info_)] = cost_
                 end
 
                 for (bp_, p_) in not_on_path_bp
@@ -695,31 +690,26 @@ using DataStructures
         end
 
         not_on_path = Set()
-        @test !isempty(sc.blocks_to_insert) || !isempty(q)
-        while !isempty(sc.blocks_to_insert) || !isempty(q)
-            if !isempty(sc.blocks_to_insert)
-                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+        @test !isempty(sc.rev_blocks_to_insert) || !isempty(q)
+        while !isempty(sc.rev_blocks_to_insert) || !isempty(q)
+            if !isempty(sc.rev_blocks_to_insert)
+                (br_id, block_info), cost = peek(sc.rev_blocks_to_insert)
+                br_id, block_info = dequeue!(sc.rev_blocks_to_insert)
 
-                if is_reverse != true || br_id != in_branch_id || !is_on_path(block_info[1], bl.p, Dict())
-                    push!(not_on_path, (is_reverse, br_id, block_info))
+                if br_id != in_branch_id || !is_on_path(block_info[1], bl.p, Dict())
+                    push!(not_on_path, (br_id, block_info, cost))
                     continue
                 end
 
-                found_solutions = enumeration_iteration_insert_block(
-                    sc,
-                    is_reverse,
-                    br_id,
-                    block_info,
-                    guiding_model_channels,
-                    grammar,
-                )
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, true, br_id, block_info, guiding_model_channels, grammar)
 
                 if verbose
                     @info "found end"
                 end
 
-                for block_info_ in not_on_path
-                    push!(sc.blocks_to_insert, block_info_)
+                for (br_id_, block_info_, cost_) in not_on_path
+                    sc.rev_blocks_to_insert[(br_id_, block_info_)] = cost_
                 end
 
                 out_blocks = get_connected_from(sc.branch_outgoing_blocks, in_branch_id)

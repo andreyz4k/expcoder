@@ -302,8 +302,7 @@ using DataStructures
         )
         enumeration_iteration_finished_output(sc, bp)
         @test length(sc.blocks_to_insert) == 1
-        is_reverse, br_id, block_info = sc.blocks_to_insert[1]
-        @test is_reverse == false
+        br_id, block_info = dequeue!(sc.blocks_to_insert)
         @test br_id == out_branch_id
         new_block_result = insert_block(sc, br_id, block_info)
         new_block_id, input_branches, target_output = new_block_result
@@ -423,8 +422,7 @@ using DataStructures
 
         enumeration_iteration_finished_output(sc, bp)
         @test length(sc.blocks_to_insert) == 1
-        is_reverse, br_id, block_info = sc.blocks_to_insert[1]
-        @test is_reverse == false
+        br_id, block_info = dequeue!(sc.blocks_to_insert)
         @test br_id == out_branch_id
         new_block_result = insert_block(sc, br_id, block_info)
         new_block_id, input_branches, target_output = new_block_result

@@ -716,7 +716,11 @@ function log_results(sc, hits)
     end
 
     @info "Iterations count $(sc.iterations_count)"
-    @info "Total number of valid blocks $(sc.total_number_of_enumerated_programs)"
+    @info "Blocks found $(sc.blocks_found)"
+    @info "Reverse blocks found $(sc.rev_blocks_found)"
+    @info "Blocks inserted $(sc.blocks_inserted)"
+    @info "Reverse blocks inserted $(sc.rev_blocks_inserted)"
+    @info "Copy blocks inserted $(sc.copy_blocks_inserted)"
 
     if !isempty(sc.stats)
         @info "Got $(length(sc.stats["run"])) guidance responses"

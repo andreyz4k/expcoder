@@ -99,6 +99,21 @@ function enqueue_known_bp(sc, bp, q, branch_id)
     end
 end
 
+entry_has_data(entry::NoDataEntry) = false
+entry_has_data(entry::PatternEntry) = any(_value_has_data, entry.values)
+entry_has_data(entry::AbductibleEntry) = any(_value_has_data, entry.values)
+entry_has_data(entry::ValueEntry) = true
+entry_has_data(entry::EitherEntry) = true
+
+_value_has_data(v::AbductibleValue) = _value_has_data(v.value)
+_value_has_data(v::PatternWrapper) = _value_has_data(v.value)
+_value_has_data(v::Array) = any(_value_has_data, v)
+_value_has_data(v::Set) = any(_value_has_data, v)
+_value_has_data(v::Tuple) = any(_value_has_data, v)
+_value_has_data(v::Nothing) = false
+_value_has_data(v::AnyObject) = false
+_value_has_data(v) = true
+
 function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
     if branch_id == sc.target_branch_id
         return
@@ -106,7 +121,7 @@ function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
     enqueue_matches_with_known_var(sc, branch_id)
     entry_id = sc.branch_entries[branch_id]
     entry = sc.entries[entry_id]
-    if !isnothing(sc.explained_min_path_costs[branch_id]) && entry.complexity > 0 && sc.branch_is_not_const[branch_id]
+    if !isnothing(sc.explained_min_path_costs[branch_id]) && entry_has_data(entry) && sc.branch_is_not_const[branch_id]
         if !haskey(sc.entry_grammars, (entry_id, true))
             generate_grammar(sc, guiding_model_channels, entry_id, true, branch_id)
         else
@@ -117,7 +132,8 @@ function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
                         if sc.verbose
                             @info "Adding $((true, branch_id, block_info)) to insert queue"
                         end
-                        push!(sc.blocks_to_insert, (true, branch_id, block_info))
+                        sc.rev_blocks_to_insert[(branch_id, block_info)] =
+                            sc.explained_min_path_costs[branch_id] + block_info[3]
                     end
                 end
             end
@@ -180,10 +196,7 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
 
     entry_id = sc.branch_entries[branch_id]
     entry = sc.entries[entry_id]
-    if !isa(entry, NoDataEntry) &&
-       sc.complexities[branch_id] > 0 &&
-       !(isa(entry, PatternEntry) && all(v -> v == PatternWrapper(any_object), entry.values)) &&
-       !(isa(entry, AbductibleEntry) && all(v -> v == AbductibleValue(any_object), entry.values))
+    if entry_has_data(entry)
         if !haskey(sc.entry_grammars, (entry_id, false))
             generate_grammar(sc, guiding_model_channels, entry_id, false, branch_id)
         else
@@ -194,7 +207,8 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
                         if sc.verbose
                             @info "Adding $((false, branch_id, block_info)) to insert queue"
                         end
-                        push!(sc.blocks_to_insert, (false, branch_id, block_info))
+                        sc.blocks_to_insert[(branch_id, block_info)] =
+                            sc.unknown_min_path_costs[branch_id] + block_info[4]
                     end
                 end
             end

@@ -372,7 +372,7 @@ function enumeration_iteration_insert_block_traced(
             if sc.verbose
                 @info "Got results $new_solution_paths"
             end
-            sc.total_number_of_enumerated_programs += 1
+            sc.blocks_inserted += 1
             enqueue_updates(sc, guiding_model_channels, grammar)
             return new_solution_paths
         else
@@ -453,7 +453,7 @@ function enumeration_iteration_insert_copy_block_traced(
         if sc.verbose
             @info "Got results $new_solution_paths"
         end
-        sc.total_number_of_enumerated_programs += 1
+        sc.copy_blocks_inserted += 1
         enqueue_updates(sc, guiding_model_channels, grammar)
         return new_solution_paths
     end
@@ -473,7 +473,6 @@ function enumeration_iteration_traced(
     target_blocks,
     vars_mapping,
 )
-    sc.iterations_count += 1
     q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
     if state_finished(bp)
         if sc.verbose
@@ -598,21 +597,27 @@ function build_manual_trace(
             @info inner_mapping
         end
 
-        phase = 1
+        phase = 4
 
         while (
             !isempty(sc.pq_forward) ||
             !isempty(sc.pq_reverse) ||
             !isempty(sc.copies_queue) ||
             !isempty(sc.blocks_to_insert) ||
+            !isempty(sc.rev_blocks_to_insert) ||
             !isempty(sc.waiting_entries)
         )
             receive_grammar_weights(sc, guiding_model_channels, grammar)
 
-            if !isempty(sc.blocks_to_insert)
-                is_reverse, br_id, block_info = pop!(sc.blocks_to_insert)
+            phase = (phase + 1) % 5
 
-                target_blocks_group = is_reverse ? rev_blocks : out_blocks
+            if phase == 2
+                if isempty(sc.blocks_to_insert)
+                    continue
+                end
+                br_id, block_info = dequeue!(sc.blocks_to_insert)
+
+                target_blocks_group = out_blocks
 
                 var_id = sc.branch_vars[br_id]
                 if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
@@ -623,7 +628,7 @@ function build_manual_trace(
 
                 found_solutions = enumeration_iteration_insert_block_traced(
                     sc,
-                    is_reverse,
+                    false,
                     br_id,
                     block_info,
                     guiding_model_channels,
@@ -633,73 +638,93 @@ function build_manual_trace(
                     rev_inner_mapping,
                 )
                 sc.iterations_count += 1
+            elseif phase == 3
+                if isempty(sc.rev_blocks_to_insert)
+                    continue
+                end
+                br_id, block_info = dequeue!(sc.rev_blocks_to_insert)
+
+                target_blocks_group = rev_blocks
+
+                var_id = sc.branch_vars[br_id]
+                if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
+                    continue
+                end
+
+                target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
+
+                found_solutions = enumeration_iteration_insert_block_traced(
+                    sc,
+                    true,
+                    br_id,
+                    block_info,
+                    guiding_model_channels,
+                    grammar,
+                    target_blocks,
+                    inner_mapping,
+                    rev_inner_mapping,
+                )
+            elseif phase == 4
+                if isempty(sc.copies_queue)
+                    continue
+                end
+                block_info = dequeue!(sc.copies_queue)
+
+                found_solutions = enumeration_iteration_insert_copy_block_traced(
+                    sc,
+                    block_info,
+                    guiding_model_channels,
+                    grammar,
+                    copy_blocks,
+                    inner_mapping,
+                    rev_inner_mapping,
+                )
             else
-                if phase == 3
-                    phase = 1
-
-                    if isempty(sc.copies_queue)
-                        continue
-                    end
-                    sc.iterations_count += 1
-                    block_info = dequeue!(sc.copies_queue)
-
-                    found_solutions = enumeration_iteration_insert_copy_block_traced(
-                        sc,
-                        block_info,
-                        guiding_model_channels,
-                        grammar,
-                        copy_blocks,
-                        inner_mapping,
-                        rev_inner_mapping,
-                    )
+                if phase == 0
+                    pq = sc.pq_forward
+                    is_forward = true
                 else
-                    if phase == 1
-                        pq = sc.pq_forward
-                        is_forward = true
-                        phase = 2
-                    else
-                        pq = sc.pq_reverse
-                        is_forward = false
-                        phase = 3
-                    end
-                    if isempty(pq)
-                        sleep(0.0001)
-                        continue
-                    end
-                    entry_id = draw(pq)
-                    q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
-                    bp = dequeue!(q)
-                    target_blocks_group = is_forward ? out_blocks : rev_blocks
+                    pq = sc.pq_reverse
+                    is_forward = false
+                end
+                if isempty(pq)
+                    sleep(0.0001)
+                    continue
+                end
+                entry_id = draw(pq)
+                q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
+                bp = dequeue!(q)
+                target_blocks_group = is_forward ? out_blocks : rev_blocks
 
-                    if !haskey(matching_vars, (entry_id, is_forward))
-                        entry = sc.entries[entry_id]
-                        matching_vars[(entry_id, is_forward)] = []
-                        for (var_id) in keys(target_blocks_group)
-                            if might_unify(sc.types[entry.type_id], var_types[var_id])
-                                push!(matching_vars[(entry_id, is_forward)], var_id)
-                            end
+                if !haskey(matching_vars, (entry_id, is_forward))
+                    entry = sc.entries[entry_id]
+                    matching_vars[(entry_id, is_forward)] = []
+                    for (var_id) in keys(target_blocks_group)
+                        if might_unify(sc.types[entry.type_id], var_types[var_id])
+                            push!(matching_vars[(entry_id, is_forward)], var_id)
                         end
                     end
-
-                    if isempty(matching_vars[(entry_id, is_forward)])
-                        update_entry_priority(sc, entry_id, !is_forward)
-                        continue
-                    end
-                    target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
-
-                    enumeration_iteration_traced(
-                        run_context,
-                        sc,
-                        max_free_parameters,
-                        bp,
-                        entry_id,
-                        is_forward,
-                        target_blocks,
-                        inner_mapping,
-                    )
-                    found_solutions = []
                 end
+
+                if isempty(matching_vars[(entry_id, is_forward)])
+                    update_entry_priority(sc, entry_id, !is_forward)
+                    continue
+                end
+                target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
+
+                enumeration_iteration_traced(
+                    run_context,
+                    sc,
+                    max_free_parameters,
+                    bp,
+                    entry_id,
+                    is_forward,
+                    target_blocks,
+                    inner_mapping,
+                )
+                found_solutions = []
             end
+            sc.iterations_count += 1
 
             for solution_path in found_solutions
                 solution, cost, trace_values = extract_solution(sc, solution_path)

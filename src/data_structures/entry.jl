@@ -740,6 +740,7 @@ function _try_unify_values(v1::Array, v2::Array, check_pattern, block_id)
         end
         push!(res, unified_v)
     end
+    res = reshape(res, size(v1))
     return true, res
 end
 

@@ -78,7 +78,11 @@ mutable struct SolutionContext
     example_count::Int64
     type_weights::Dict{String,Float64}
     hyperparameters::Dict{String,Any}
-    total_number_of_enumerated_programs::Int64
+    blocks_found::Int64
+    rev_blocks_found::Int64
+    blocks_inserted::Int64
+    rev_blocks_inserted::Int64
+    copy_blocks_inserted::Int64
     iterations_count::Int64
 
     pq_forward::NDPriorityQueue{UInt64,Float64}
@@ -88,7 +92,9 @@ mutable struct SolutionContext
     copies_queue::PriorityQueue
     found_blocks_forward::Dict{UInt64,Vector}
     found_blocks_reverse::Dict{UInt64,Vector}
-    blocks_to_insert::Vector
+    blocks_to_insert::PriorityQueue
+    rev_blocks_to_insert::PriorityQueue
+    repeated_rev_branches::Set{UInt64}
 
     branch_unknown_from_output::VectorStorage{Bool}
     branch_known_from_input::VectorStorage{Bool}
@@ -162,6 +168,10 @@ function create_starting_context(
         hyperparameters,
         0,
         0,
+        0,
+        0,
+        0,
+        0,
         NDPriorityQueue{UInt64,Float64}(),
         NDPriorityQueue{UInt64,Float64}(),
         Dict(),
@@ -169,7 +179,9 @@ function create_starting_context(
         PriorityQueue(),
         Dict{UInt64,Vector{UInt64}}(),
         Dict{UInt64,Vector{UInt64}}(),
-        [],
+        PriorityQueue(),
+        PriorityQueue(),
+        Set{UInt64}(),
         VectorStorage{Bool}(),
         VectorStorage{Bool}(),
         Dict{Tuple{UInt64,Bool},Any}(),
@@ -772,7 +784,7 @@ function _update_complexity_factor_unknown(sc::SolutionContext, branch_id)
     end
 end
 
-function _push_unmatched_complexity_to_output(sc::SolutionContext, branch_id, fixed_branches, unmatched_complexity)
+function _push_unmatched_complexity_to_output(sc::SolutionContext, branch_id, unmatched_complexity)
     current_unmatched_complexity = sc.unmatched_complexities[branch_id]
     if isnothing(current_unmatched_complexity) || current_unmatched_complexity > unmatched_complexity
         sc.unmatched_complexities[branch_id] = unmatched_complexity
@@ -795,7 +807,7 @@ function _push_unmatched_complexity_to_output(sc::SolutionContext, branch_id, fi
             end
 
             for out_branch_id in out_branches
-                _push_unmatched_complexity_to_output(sc, out_branch_id, fixed_branches, un_complexity)
+                _push_unmatched_complexity_to_output(sc, out_branch_id, un_complexity)
             end
         end
     end
@@ -858,7 +870,7 @@ function update_complexity_factors_unknown(sc::SolutionContext, input_branches, 
     branch_ids = UInt64[br_id for (_, br_id) in input_branches]
     un_complexity = get_sum(sc.unmatched_complexities, branch_ids, 0.0)
 
-    _push_unmatched_complexity_to_output(sc, output_branch, input_branches, un_complexity)
+    _push_unmatched_complexity_to_output(sc, output_branch, un_complexity)
 
     related_branches = get_connected_to(sc.related_unknown_complexity_branches, output_branch)
     for related_branch_id in related_branches

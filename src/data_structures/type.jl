@@ -75,6 +75,11 @@ function show_type(t::TypeNamedArgsConstructor, is_return::Bool)
     end
 end
 
+type_var_count(t::TypeVariable) = 1
+type_var_count(t::TypeConstructor) = sum(type_var_count(a) for a in t.arguments; init = 0)
+type_var_count(t::TypeNamedArgsConstructor) =
+    sum(type_var_count(a) for a in values(t.arguments); init = 0) + type_var_count(t.output)
+
 struct Context
     next_variable::Int64
     substitution::Dict{Int64,Tp}

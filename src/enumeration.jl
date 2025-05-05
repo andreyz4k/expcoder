@@ -283,6 +283,8 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_
 
     new_vars_count = length(arguments_of_type(p_fix_type))
 
+    sc.block_runs_count += 1
+
     calculated_values = DefaultDict(() -> [])
     for value in out_entry.values
         calculated_value = try_run_function(run_in_reverse, [p, value, block_id])
@@ -467,6 +469,8 @@ function try_run_block(
     out_branch_id = target_output[block.output_var]
     expected_output = sc.entries[sc.branch_entries[out_branch_id]]
 
+    sc.block_runs_count += 1
+
     outs = []
     for i in 1:sc.example_count
         xs = inputs[i]
@@ -531,6 +535,8 @@ function try_run_block(
     out_entries = Dict(var_id => sc.entries[sc.branch_entries[target_output[var_id]]] for var_id in block.output_vars)
 
     outs = DefaultDict(() -> [])
+
+    sc.block_runs_count += 1
 
     for i in 1:sc.example_count
         xs = inputs[i]
@@ -688,28 +694,28 @@ Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
 function log_results(sc, hits)
     @info(collect(keys(hits)))
 
-    if sc.verbose
-        @info "Branches with incoming paths $(length(sc.incoming_paths.values_stack[1]))"
-        @info "Total incoming paths $(sum(length(v) for v in values(sc.incoming_paths.values_stack[1])))"
-        @info "Incoming paths counts $([length(v) for v in values(sc.incoming_paths.values_stack[1])])"
-        @info "Entries for incoming paths "
-        for (br_id, v) in sc.incoming_paths.values_stack[1]
-            @info (
-                length(v),
-                length(unique(v)),
-                br_id,
-                sc.branch_vars[br_id],
-                sc.branch_entries[br_id],
-                sc.entries[sc.branch_entries[br_id]],
-                [sc.blocks[b_id] for (_, b_id) in get_connected_from(sc.branch_incoming_blocks, br_id)],
-            )
-            if length(v) != length(unique(v))
-                @warn "Incoming paths for branch $br_id"
-                @warn v
-            end
-        end
-        @info "Total incoming paths length $(sum(sum(length(path.main_path) + length(path.side_vars) for path in paths; init=0) for paths in values(sc.incoming_paths.values_stack[1]); init=0))"
-    end
+    # if sc.verbose
+    #     @info "Branches with incoming paths $(length(sc.incoming_paths.values_stack[1]))"
+    #     @info "Total incoming paths $(sum(length(v) for v in values(sc.incoming_paths.values_stack[1])))"
+    #     @info "Incoming paths counts $([length(v) for v in values(sc.incoming_paths.values_stack[1])])"
+    #     @info "Entries for incoming paths "
+    #     for (br_id, v) in sc.incoming_paths.values_stack[1]
+    #         @info (
+    #             length(v),
+    #             length(unique(v)),
+    #             br_id,
+    #             sc.branch_vars[br_id],
+    #             sc.branch_entries[br_id],
+    #             sc.entries[sc.branch_entries[br_id]],
+    #             [sc.blocks[b_id] for (_, b_id) in get_connected_from(sc.branch_incoming_blocks, br_id)],
+    #         )
+    #         if length(v) != length(unique(v))
+    #             @warn "Incoming paths for branch $br_id"
+    #             @warn v
+    #         end
+    #     end
+    #     @info "Total incoming paths length $(sum(sum(length(path.main_path) + length(path.side_vars) for path in paths; init=0) for paths in values(sc.incoming_paths.values_stack[1]); init=0))"
+    # end
 
     @info "Iterations count $(sc.iterations_count)"
     @info "Blocks found $(sc.blocks_found)"
@@ -717,6 +723,7 @@ function log_results(sc, hits)
     @info "Blocks inserted $(sc.blocks_inserted)"
     @info "Reverse blocks inserted $(sc.rev_blocks_inserted)"
     @info "Copy blocks inserted $(sc.copy_blocks_inserted)"
+    @info "Block runs count $(sc.block_runs_count)"
 
     if !isempty(sc.stats)
         @info "Got $(length(sc.stats["run"])) guidance responses"

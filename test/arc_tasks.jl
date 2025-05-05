@@ -20,22 +20,24 @@ using solver:
     set_current_grammar!(guiding_model, grammar)
     type_weights = Dict{String,Any}(
         "int" => 1.0,
-        "list" => 1.0,
-        "color" => 1.0,
+        "list" => 2.0,
+        "color" => 4.0,
         "bool" => 1.0,
-        "grid" => 1.0,
-        "tuple2" => 1.0,
+        "grid" => 0.5,
+        "tuple2" => 2.0,
         "set" => 1.0,
-        "any" => 1.0,
-        "either" => 0.0,
+        "any" => 0.1,
+        "either" => 0.5,
     )
     hyperparameters = Dict{String,Any}(
-        "path_cost_power" => 1.0,
-        "complexity_power" => 1.0,
-        "block_cost_power" => 1.0,
-        "explained_penalty_power" => 1.0,
+        "path_cost_power" => 3.0,
+        "complexity_power" => 2.0,
+        "block_cost_power" => 6.0,
+        "explained_penalty_power" => 8.0,
         "explained_penalty_mult" => 5.0,
-        "match_duplicates_penalty" => 3.0,
+        "match_duplicates_penalty" => 80.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 1.0,
     )
 
     function test_solve_task(task, verbose = false)

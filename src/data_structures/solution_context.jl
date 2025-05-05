@@ -84,12 +84,14 @@ mutable struct SolutionContext
     rev_blocks_inserted::Int64
     copy_blocks_inserted::Int64
     iterations_count::Int64
+    block_runs_count::Int64
 
     pq_forward::NDPriorityQueue{UInt64,Float64}
     pq_reverse::NDPriorityQueue{UInt64,Float64}
     entry_queues_forward::Dict{UInt64,PriorityQueue}
     entry_queues_reverse::Dict{UInt64,PriorityQueue}
     copies_queue::PriorityQueue
+    duplicate_copies_queue::PriorityQueue
     found_blocks_forward::Dict{UInt64,Vector}
     found_blocks_reverse::Dict{UInt64,Vector}
     blocks_to_insert::PriorityQueue
@@ -172,10 +174,12 @@ function create_starting_context(
         0,
         0,
         0,
+        0,
         NDPriorityQueue{UInt64,Float64}(),
         NDPriorityQueue{UInt64,Float64}(),
         Dict(),
         Dict(),
+        PriorityQueue(),
         PriorityQueue(),
         Dict{UInt64,Vector{UInt64}}(),
         Dict{UInt64,Vector{UInt64}}(),
@@ -454,7 +458,7 @@ function create_next_var(sc::SolutionContext)
     return v
 end
 
-const MAX_COST = 1e10
+const MAX_COST = 1e200
 
 function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bool)
     if is_rev
@@ -522,6 +526,11 @@ function update_entry_priority(sc::SolutionContext, entry_id::UInt64, is_rev::Bo
                 cost = cost^sc.hyperparameters["explained_penalty_power"] * sc.hyperparameters["explained_penalty_mult"]
             end
         end
+        var_count = type_var_count(sc.types[sc.entries[entry_id].type_id])
+        cost =
+            cost *
+            ((var_count + 1) * sc.hyperparameters["type_var_penalty_mult"])^sc.hyperparameters["type_var_penalty_power"]
+
         pq[entry_id] = 1 / cost
         if sc.verbose
             @info "$(is_rev ? "Known" : "Unknown") entry $entry_id priority is $(1 / cost)"

@@ -342,9 +342,14 @@ using DataStructures
 
         not_on_path = Set()
         @test !isempty(sc.copies_queue)
-        while !isempty(sc.copies_queue)
-            block_info, p = peek(sc.copies_queue)
-            block_info = dequeue!(sc.copies_queue)
+        while !isempty(sc.copies_queue) || !isempty(sc.duplicate_copies_queue)
+            if !isempty(sc.copies_queue)
+                block_info, p = peek(sc.copies_queue)
+                block_info = dequeue!(sc.copies_queue)
+            else
+                block_info, p = peek(sc.duplicate_copies_queue)
+                block_info = dequeue!(sc.duplicate_copies_queue)
+            end
             if verbose
                 @info block_info
             end
@@ -916,6 +921,8 @@ using DataStructures
                 "explained_penalty_power" => 1.0,
                 "explained_penalty_mult" => 5.0,
                 "match_duplicates_penalty" => 3.0,
+                "type_var_penalty_mult" => 1.0,
+                "type_var_penalty_power" => 1.0,
             )
 
             target_program = parse_program(target_solution)
@@ -2186,7 +2193,7 @@ using DataStructures
             @test !isnothing(hit)
         end
 
-        @testcase_log "0f39a9d9.json_comp" begin
+        @testcase_log "0f39a9d9_comp.json" begin
             task = _create_arc_task("0f39a9d9.json", "sortOfARC/")
 
             target_solution = "let \$v1, \$v2, \$v3 = rev(\$inp0 = (#(lambda (lambda (lambda (rev_fix_param (#(lambda (lambda (lambda (rev_select_grid (lambda (eq? \$0 \$1)) \$1 \$2)))) \$0 \$1 \$2) \$2 (lambda Const(color, 0)))))) \$v1 \$v2 \$v3)) in

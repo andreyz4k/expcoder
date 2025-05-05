@@ -59,6 +59,8 @@ using DataStructures
         "explained_penalty_power" => 1.0,
         "explained_penalty_mult" => 5.0,
         "match_duplicates_penalty" => 3.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 1.0,
     )
     grammar = [
         parse_program(p) for p in [

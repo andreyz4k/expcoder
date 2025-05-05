@@ -128,8 +128,28 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
         if !isa(entry, NoDataEntry)
             vertex_dict["_entry_value"] = string(entry.values)
         end
-        if haskey(sc.entry_queues_reverse, entry_id)
+        var_count = type_var_count(sc.types[entry.type_id])
+        vertex_dict["_var_count"] = var_count
+        if haskey(sc.entry_queues_reverse, entry_id) && !isempty(sc.entry_queues_reverse[entry_id])
             vertex_dict["_queue_explained_size"] = length(sc.entry_queues_reverse[entry_id])
+            queue_min_cost = peek(sc.entry_queues_reverse[entry_id])[2]
+            vertex_dict["_queue_explained_min_cost"] = queue_min_cost
+            if sc.branch_is_explained[branch_id] &&
+               sc.branch_is_not_copy[branch_id] &&
+               !isnothing(sc.explained_min_path_costs[branch_id])
+                queue_full_cost =
+                    (
+                        sc.explained_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
+                        queue_min_cost^sc.hyperparameters["block_cost_power"]
+                    ) * sc.explained_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"]
+
+                queue_full_cost =
+                    queue_full_cost *
+                    (
+                        (var_count + 1) * sc.hyperparameters["type_var_penalty_mult"]
+                    )^sc.hyperparameters["type_var_penalty_power"]
+                vertex_dict["_queue_explained_full_cost"] = queue_full_cost
+            end
             if haskey(sc.pq_reverse, entry_id)
                 vertex_dict["_queue_explained_priority"] = sc.pq_reverse[entry_id]
             end
@@ -142,8 +162,29 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             #     end
             # end
         end
-        if haskey(sc.entry_queues_forward, entry_id)
+        if haskey(sc.entry_queues_forward, entry_id) && !isempty(sc.entry_queues_forward[entry_id])
             vertex_dict["_queue_unknown_size"] = length(sc.entry_queues_forward[entry_id])
+            queue_min_cost = peek(sc.entry_queues_forward[entry_id])[2]
+            vertex_dict["_queue_unknown_min_cost"] = queue_min_cost
+            if sc.branch_is_unknown[branch_id]
+                queue_full_cost =
+                    (
+                        sc.unknown_min_path_costs[branch_id]^sc.hyperparameters["path_cost_power"] +
+                        queue_min_cost^sc.hyperparameters["block_cost_power"]
+                    ) * sc.unknown_complexity_factors[branch_id]^sc.hyperparameters["complexity_power"]
+                if sc.branch_is_explained[branch_id]
+                    queue_full_cost =
+                        queue_full_cost^sc.hyperparameters["explained_penalty_power"] *
+                        sc.hyperparameters["explained_penalty_mult"]
+                end
+
+                queue_full_cost =
+                    queue_full_cost *
+                    (
+                        (var_count + 1) * sc.hyperparameters["type_var_penalty_mult"]
+                    )^sc.hyperparameters["type_var_penalty_power"]
+                vertex_dict["_queue_unknown_full_cost"] = queue_full_cost
+            end
             if haskey(sc.pq_forward, entry_id)
                 vertex_dict["_queue_unknown_priority"] = sc.pq_forward[entry_id]
             end

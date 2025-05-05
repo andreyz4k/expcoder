@@ -135,7 +135,7 @@ function matching_with_known_candidates(sc, entry::ValueEntry, known_branch_id)
             unknown_entry = sc.entries[unknown_entry_id]
             if unknown_entry_id == known_entry_id || (
                 !isa(unknown_entry, ValueEntry) &&
-                entry_has_data(unknown_entry) &&
+                (!isa(unknown_entry, PatternEntry) || entry_has_data(unknown_entry)) &&
                 match_with_entry(sc, unknown_entry, entry)
             )
                 prev_matches_count = _get_prev_matches_count(sc, unknown_var_id, known_entry_id)
@@ -510,7 +510,7 @@ function matching_with_known_candidates(sc, entry::PatternEntry, known_branch_id
             unknown_entry = sc.entries[unknown_entry_id]
             if unknown_entry_id == known_entry_id || (
                 !isa(unknown_entry, ValueEntry) &&
-                entry_has_data(unknown_entry) &&
+                (!isa(unknown_entry, PatternEntry) || entry_has_data(unknown_entry)) &&
                 match_with_entry(sc, unknown_entry, entry)
             )
                 prev_matches_count = _get_prev_matches_count(sc, unknown_var_id, known_entry_id)

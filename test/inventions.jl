@@ -38,6 +38,8 @@ using solver:
         "explained_penalty_power" => 1.0,
         "explained_penalty_mult" => 5.0,
         "match_duplicates_penalty" => 3.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 1.0,
     )
     guiding_model = get_guiding_model("dummy")
     base_grammar = get_starting_grammar()

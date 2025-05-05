@@ -482,7 +482,7 @@ class GuidingModel(nn.Module):
             # print(
             #     f"Epoch {t} finished, average loss: {np.mean(losses):>7f}, max: {max(losses):>7f}"
             # )
-            if t % 10 == 0:
+            if (t + 1) % 10 == 0:
                 self.save(
                     os.path.join(
                         "model_checkpoints", f"{datetime.now().isoformat()}.pt"

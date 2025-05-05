@@ -955,20 +955,20 @@ function _downstream_blocks_new_branch(sc, var_id, out_branch_id, fixed_branches
 end
 
 function _save_block_branch_connections(sc, block_id, block, fixed_branches, out_branches)
-    input_br_ids = UInt64[fixed_branches[var_id] for var_id in block.input_vars]
-    existing_outgoing = DefaultDict{UInt64,Int}(() -> 0)
-    for in_br_id in input_br_ids
-        for (bl_copy_id, bl_id) in get_connected_from(sc.branch_outgoing_blocks, in_br_id)
+    input_br_ids = sort(UInt64[fixed_branches[var_id] for var_id in block.input_vars])
+    existing_incoming = DefaultDict{UInt64,Int}(() -> 0)
+    for out_br_id in out_branches
+        for (bl_copy_id, bl_id) in get_connected_from(sc.branch_incoming_blocks, out_br_id)
             if bl_id == block_id
-                existing_outgoing[bl_copy_id] += 1
+                existing_incoming[bl_copy_id] += 1
             end
         end
     end
-    for (bl_copy_id, count) in existing_outgoing
-        if count != length(input_br_ids)
+    for (bl_copy_id, count) in existing_incoming
+        if count != length(out_branches)
             continue
         end
-        if sort(collect(keys(get_connected_to(sc.branch_incoming_blocks, bl_copy_id)))) == out_branches
+        if sort(collect(keys(get_connected_to(sc.branch_outgoing_blocks, bl_copy_id)))) == input_br_ids
             if sc.verbose
                 @info "Block $block_id $block already has connections for inputs $input_br_ids and outputs $out_branches"
             end

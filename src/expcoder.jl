@@ -81,6 +81,12 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
     end
     updated_known_entries = Set{UInt64}()
     for branch_id in updated_factors_explained_branches
+        if branch_id == sc.target_branch_id
+            for (bl_info, cost) in sc.duplicate_copies_queue
+                sc.copies_queue[bl_info] = cost
+            end
+            empty!(sc.duplicate_copies_queue)
+        end
         if !sc.branch_is_not_copy[branch_id] ||
            in(branch_id, new_explained_branches) ||
            branch_id == sc.target_branch_id
@@ -1259,6 +1265,8 @@ function main(; kwargs...)
         "explained_penalty_power" => 8.0,
         "explained_penalty_mult" => 5.0,
         "match_duplicates_penalty" => 80.0,
+        "type_var_penalty_mult" => 8.0,
+        "type_var_penalty_power" => 8.0,
     )
 
     grammar_hash = hash(grammar)

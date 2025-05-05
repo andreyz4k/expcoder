@@ -552,6 +552,8 @@ function build_manual_trace(
         "explained_penalty_power" => 1.0,
         "explained_penalty_mult" => 5.0,
         "match_duplicates_penalty" => 3.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 1.0,
     )
 
     try
@@ -603,6 +605,7 @@ function build_manual_trace(
             !isempty(sc.pq_forward) ||
             !isempty(sc.pq_reverse) ||
             !isempty(sc.copies_queue) ||
+            !isempty(sc.duplicate_copies_queue) ||
             !isempty(sc.blocks_to_insert) ||
             !isempty(sc.rev_blocks_to_insert) ||
             !isempty(sc.waiting_entries)
@@ -666,9 +669,13 @@ function build_manual_trace(
                 )
             elseif phase == 4
                 if isempty(sc.copies_queue)
-                    continue
+                    if isempty(sc.duplicate_copies_queue)
+                        continue
+                    end
+                    block_info = dequeue!(sc.duplicate_copies_queue)
+                else
+                    block_info = dequeue!(sc.copies_queue)
                 end
-                block_info = dequeue!(sc.copies_queue)
 
                 found_solutions = enumeration_iteration_insert_copy_block_traced(
                     sc,

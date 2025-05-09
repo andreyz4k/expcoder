@@ -828,7 +828,20 @@ function _try_unify_values(v1::Set, v2::Set, check_pattern, block_id)
 end
 
 function make_entry(sc, type_id, values)
-    complexity_summary, max_summary, options_count = get_complexity_summary(values, sc.types[type_id])
+    if length(values) == 0
+        @error "Empty values"
+        @info type_id
+        export_solution_context(sc)
+        error("Empty values")
+    end
+    complexity_summary, max_summary, options_count = try
+        get_complexity_summary(values, sc.types[type_id])
+    catch
+        @error "Error getting complexity summary"
+        @error values
+        @error sc.types[type_id]
+        rethrow()
+    end
     if any(isa(v, EitherOptions) for v in values)
         new_entry = EitherEntry(
             type_id,

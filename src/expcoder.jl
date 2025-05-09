@@ -402,6 +402,10 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
                     end
                     sc.branch_children[branch_id, children] = true
                 end
+                if in(branch_id, get_all_children(sc, branch_id))
+                    @warn "Created branch $branch_id is its own child $entry $entry_index $(sc.types[entry.type_id]) $parents_children"
+                    export_solution_context(sc)
+                end
             end
 
             sc.branch_is_unknown[branch_id] = true
@@ -468,6 +472,16 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
 
             input_branches[var_id] = branch_id
         end
+    end
+
+    if length(input_branches) != length(block.input_vars)
+        @info "Input branches $input_branches"
+        @info "Input vars $input_vars"
+        @info "Block $block"
+        @info "Block id $block_id"
+        @info "Output branch id $output_branch_id"
+        @info "Output var id $output_var_id"
+        @info "Block info $block_info"
     end
 
     sc.blocks_inserted += 1
@@ -579,6 +593,16 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
         p_type = return_type
     end
     fix_context = unify(bp.context, return_type, bp.request)
+    if isnothing(fix_context)
+        @info "Can't unify $return_type with $(bp.request)"
+        @info "Context $(bp.context)"
+        @info "Root request $(bp.root_request)"
+        @info "Root entry $(bp.root_entry)"
+        @info "Skeleton $p"
+        @info "Arg types $arg_types"
+        @info "Return type $return_type"
+        @info "P type $p_type"
+    end
     _, p_fix_type = apply_context(fix_context, p_type)
 
     output_vars, unfixed_vars, has_eithers, has_abductibles =
@@ -715,6 +739,10 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
                     sc.branch_children[parent, branch_id] = true
                 end
                 sc.branch_children[branch_id, children] = true
+            end
+            if in(branch_id, get_all_children(sc, branch_id))
+                @warn "Created branch $branch_id is its own child $entry $entry_index $(sc.types[entry.type_id]) $parents_children"
+                export_solution_context(sc)
             end
         end
 

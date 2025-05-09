@@ -42,6 +42,10 @@ function _find_either_branches_between(sc, old_branch_id, new_branch_id, old_ent
     if all(is_subeither(old_val, new_val) for (old_val, new_val) in zip(old_entry.values, new_entry.values))
         push!(out_branches, old_branch_id)
         for child_id in get_connected_from(sc.branch_children, old_branch_id)
+            if child_id == old_branch_id
+                @error "Branch $old_branch_id is its own child $new_branch_id $old_entry $new_entry"
+                export_solution_context(sc)
+            end
             child_entry = sc.entries[sc.branch_entries[child_id]]
             union!(out_branches, _find_either_branches_between(sc, child_id, new_branch_id, child_entry, new_entry))
         end
@@ -141,6 +145,11 @@ function _tighten_constraint(sc, constrained_branches, new_var_id, new_branch_id
                     sc.branch_children[created_branch_id, children] = true
                 end
 
+                if in(created_branch_id, get_all_children(sc, created_branch_id))
+                    @warn "Created branch $created_branch_id is its own child $branch_id $old_br_entry $new_br_entry $parents_children"
+                    export_solution_context(sc)
+                end
+
                 union!(
                     unknown_old_branches,
                     _find_either_branches_between(sc, branch_id, created_branch_id, old_entry, new_br_entry),
@@ -197,9 +206,30 @@ function _tighten_constraint(sc, constrained_branches, new_var_id, new_branch_id
                 end
                 throw(EnumerationException("Fixing constraint leads to a redundant block"))
             end
+            block = sc.blocks[b_id]
+            if any(!haskey(inputs, var_id) for var_id in block.input_vars)
+                @warn "Don't have all inputs for block $b_id $b_copy_id $block"
+                @warn "Inputs: $inputs"
+                @warn inp_branches
+                @warn out_branches
+                @warn target_branches
+            end
 
             new_b_copy_id = _save_block_branch_connections(sc, b_id, sc.blocks[b_id], inputs, target_branches)
             if any(isa(sc.entries[e], AbductibleEntry) for e in input_entries)
+                if all(!haskey(out_branches, v) for b in inp_branches for v in get_connected_from(sc.branch_vars, b))
+                    @warn "No updated branches for block $b_id $b_copy_id $block"
+                    @warn "Inputs: $inputs"
+                    @warn "Inp entries: $([(e, sc.entries[e]) for e in input_entries])"
+                    @warn "Out branches: $out_branches"
+                    @warn "New branches: $new_branches"
+                    @warn "Target branches: $target_branches"
+                    @warn "Inp branches: $inp_branches"
+                    @warn "Out block branches: $out_block_branches"
+                    @warn "Unknown branches: $unknown_old_branches"
+                    @warn "New branch $((new_var_id, new_branch_id))"
+                    export_solution_context(sc)
+                end
                 b = first(b for b in inp_branches if haskey(out_branches, sc.branch_vars[b]))
                 _abduct_next_block(sc, new_b_copy_id, b_id, out_branches[sc.branch_vars[b]], sc.branch_vars[b], b)
             end

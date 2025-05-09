@@ -378,6 +378,10 @@ function _setup_new_branch(
         end
         sc.branch_children[new_branch_id, children] = true
     end
+    if in(new_branch_id, get_all_children(sc, new_branch_id))
+        @warn "Created branch $new_branch_id is its own child $new_entry $new_entry_index $t_id $(sc.types[t_id]) $new_parents_children"
+        export_solution_context(sc)
+    end
     sc.complexities[new_branch_id] = new_entry.complexity
     sc.unused_explained_complexities[new_branch_id] = new_entry.complexity
     if set_unmatched_complexity
@@ -400,7 +404,20 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    new_entry, new_entry_index = make_entry(sc, t_id, new_values)
+    new_entry, new_entry_index = try
+        make_entry(sc, t_id, new_values)
+    catch e
+        @info "Error in make_entry" exception = (e, catch_backtrace())
+        @info block_id
+        @info sc.blocks[block_id]
+        @info branch_id
+        @info sc.types[t_id]
+        @info new_values
+        @info entry
+        @info sc.types[entry.type_id]
+        export_solution_context(sc)
+        rethrow()
+    end
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
     parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
@@ -463,7 +480,21 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    new_entry, new_entry_index = make_entry(sc, t_id, new_values)
+    new_entry, new_entry_index = try
+        make_entry(sc, t_id, new_values)
+    catch e
+        @info "Error in make_entry" exception = (e, catch_backtrace())
+        @info var_id
+        @info block_id
+        @info sc.blocks[block_id]
+        @info branch_id
+        @info sc.types[t_id]
+        @info new_values
+        @info entry
+        @info sc.types[entry.type_id]
+        export_solution_context(sc)
+        rethrow()
+    end
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
     # @info "Either branch $branch_id"
     # @info "New entry $new_entry"
@@ -518,7 +549,20 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    new_entry, new_entry_index = make_entry(sc, t_id, new_values)
+    new_entry, new_entry_index = try
+        make_entry(sc, t_id, new_values)
+    catch e
+        @info "Error in make_entry" exception = (e, catch_backtrace())
+        @info block_id
+        @info sc.blocks[block_id]
+        @info branch_id
+        @info sc.types[t_id]
+        @info new_values
+        @info entry
+        @info sc.types[entry.type_id]
+        export_solution_context(sc)
+        rethrow()
+    end
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
     parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
@@ -647,6 +691,11 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
                     sc.branch_children[created_branch_id, children] = true
                 end
 
+                if in(created_branch_id, get_all_children(sc, created_branch_id))
+                    @warn "Created branch $created_branch_id is its own child $new_br_entry $new_entry_index $(sc.types[new_br_entry.type_id]) $parents_children"
+                    export_solution_context(sc)
+                end
+
                 original_path_cost = sc.unknown_min_path_costs[b_id]
                 if !isnothing(original_path_cost)
                     sc.unknown_min_path_costs[created_branch_id] = original_path_cost
@@ -727,7 +776,20 @@ function updated_branches(
     fixed_branches::Dict{UInt64,UInt64},
     created_paths,
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
-    new_entry, new_entry_index = make_entry(sc, t_id, new_values)
+    new_entry, new_entry_index = try
+        make_entry(sc, t_id, new_values)
+    catch e
+        @info "Error in make_entry" exception = (e, catch_backtrace())
+        @info block_id
+        @info sc.blocks[block_id]
+        @info branch_id
+        @info sc.types[t_id]
+        @info new_values
+        @info entry
+        @info sc.types[entry.type_id]
+        export_solution_context(sc)
+        rethrow()
+    end
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
@@ -881,6 +943,16 @@ function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_bra
 
     allow_fails = false
     for var_id in unfixed_vars
+        if !haskey(inputs, var_id)
+            @warn inputs
+            @warn var_id
+            @warn block_id
+            @warn sc.blocks[block_id]
+            @warn inp_branches
+            @warn all_inputs
+            @warn fixed_branches
+            @warn unfixed_vars
+        end
         br_id = inputs[var_id]
         if !sc.branch_is_explained[br_id] && isa(sc.entries[sc.branch_entries[br_id]], NoDataEntry)
             allow_fails = true
@@ -955,6 +1027,25 @@ function _downstream_blocks_new_branch(sc, var_id, out_branch_id, fixed_branches
 end
 
 function _save_block_branch_connections(sc, block_id, block, fixed_branches, out_branches)
+    for var_id in block.input_vars
+        if !haskey(fixed_branches, var_id)
+            @error "No fixed branch for $var_id"
+            @error fixed_branches
+            @error block
+            @error block_id
+            @error out_branches
+            export_solution_context(sc)
+            error("No fixed branch for $var_id")
+        end
+        if sc.branch_vars[fixed_branches[var_id]] != var_id
+            @error "Wrong branch in fixed vars"
+            @error fixed_branches
+            @error "$block, $block_id"
+            @error "$((var_id, sc.branch_vars[fixed_branches[var_id]]))"
+            export_solution_context(sc)
+            error("Wrong branch in fixed vars")
+        end
+    end
     input_br_ids = sort(UInt64[fixed_branches[var_id] for var_id in block.input_vars])
     existing_incoming = DefaultDict{UInt64,Int}(() -> 0)
     for out_br_id in out_branches

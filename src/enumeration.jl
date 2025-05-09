@@ -307,7 +307,28 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_
 
     for (var_id, t) in arguments_of_type(p_fix_type)
         vals = calculated_values[var_id]
-        complexity_summary, max_summary, options_count = get_complexity_summary(vals, t)
+        if length(vals) == 0
+            @error "Empty values"
+            @error p
+            @error out_entry
+            @error sc.types[out_entry.type_id]
+            @error p_fix_type
+            @error calculated_values
+            export_solution_context(sc)
+            error("Empty values")
+        end
+        complexity_summary, max_summary, options_count = try
+            get_complexity_summary(vals, t)
+        catch
+            @error "Error getting complexity summary"
+            @error p
+            @error out_entry
+            @error sc.types[out_entry.type_id]
+            @error p_fix_type
+            @error calculated_values
+            # export_solution_context(sc)
+            rethrow()
+        end
         _, t_norm = instantiate(t, empty_context)
         t_root = p_type.arguments[var_id]
         t_norm_id = push!(sc.types, t_norm)
@@ -466,6 +487,29 @@ function try_run_block(
         throw(EnumerationException())
     end
 
+    if !haskey(target_output, block.output_var)
+        @info "Output variable $((block.output_var,)) not in target output $target_output"
+
+        inputs = Dict(
+            var_id => (
+                fixed_branches[var_id],
+                sc.branch_entries[fixed_branches[var_id]],
+                sc.types[sc.entries[sc.branch_entries[fixed_branches[var_id]]].type_id],
+                sc.branch_is_not_const[fixed_branches[var_id]],
+                sc.entries[sc.branch_entries[fixed_branches[var_id]]],
+            ) for var_id in sc.blocks[block_id].input_vars
+        )
+        outputs = Dict(
+            var_id => (
+                br_id,
+                sc.branch_entries[br_id],
+                sc.types[sc.entries[sc.branch_entries[br_id]].type_id],
+                sc.entries[sc.branch_entries[br_id]],
+            ) for (var_id, br_id) in target_output
+        )
+        @info "Running $block_id $(sc.blocks[block_id]) with inputs $inputs and output $outputs"
+    end
+
     out_branch_id = target_output[block.output_var]
     expected_output = sc.entries[sc.branch_entries[out_branch_id]]
 
@@ -557,11 +601,26 @@ function try_run_block(
             push!(outs[v_id], v)
         end
     end
+    # @info block.type
+    new_type = try
+        _update_block_output_type(block.type, input_types[1])
+    catch e
+        @error e
+        @error block.type
+        @error input_types
+        @error block
+        @error block_id
+        @error fixed_branches
+        @error target_output
+        export_solution_context(sc)
+        rethrow()
+    end
+    # @info new_type
     return value_updates(
         sc,
         block,
         block_id,
-        _update_block_output_type(block.type, input_types[1]),
+        new_type,
         target_output,
         [outs[v_id] for v_id in block.output_vars],
         fixed_branches,
@@ -627,6 +686,37 @@ function try_run_block_with_downstream(
 
     for (b_id, downstream_branches, downstream_target) in next_blocks
         next_block = sc.blocks[b_id]
+        if any(!haskey(downstream_branches, v_id) for v_id in next_block.input_vars)
+            @info "Not all inputs are set"
+            @info block
+            inputs = Dict(
+                var_id => (
+                    br_id,
+                    sc.branch_entries[fixed_branches[var_id]],
+                    sc.types[sc.entries[sc.branch_entries[fixed_branches[var_id]]].type_id],
+                    sc.branch_is_not_const[fixed_branches[var_id]],
+                    sc.entries[sc.branch_entries[fixed_branches[var_id]]],
+                ) for (var_id, br_id) in fixed_branches
+            )
+            @info fixed_branches
+            @info inputs
+            outputs = Dict(
+                var_id => (
+                    br_id,
+                    sc.branch_entries[br_id],
+                    sc.types[sc.entries[sc.branch_entries[br_id]].type_id],
+                    sc.entries[sc.branch_entries[br_id]],
+                ) for (var_id, br_id) in target_output
+            )
+            @info outputs
+            @info (is_new_block, is_new_next_block, set_explained)
+            @info next_block
+            @info downstream_branches
+            @info downstream_target
+
+            @info next_blocks
+            export_solution_context(sc)
+        end
         if !have_valid_paths(sc, [downstream_branches[v_id] for v_id in next_block.input_vars])
             continue
         end

@@ -137,12 +137,16 @@ function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
             if haskey(sc.found_blocks_reverse, entry_id)
                 for block_info in sc.found_blocks_reverse[entry_id]
                     prev_entries = get_connected_from(sc.branch_prev_entries, branch_id)
-                    if all(!in(entry_id, prev_entries) for (_, entry_id, _) in block_info[4])
+                    if sc.traced || all(!in(entry_id, prev_entries) for (_, entry_id, _) in block_info[4])
                         if sc.verbose
                             @info "Adding $((true, branch_id, block_info)) to insert queue"
                         end
                         sc.rev_blocks_to_insert[(branch_id, block_info)] =
                             sc.explained_min_path_costs[branch_id] + block_info[3]
+                    else
+                        if sc.verbose
+                            @info "Skipping $((true, branch_id, block_info)) because of previous entries $prev_entries"
+                        end
                     end
                 end
             end
@@ -220,12 +224,16 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
             if haskey(sc.found_blocks_forward, entry_id)
                 for block_info in sc.found_blocks_forward[entry_id]
                     foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
-                    if all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
+                    if sc.traced || all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
                         if sc.verbose
                             @info "Adding $((false, branch_id, block_info)) to insert queue"
                         end
                         sc.blocks_to_insert[(branch_id, block_info)] =
                             sc.unknown_min_path_costs[branch_id] + block_info[4]
+                    else
+                        if sc.verbose
+                            @info "Skipping $((false, branch_id, block_info)) because of following entries $foll_entries"
+                        end
                     end
                 end
             end
@@ -247,11 +255,15 @@ function enqueue_unknown_var(sc, branch_id, guiding_model_channels, grammar)
         end
         for block_info in sc.found_blocks_forward[entry_id]
             foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
-            if all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
+            if sc.traced || all(!in(entry_id, foll_entries) for (_, entry_id, _) in block_info[5])
                 if sc.verbose
                     @info "Adding $((false, branch_id, block_info)) to insert queue"
                 end
                 sc.blocks_to_insert[(branch_id, block_info)] = sc.unknown_min_path_costs[branch_id] + block_info[4]
+            else
+                if sc.verbose
+                    @info "Skipping $((false, branch_id, block_info)) because of following entries $foll_entries"
+                end
             end
         end
     end

@@ -3,7 +3,7 @@ using Wandb
 
 function hyperparam_search(; kwargs...)
     sweep_tag = randstring(12)
-    group_tag = "hyperparam_search3"
+    group_tag = "hyperparam_search4"
     @info "Starting hyperparameter search with group tag $group_tag and sweep tag $sweep_tag"
 
     parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
@@ -49,6 +49,8 @@ function hyperparam_search(; kwargs...)
             explained_penalty_power,
             explained_penalty_mult,
             match_duplicates_penalty,
+            type_var_penalty_mult,
+            type_var_penalty_power,
             weight_int,
             weight_list,
             weight_color,
@@ -65,6 +67,8 @@ function hyperparam_search(; kwargs...)
                 "explained_penalty_power" => explained_penalty_power,
                 "explained_penalty_mult" => explained_penalty_mult,
                 "match_duplicates_penalty" => match_duplicates_penalty,
+                "type_var_penalty_mult" => type_var_penalty_mult,
+                "type_var_penalty_power" => type_var_penalty_power,
             )
             type_weights = Dict{String,Any}(
                 "int" => weight_int,
@@ -135,21 +139,23 @@ function hyperparam_search(; kwargs...)
         end
 
         scenario = Scenario(
-            path_cost_power = (-3.0 .. 3.5),
-            complexity_power = (1.0 .. 2.5),
-            block_cost_power = (5.0 .. 8.0),
+            path_cost_power = (2.5 .. 6.0),
+            complexity_power = (1.0 .. 3.0),
+            block_cost_power = (6.0 .. 8.0),
             explained_penalty_power = (1.0 .. 8.0),
             explained_penalty_mult = (1.0 .. 20.0),
-            match_duplicates_penalty = (1.0 .. 100.0),
-            weight_int = [1.0, 2.0],
-            weight_list = [1.0, 2.0],
-            weight_color = [2.0, 4.0],
-            weight_bool = [0.5, 1.0, 2.0, 4.0],
-            weight_grid = [1.0, 1.0],
-            weight_tuple2 = [0.5, 2.0, 4.0],
-            weight_set = [1.0, 1.0],
-            weight_any = [0.0, 0.1],
-            weight_either = [0.0, 0.1, 0.2, 0.5, 4.0],
+            match_duplicates_penalty = (30.0 .. 100.0),
+            type_var_penalty_mult = (1.0 .. 6.0),
+            type_var_penalty_power = (1.0 .. 10.0),
+            weight_int = [0.5, 0.5],
+            weight_list = [0.5, 1.0, 2.0, 4.0],
+            weight_color = [1.0, 2.0],
+            weight_bool = [1.0, 1.0],
+            weight_grid = [2.0, 2.0],
+            weight_tuple2 = [1.0, 2.0],
+            weight_set = [4.0, 4.0],
+            weight_any = [1.0, 2.0],
+            weight_either = [0.0, 0.5],
             max_trials = 600,
             batch_size = 1,
         )
@@ -160,6 +166,8 @@ function hyperparam_search(; kwargs...)
         #     explained_penalty_power = [1.0, 1.0],
         #     explained_penalty_mult = [1.0, 1.0],
         #     match_duplicates_penalty = [3.0, 3.0],
+        #     type_var_penalty_mult = [1.0, 1.0],
+        #     type_var_penalty_power = [1.0, 1.0],
         #     weight_int = [1.0, 1.0],
         #     weight_list = [1.0, 1.0],
         #     weight_color = [1.0, 1.0],

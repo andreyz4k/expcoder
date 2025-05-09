@@ -391,7 +391,7 @@ function try_run_function(f::Function, xs)
 end
 
 function try_evaluate_program(p, xs, workspace)
-    try_run_function(run_with_arguments, [p, xs, workspace])
+    try_run_function(run_with_arguments, Any[p, xs, workspace])
 end
 
 function _update_block_type(block_type, input_types, target_type)
@@ -690,6 +690,9 @@ end
 
 Base.hash(r::HitResult, h::UInt64) = hash(r.hit_program, h)
 Base.:(==)(r1::HitResult, r2::HitResult) = r1.hit_program == r2.hit_program
+
+Base.show(io::IO, r::HitResult) =
+    print(io, "HitResult(", r.hit_program, ", ", r.hit_prior, ", ", r.hit_likelihood, ", ", r.hit_time, ")")
 
 function log_results(sc, hits)
     @info(collect(keys(hits)))

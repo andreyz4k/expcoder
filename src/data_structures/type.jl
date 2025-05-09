@@ -3,15 +3,18 @@ abstract type Tp end
 
 struct TypeVariable <: Tp
     id::Int64
+    hash::UInt64
+    TypeVariable(id) = new(id, hash(id))
 end
 
 struct TypeConstructor <: Tp
     name::String
     arguments::Vector{Tp}
     is_poly::Bool
+    hash::UInt64
 
     function TypeConstructor(name, arguments)
-        new(name, arguments, any(is_polymorphic(a) for a in arguments))
+        new(name, arguments, any(is_polymorphic(a) for a in arguments), hash(name, hash(arguments)))
     end
 end
 
@@ -22,9 +25,16 @@ struct TypeNamedArgsConstructor <: Tp
     arguments::OrderedDict{Union{String,UInt64},Tp}
     output::Tp
     is_poly::Bool
+    hash::UInt64
 
     function TypeNamedArgsConstructor(name, arguments, output)
-        new(name, arguments, output, any(is_polymorphic(a) for a in values(arguments)) || is_polymorphic(output))
+        new(
+            name,
+            arguments,
+            output,
+            any(is_polymorphic(a) for a in values(arguments)) || is_polymorphic(output),
+            hash(name, hash(arguments, hash(output))),
+        )
     end
 end
 
@@ -39,9 +49,9 @@ Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.argum
 Base.:(==)(a::TypeNamedArgsConstructor, b::TypeNamedArgsConstructor) =
     a.name == b.name && a.arguments == b.arguments && a.output == b.output
 
-Base.hash(a::TypeVariable, h::Core.UInt64) = hash(a.id, h)
-Base.hash(a::TypeConstructor, h::Core.UInt64) = hash(a.name, hash(a.arguments, h))
-Base.hash(a::TypeNamedArgsConstructor, h::Core.UInt64) = hash(a.name, hash(a.arguments, hash(a.output, h)))
+Base.hash(a::TypeVariable, h::Core.UInt64) = a.hash
+Base.hash(a::TypeConstructor, h::Core.UInt64) = a.hash
+Base.hash(a::TypeNamedArgsConstructor, h::Core.UInt64) = a.hash
 
 Base.show(io::IO, t::Tp) = print(io, show_type(t, true)...)
 

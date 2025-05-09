@@ -195,6 +195,8 @@ function _tighten_constraint(sc, constrained_branches, new_var_id, new_branch_id
                 if sc.verbose
                     @info "Fixing constraint leads to a redundant block"
                 end
+                # continue
+                # TODO: probably shouldn't crash the whole adding of a new block because of one redundant block
                 throw(EnumerationException("Fixing constraint leads to a redundant block"))
             end
 

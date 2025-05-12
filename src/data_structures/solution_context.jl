@@ -25,8 +25,6 @@ mutable struct SolutionContext
     blocks::IndexedStorage{AbstractProgramBlock}
     block_copies_count::CountStorage
 
-    constraints_count::CountStorage
-
     "[parent_branch_id x child_branch_id] -> {false, true}"
     branch_children::ConnectionGraphStorage
 
@@ -40,12 +38,8 @@ mutable struct SolutionContext
     "[var_id x incoming_entry_id] -> count"
     var_incoming_matches_counts::ValueGraphStorage
 
-    "[var_id x constraint_id] -> branch_id"
-    constrained_vars::ValueGraphStorage
-    "[branch_id x constraint_id] -> var_id"
-    constrained_branches::ValueGraphStorage
-    "constraint_id -> context_id"
-    constrained_contexts::VectorStorage{UInt64}
+    "[branch_id x branch_id] -> {false, true}"
+    constrained_branches::ConnectionGraphStorage
 
     "[branch_id x related_branch_id] -> {false, true}"
     related_explained_complexity_branches::ConnectionGraphStorage
@@ -139,15 +133,12 @@ function create_starting_context(
         ConnectionGraphStorage(),
         IndexedStorage{AbstractProgramBlock}(),
         CountStorage(),
-        CountStorage(),
         ConnectionGraphStorage(),
         ValueGraphStorage(),
         ValueGraphStorage(),
         VectorStorage{UInt64}(),
         ValueGraphStorage(),
-        ValueGraphStorage(),
-        ValueGraphStorage(),
-        VectorStorage{UInt64}(),
+        ConnectionGraphStorage(),
         ConnectionGraphStorage(),
         ConnectionGraphStorage(),
         PathsStorage(),
@@ -337,15 +328,12 @@ function start_transaction!(sc::SolutionContext, depth)
     start_transaction!(sc.branch_types, depth)
     start_transaction!(sc.blocks, depth)
     start_transaction!(sc.block_copies_count, depth)
-    start_transaction!(sc.constraints_count, depth)
     start_transaction!(sc.branch_children, depth)
     start_transaction!(sc.branch_incoming_blocks, depth)
     start_transaction!(sc.branch_outgoing_blocks, depth)
     start_transaction!(sc.block_root_branches, depth)
     start_transaction!(sc.var_incoming_matches_counts, depth)
-    start_transaction!(sc.constrained_vars, depth)
     start_transaction!(sc.constrained_branches, depth)
-    start_transaction!(sc.constrained_contexts, depth)
     start_transaction!(sc.related_explained_complexity_branches, depth)
     start_transaction!(sc.related_unknown_complexity_branches, depth)
     start_transaction!(sc.incoming_paths, depth)
@@ -380,15 +368,12 @@ function save_changes!(sc::SolutionContext, depth)
     save_changes!(sc.branch_types, depth)
     save_changes!(sc.blocks, depth)
     save_changes!(sc.block_copies_count, depth)
-    save_changes!(sc.constraints_count, depth)
     save_changes!(sc.branch_children, depth)
     save_changes!(sc.branch_incoming_blocks, depth)
     save_changes!(sc.branch_outgoing_blocks, depth)
     save_changes!(sc.block_root_branches, depth)
     save_changes!(sc.var_incoming_matches_counts, depth)
-    save_changes!(sc.constrained_vars, depth)
     save_changes!(sc.constrained_branches, depth)
-    save_changes!(sc.constrained_contexts, depth)
     save_changes!(sc.related_explained_complexity_branches, depth)
     save_changes!(sc.related_unknown_complexity_branches, depth)
     save_changes!(sc.incoming_paths, depth)
@@ -423,15 +408,12 @@ function drop_changes!(sc::SolutionContext, depth)
     drop_changes!(sc.branch_types, depth)
     drop_changes!(sc.blocks, depth)
     drop_changes!(sc.block_copies_count, depth)
-    drop_changes!(sc.constraints_count, depth)
     drop_changes!(sc.branch_children, depth)
     drop_changes!(sc.branch_incoming_blocks, depth)
     drop_changes!(sc.branch_outgoing_blocks, depth)
     drop_changes!(sc.block_root_branches, depth)
     drop_changes!(sc.var_incoming_matches_counts, depth)
-    drop_changes!(sc.constrained_vars, depth)
     drop_changes!(sc.constrained_branches, depth)
-    drop_changes!(sc.constrained_contexts, depth)
     drop_changes!(sc.related_explained_complexity_branches, depth)
     drop_changes!(sc.related_unknown_complexity_branches, depth)
     drop_changes!(sc.incoming_paths, depth)

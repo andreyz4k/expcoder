@@ -439,18 +439,13 @@ using DataStructures
         v1_branch_id::UInt64 = 3
         v2_branch_id::UInt64 = 4
 
-        constraint_id::UInt64 = 1
-        @test sc.constrained_contexts[constraint_id] === nothing
-
         @test sc.branch_entries[v1_branch_id] == 5
         @test sc.branch_vars[v1_branch_id] == v1_var_id
         @test sc.branch_types[v1_branch_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v1_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v1_branch_id))
-        @test length(get_connected_from(sc.constrained_branches, v1_branch_id)) == 1
-        @test sc.constrained_branches[v1_branch_id, constraint_id] == v1_var_id
-        @test length(get_connected_from(sc.constrained_vars, v1_var_id)) == 1
-        @test sc.constrained_vars[v1_var_id, constraint_id] == v1_branch_id
+        @test length(get_connected_from(sc.constrained_branches, v1_branch_id)) == 2
+        @test sc.constrained_branches[v1_branch_id, v2_branch_id] == true
         @test sc.incoming_paths[v1_branch_id] == Set([])
         @test length(get_connected_from(sc.branch_incoming_blocks, v1_branch_id)) == 0
         @test length(get_connected_from(sc.branch_outgoing_blocks, v1_branch_id)) == 1
@@ -469,10 +464,7 @@ using DataStructures
         @test sc.branch_types[v2_branch_id] == sc.branch_types[inp_branch_id]
         @test isempty(get_connected_from(sc.branch_children, v2_branch_id))
         @test isempty(get_connected_to(sc.branch_children, v2_branch_id))
-        @test length(get_connected_from(sc.constrained_branches, v2_branch_id)) == 1
-        @test sc.constrained_branches[v2_branch_id, constraint_id] == v2_var_id
-        @test length(get_connected_from(sc.constrained_vars, v2_var_id)) == 1
-        @test sc.constrained_vars[v2_var_id, constraint_id] == v2_branch_id
+        @test length(get_connected_from(sc.constrained_branches, v2_branch_id)) == 2
         @test sc.incoming_paths[v2_branch_id] == Set([])
         @test length(get_connected_from(sc.branch_incoming_blocks, v2_branch_id)) == 0
         @test length(get_connected_from(sc.branch_outgoing_blocks, v2_branch_id)) == 1
@@ -520,7 +512,6 @@ using DataStructures
         @test length(get_connected_to(sc.branch_children, v2_child_id)) == 1
         @test sc.branch_children[v2_branch_id, v2_child_id] == true
         @test length(get_connected_from(sc.constrained_branches, v2_child_id)) == 0
-        @test length(get_connected_from(sc.constrained_vars, v2_var_id)) == 1
         @test sc.incoming_paths[v2_child_id] == Set([Path(OrderedDict(v2_var_id => new_block_id), Dict(), 0.0)])
         @test length(get_connected_from(sc.branch_incoming_blocks, v2_child_id)) == 1
         @test sc.branch_incoming_blocks[v2_child_id, new_block_copy_id] == new_block_id
@@ -545,7 +536,6 @@ using DataStructures
         @test length(get_connected_to(sc.branch_children, v1_child_id)) == 1
         @test sc.branch_children[v1_branch_id, v1_child_id] == true
         @test length(get_connected_from(sc.constrained_branches, v1_child_id)) == 0
-        @test length(get_connected_from(sc.constrained_vars, v1_var_id)) == 1
         @test sc.incoming_paths[v1_child_id] == Set([])
         @test length(get_connected_from(sc.branch_incoming_blocks, v1_child_id)) == 0
         @test length(get_connected_from(sc.branch_outgoing_blocks, v1_child_id)) == 1
@@ -576,7 +566,6 @@ using DataStructures
         @test isempty(get_connected_from(sc.branch_children, v2_child_id))
         @test length(get_connected_from(sc.constrained_branches, v2_child_id)) == 0
 
-        @test length(get_connected_from(sc.constrained_vars, v2_var_id)) == 1
         @test sc.incoming_paths[v2_child_id] == Set([Path(OrderedDict(v2_var_id => new_block_id), Dict(), 0.0)])
         @test length(get_connected_from(sc.branch_incoming_blocks, v2_child_id)) == 1
         @test sc.branch_incoming_blocks[v2_child_id, new_block_copy_id] == new_block_id
@@ -597,7 +586,6 @@ using DataStructures
         @test isempty(get_connected_from(sc.branch_children, v1_child_id))
         @test length(get_connected_to(sc.branch_children, v1_child_id)) == 1
         @test sc.branch_children[v1_branch_id, v1_child_id] == true
-        @test length(get_connected_from(sc.constrained_vars, v1_var_id)) == 1
         @test sc.incoming_paths[v1_child_id] == Set([Path(OrderedDict(v1_var_id => const_block_id), Dict(), 0.0)])
         @test length(get_connected_from(sc.branch_incoming_blocks, v1_child_id)) == 1
         @test sc.branch_incoming_blocks[v1_child_id, const_block_copy_id] == const_block_id
@@ -621,7 +609,6 @@ using DataStructures
         @test isempty(get_connected_from(sc.branch_children, out_branch_id))
 
         @test length(get_connected_from(sc.constrained_branches, out_branch_id)) == 0
-        @test length(get_connected_from(sc.constrained_vars, out_var_id)) == 0
         @test sc.incoming_paths[out_branch_id] == Set([
             Path(
                 OrderedDict(out_var_id => first_block_id, v2_var_id => new_block_id, v1_var_id => const_block_id),

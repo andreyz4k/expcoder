@@ -377,7 +377,6 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
         end
 
         either_branch_ids = UInt64[]
-        either_var_ids = UInt64[]
         out_related_complexity_branches = get_connected_from(sc.related_unknown_complexity_branches, output_branch_id)
 
         for (var_id, (_, entry_index, _)) in zip(block.input_vars, input_vars)
@@ -414,7 +413,6 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
 
             if isa(entry, EitherEntry)
                 push!(either_branch_ids, branch_id)
-                push!(either_var_ids, var_id)
             end
 
             input_branches[var_id] = branch_id
@@ -427,16 +425,13 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             end
         end
         if length(either_branch_ids) >= 1
-            active_constraints = keys(get_connected_from(sc.constrained_branches, output_branch_id))
-            if length(active_constraints) == 0
-                new_constraint_id = increment!(sc.constraints_count)
-                # @info "Added new constraint with either $new_constraint_id"
-                active_constraints = UInt64[new_constraint_id]
+            constrained_branches = get_connected_from(sc.constrained_branches, output_branch_id)
+            if sc.verbose
+                @info "Adding constraint with new branches $either_branch_ids and old $constrained_branches"
             end
-            for constraint_id in active_constraints
-                sc.constrained_branches[either_branch_ids, constraint_id] = either_var_ids
-                sc.constrained_vars[either_var_ids, constraint_id] = either_branch_ids
-            end
+            constrained_branches = union(constrained_branches, either_branch_ids)
+
+            sc.constrained_branches[constrained_branches, constrained_branches] = true
         end
     else
         min_path_cost = sc.unknown_min_path_costs[output_branch_id] + cost

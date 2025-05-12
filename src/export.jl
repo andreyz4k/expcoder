@@ -124,6 +124,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
                 string(get_connected_from(sc.related_unknown_complexity_branches, branch_id)),
             "_prev_entries" => string(get_connected_from(sc.branch_prev_entries, branch_id)),
             "_following_entries" => string(get_connected_from(sc.branch_foll_entries, branch_id)),
+            "_constraints" => string(get_connected_from(sc.constrained_branches, branch_id)),
         )
         if !isa(entry, NoDataEntry)
             vertex_dict["_entry_value"] = string(entry.values)

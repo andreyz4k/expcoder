@@ -383,7 +383,17 @@ function _setup_new_branch(
     if set_unmatched_complexity
         sc.unmatched_complexities[new_branch_id] = new_entry.complexity
     end
-    return new_branch_id
+
+    has_constrained_parents = false
+
+    for parent_id in get_all_parents(sc, new_branch_id)
+        if !isempty(get_connected_from(sc.constrained_branches, parent_id))
+            has_constrained_parents = true
+            tighten_constraint(sc, new_branch_id, parent_id)
+        end
+    end
+
+    return new_branch_id, has_constrained_parents
 end
 
 function updated_branches(
@@ -402,7 +412,6 @@ function updated_branches(
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
     new_entry, new_entry_index = make_entry(sc, t_id, new_values)
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
-    parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
@@ -418,7 +427,7 @@ function updated_branches(
         )
     end
 
-    new_branch_id = _setup_new_branch(
+    new_branch_id, has_constrained_parents = _setup_new_branch(
         sc,
         new_entry,
         new_entry_index,
@@ -435,18 +444,12 @@ function updated_branches(
     if isempty(block_created_paths)
         throw(EnumerationException("No valid paths for new block"))
     end
-    if !isempty(parent_constraints)
-        for constraint_id in parent_constraints
-            tighten_constraint(sc, constraint_id, new_branch_id, branch_id)
-        end
-
+    if has_constrained_parents
         allow_fails, next_blocks = _downstream_blocks_existing_branch(sc, var_id, new_branch_id, fixed_branches)
-        is_new_out_branch = false
     else
         allow_fails, next_blocks = _downstream_blocks_new_branch(sc, var_id, new_branch_id, fixed_branches)
-        is_new_out_branch = true
     end
-    return new_branch_id, is_new_out_branch, true, allow_fails, next_blocks, true, block_created_paths
+    return new_branch_id, !has_constrained_parents, true, allow_fails, next_blocks, true, block_created_paths
 end
 
 function updated_branches(
@@ -469,7 +472,6 @@ function updated_branches(
     # @info "New entry $new_entry"
     # @info "Possible result $possible_result"
     # @info "New parents children $new_parents_children"
-    parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
@@ -485,15 +487,13 @@ function updated_branches(
         )
     end
 
-    new_branch_id =
+    new_branch_id, has_constrained_parents =
         _setup_new_branch(sc, new_entry, new_entry_index, var_id, t_id, is_not_copy, is_not_const, new_parents_children)
 
-    if isempty(parent_constraints)
+    if !has_constrained_parents
         error("Either branch doesn't have constraints")
     end
-    for constraint_id in parent_constraints
-        tighten_constraint(sc, constraint_id, new_branch_id, branch_id)
-    end
+
     block_created_paths =
         get_new_paths_for_block(sc, block_id, is_new_block, created_paths, var_id, new_branch_id, fixed_branches)
     if isempty(block_created_paths)
@@ -520,7 +520,6 @@ function updated_branches(
 )::Tuple{UInt64,Bool,Bool,Bool,Set{Any},Bool,Vector{Any}}
     new_entry, new_entry_index = make_entry(sc, t_id, new_values)
     possible_result, new_parents_children = find_related_branches(sc, var_id, new_entry, new_entry_index)
-    parent_constraints = keys(get_connected_from(sc.constrained_branches, branch_id))
     if !isnothing(possible_result)
         return _updates_for_existing_branch(
             sc,
@@ -536,7 +535,7 @@ function updated_branches(
         )
     end
 
-    new_branch_id =
+    new_branch_id, has_constrained_parents =
         _setup_new_branch(sc, new_entry, new_entry_index, var_id, t_id, is_not_copy, is_not_const, new_parents_children)
 
     block_created_paths =
@@ -544,18 +543,12 @@ function updated_branches(
     if isempty(block_created_paths)
         throw(EnumerationException("No valid paths for new block"))
     end
-    if !isempty(parent_constraints)
-        for constraint_id in parent_constraints
-            tighten_constraint(sc, constraint_id, new_branch_id, branch_id)
-        end
-
+    if has_constrained_parents
         allow_fails, next_blocks = _downstream_blocks_existing_branch(sc, var_id, new_branch_id, fixed_branches)
-        is_new_out_branch = false
     else
         allow_fails, next_blocks = _downstream_blocks_new_branch(sc, var_id, new_branch_id, fixed_branches)
-        is_new_out_branch = true
     end
-    return new_branch_id, is_new_out_branch, true, allow_fails, next_blocks, true, block_created_paths
+    return new_branch_id, !has_constrained_parents, true, allow_fails, next_blocks, true, block_created_paths
 end
 
 function _get_abducted_values(sc, out_block_id, branches)
@@ -613,7 +606,6 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
     out_branches[branch_id] = new_branch_id
 
     either_branch_ids = UInt64[]
-    either_var_ids = UInt64[]
 
     for (v_id, b_id) in old_branches
         if haskey(updated_values, v_id)
@@ -626,7 +618,6 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
             if !isnothing(exact_match)
                 if isa(new_br_entry, EitherEntry)
                     push!(either_branch_ids, exact_match)
-                    push!(either_var_ids, v_id)
                 end
                 out_branches[b_id] = exact_match
             else
@@ -656,7 +647,6 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
 
                 if isa(new_br_entry, EitherEntry)
                     push!(either_branch_ids, created_branch_id)
-                    push!(either_var_ids, v_id)
                 end
                 out_branches[b_id] = created_branch_id
                 new_branches[b_id] = created_branch_id
@@ -699,17 +689,13 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
     end
 
     if !isempty(either_branch_ids)
-        active_constraints =
-            union([collect(keys(get_connected_from(sc.constrained_branches, br_id))) for br_id in branch_ids]...)
-        if length(active_constraints) == 0
-            new_constraint_id = increment!(sc.constraints_count)
-            # @info "Added new constraint with either $new_constraint_id"
-            active_constraints = UInt64[new_constraint_id]
+        constrained_branches =
+            union([get_connected_from(sc.constrained_branches, br_id) for br_id in either_branch_ids]...)
+        if sc.verbose
+            @info "Adding constraint on abduct with new branches $either_branch_ids and old $constrained_branches"
         end
-        for constraint_id in active_constraints
-            sc.constrained_branches[either_branch_ids, constraint_id] = either_var_ids
-            sc.constrained_vars[either_var_ids, constraint_id] = either_branch_ids
-        end
+        constrained_branches = union(constrained_branches, either_branch_ids)
+        sc.constrained_branches[constrained_branches, constrained_branches] = true
     end
 end
 
@@ -744,7 +730,7 @@ function updated_branches(
         )
     end
 
-    new_branch_id =
+    new_branch_id, has_constrained_parents =
         _setup_new_branch(sc, new_entry, new_entry_index, var_id, t_id, is_not_copy, is_not_const, new_parents_children)
 
     out_blocks = get_connected_from(sc.branch_outgoing_blocks, branch_id)

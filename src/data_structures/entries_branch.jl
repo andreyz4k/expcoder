@@ -314,7 +314,6 @@ end
 
 function is_parent_entry(sc, old_entry::Union{PatternEntry,AbductibleEntry}, new_entry::EitherEntry)
     return is_subtype(sc.types[old_entry.type_id], sc.types[new_entry.type_id]) && all(
-        isa(new_val, EitherOptions) ? all(is_subeither(old_val, new_v) for (_, new_v) in new_val.options) :
         is_subeither(old_val, new_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values)
     )
 end
@@ -332,10 +331,8 @@ function is_parent_entry(sc, old_entry::EitherEntry, new_entry::Union{PatternEnt
 end
 
 function is_child_entry(sc, old_entry::EitherEntry, new_entry::Union{PatternEntry,AbductibleEntry})
-    return is_subtype(sc.types[new_entry.type_id], sc.types[new_entry.type_id]) && all(
-        isa(old_val, EitherOptions) ? all(is_subeither(new_val, old_v) for (_, old_v) in old_val.options) :
-        is_subeither(new_val, old_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values)
-    )
+    return is_subtype(sc.types[new_entry.type_id], sc.types[new_entry.type_id]) &&
+           all(is_subeither(new_val, old_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values))
 end
 
 function is_parent_entry(sc, old_entry, new_entry)

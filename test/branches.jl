@@ -240,7 +240,7 @@ using DataStructures
         inp_type_id = sc.branch_types[inp_branch_id]
         new_block = ProgramBlock(
             FreeVar(sc.types[inp_type_id], sc.types[inp_type_id], inp_var_id, nothing),
-            sc.types[inp_type_id],
+            inp_type_id,
             0.0,
             [inp_var_id],
             out_var_id,
@@ -320,7 +320,7 @@ using DataStructures
 
         new_block = ProgramBlock(
             FreeVar(sc.types[inp_type_id], sc.types[inp_type_id], inp_var_id, nothing),
-            sc.types[inp_type_id],
+            inp_type_id,
             0.0,
             [inp_var_id],
             connection_var_id,
@@ -485,7 +485,7 @@ using DataStructures
 
         new_block = ProgramBlock(
             FreeVar(inp_type, inp_type, inp_var_id, nothing),
-            inp_type,
+            inp_type_id,
             0.0,
             [inp_var_id],
             v2_var_id,
@@ -552,7 +552,7 @@ using DataStructures
         @test length(get_connected_from(sc.related_unknown_complexity_branches, v1_child_id)) == 1
         @test sc.related_unknown_complexity_branches[v1_child_id, v2_child_id] == true
 
-        const_block = ProgramBlock(SetConst(inp_type, [5]), inp_type, 0.0, [], v1_var_id, false)
+        const_block = ProgramBlock(SetConst(inp_type, [5]), inp_type_id, 0.0, [], v1_var_id, false)
         const_block_id = push!(sc.blocks, const_block)
         new_solution_paths = add_new_block(sc, const_block_id, Dict{UInt64,UInt64}(), Dict(v1_var_id => v1_branch_id))
         const_block_copy_id::UInt64 = 4

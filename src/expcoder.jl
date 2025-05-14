@@ -350,8 +350,15 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
 
         _, new_p_type = instantiate(new_p_type, empty_context)
 
-        block =
-            ProgramBlock(new_p, new_p_type, cost, [new_vars[v] for (v, _, _) in input_vars], output_var_id, is_reverse)
+        new_p_type_id = push!(sc.types, new_p_type)
+        block = ProgramBlock(
+            new_p,
+            new_p_type_id,
+            cost,
+            [new_vars[v] for (v, _, _) in input_vars],
+            output_var_id,
+            is_reverse,
+        )
         block_id = push!(sc.blocks, block)
         sc.block_root_branches[block_id] = output_branch_id
 
@@ -661,8 +668,12 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
             new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars
         )
         p_type = TypeNamedArgsConstructor(ARROW, arg_types, return_of_type(p_type))
+        _, new_p_type = instantiate(p_type, empty_context)
 
-        block = ReverseProgramBlock(new_p, p_type, cost, [input_var_id], [new_vars[v] for (v, _, _) in output_vars])
+        new_p_type_id = push!(sc.types, new_p_type)
+
+        block =
+            ReverseProgramBlock(new_p, new_p_type_id, cost, [input_var_id], [new_vars[v] for (v, _, _) in output_vars])
         var_locations = collect_var_locations(new_p)
         for (var_id, locations) in var_locations
             sc.known_var_locations[var_id] = collect(locations)

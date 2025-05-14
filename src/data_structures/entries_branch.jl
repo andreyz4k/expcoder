@@ -313,9 +313,8 @@ function is_child_entry(sc, old_entry, new_entry::NoDataEntry)
 end
 
 function is_parent_entry(sc, old_entry::Union{PatternEntry,AbductibleEntry}, new_entry::EitherEntry)
-    return is_subtype(sc.types[old_entry.type_id], sc.types[new_entry.type_id]) && all(
-        is_subeither(old_val, new_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values)
-    )
+    return is_subtype(sc.types[old_entry.type_id], sc.types[new_entry.type_id]) &&
+           all(is_subeither(old_val, new_val) for (new_val, old_val) in zip(new_entry.values, old_entry.values))
 end
 
 function is_child_entry(sc, old_entry::Union{PatternEntry,AbductibleEntry}, new_entry::EitherEntry)
@@ -769,8 +768,9 @@ function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_bra
     end
 
     block = sc.blocks[block_id]
-    if is_polymorphic(block.type)
-        context, block_type = instantiate(block.type, empty_context)
+    block_type = sc.types[block.type_id]
+    if is_polymorphic(block_type)
+        context, block_type = instantiate(block_type, empty_context)
         if isa(block, ProgramBlock)
             inp_types = Dict{UInt64,Tp}()
             for (var_id, var_tp) in arguments_of_type(block_type)

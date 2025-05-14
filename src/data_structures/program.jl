@@ -7,7 +7,7 @@ struct Index <: Program
     Index(n::Int64) = new(n, hash(n))
 end
 
-Base.hash(p::Program, h::UInt64) = p.hash_value ⊻ h
+Base.hash(p::Program, h::UInt64) = hash(p.hash_value, h)
 Base.:(==)(p::Index, q::Index) = p.n == q.n
 
 struct Abstraction <: Program
@@ -153,7 +153,7 @@ abstract type AbstractProgramBlock end
 
 struct ProgramBlock <: AbstractProgramBlock
     p::Program
-    type::Tp
+    type_id::UInt64
     cost::Float64
     input_vars::Vector{UInt64}
     output_var::UInt64
@@ -165,7 +165,7 @@ Base.show(io::IO, block::ProgramBlock) = print(
     "ProgramBlock(",
     block.p,
     ", ",
-    block.type,
+    block.type_id,
     ", ",
     block.cost,
     ", ",
@@ -177,17 +177,17 @@ Base.show(io::IO, block::ProgramBlock) = print(
 
 Base.:(==)(block::ProgramBlock, other::ProgramBlock) =
     block.p == other.p &&
-    block.type == other.type &&
+    block.type_id == other.type_id &&
     block.cost == other.cost &&
     block.input_vars == other.input_vars &&
     block.output_var == other.output_var
 
 Base.hash(block::ProgramBlock, h::UInt64) =
-    hash(block.p, hash(block.type, hash(block.cost, hash(block.input_vars, hash(block.output_var, h)))))
+    hash(block.p, hash(block.type_id, hash(block.cost, hash(block.input_vars, hash(block.output_var, h)))))
 
 struct ReverseProgramBlock <: AbstractProgramBlock
     p::Program
-    type::Tp
+    type_id::UInt64
     cost::Float64
     input_vars::Vector{UInt64}
     output_vars::Vector{UInt64}
@@ -198,7 +198,7 @@ Base.show(io::IO, block::ReverseProgramBlock) = print(
     "ReverseProgramBlock(",
     block.p,
     ", ",
-    block.type,
+    block.type_id,
     ", ",
     block.cost,
     ", ",
@@ -210,13 +210,13 @@ Base.show(io::IO, block::ReverseProgramBlock) = print(
 
 Base.:(==)(block::ReverseProgramBlock, other::ReverseProgramBlock) =
     block.p == other.p &&
-    block.type == other.type &&
+    block.type_id == other.type_id &&
     block.cost == other.cost &&
     block.input_vars == other.input_vars &&
     block.output_vars == other.output_vars
 
 Base.hash(block::ReverseProgramBlock, h::UInt64) =
-    hash(block.p, hash(block.type, hash(block.cost, hash(block.input_vars, hash(block.output_vars, h)))))
+    hash(block.p, hash(block.type_id, hash(block.cost, hash(block.input_vars, hash(block.output_vars, h)))))
 
 struct UnknownPrimitive <: Exception
     name::String

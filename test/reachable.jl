@@ -165,7 +165,7 @@ using DataStructures
         return create_arc_task(fname, tp)
     end
 
-    function _extract_blocks(task, target_program, verbose = false)
+    function _extract_blocks(types, task, target_program, verbose = false)
         vars_mapping = Dict{Any,UInt64}()
         vars_from_input = Set{Any}()
         for (arg, _) in task.task_type.arguments
@@ -200,7 +200,7 @@ using DataStructures
                         push!(in_vars, length(vars_mapping) + copied_vars)
                         copy_block = ProgramBlock(
                             FreeVar(t0, t0, vars_mapping[v], nothing),
-                            t0,
+                            push!(types, t0),
                             0.0,
                             [vars_mapping[v]],
                             length(vars_mapping) + copied_vars,
@@ -214,7 +214,7 @@ using DataStructures
                 if !haskey(vars_mapping, p.var_id)
                     vars_mapping[p.var_id] = length(vars_mapping) + copied_vars + 1
                 end
-                bl = ProgramBlock(p.v, t0, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
+                bl = ProgramBlock(p.v, push!(types, t0), 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
                 push!(blocks, bl)
                 p = p.b
             elseif p isa LetRevClause
@@ -232,7 +232,7 @@ using DataStructures
 
                 bl = ReverseProgramBlock(
                     p.v,
-                    t0,
+                    push!(types, t0),
                     0.0,
                     [vars_mapping[p.inp_var_id]],
                     [vars_mapping[v] for v in p.var_ids],
@@ -241,7 +241,14 @@ using DataStructures
                 p = p.b
             elseif p isa FreeVar
                 in_var = vars_mapping[p.var_id]
-                bl = ProgramBlock(FreeVar(t0, t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
+                bl = ProgramBlock(
+                    FreeVar(t0, t0, in_var, nothing),
+                    push!(types, t0),
+                    0.0,
+                    [in_var],
+                    vars_mapping["out"],
+                    false,
+                )
                 push!(blocks, bl)
                 break
             else
@@ -256,7 +263,7 @@ using DataStructures
                         push!(in_vars, length(vars_mapping) + copied_vars)
                         copy_block = ProgramBlock(
                             FreeVar(t0, t0, vars_mapping[v], nothing),
-                            t0,
+                            push!(types, t0),
                             0.0,
                             [vars_mapping[v]],
                             length(vars_mapping) + copied_vars,
@@ -267,7 +274,7 @@ using DataStructures
                         push!(in_vars, vars_mapping[v])
                     end
                 end
-                bl = ProgramBlock(p, t0, 0.0, in_vars, vars_mapping["out"], is_reversible(p))
+                bl = ProgramBlock(p, push!(types, t0), 0.0, in_vars, vars_mapping["out"], is_reversible(p))
                 push!(blocks, bl)
                 break
             end
@@ -924,12 +931,6 @@ using DataStructures
                 return
             end
 
-            blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
-            if verbose_test
-                @info blocks
-                @info vars_mapping
-            end
-
             if isa(guiding_model_server, PythonGuidingModelServer)
                 redis_db = guiding_model_server.model.redis_db
                 guiding_model_channels = get_redis_connection(redis_db)
@@ -941,6 +942,12 @@ using DataStructures
             end
 
             sc = create_starting_context(task, task.name, type_weights, hyperparameters, verbose_test)
+
+            blocks, vars_mapping = _extract_blocks(sc.types, task, target_program, verbose_test)
+            if verbose_test
+                @info blocks
+                @info vars_mapping
+            end
 
             try
                 enqueue_updates(sc, guiding_model_channels, task_grammar)

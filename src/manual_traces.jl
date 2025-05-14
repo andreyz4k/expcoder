@@ -79,7 +79,7 @@ function build_manual_traces(tasks, guiding_model_server::PythonGuidingModelServ
     return traces
 end
 
-function _extract_blocks(task, target_program, verbose = false)
+function _extract_blocks(types, task, target_program, verbose = false)
     vars_mapping = Dict{Any,UInt64}()
     vars_from_input = Set{Any}()
     vars_from_rev = Set{Any}()
@@ -130,7 +130,7 @@ function _extract_blocks(task, target_program, verbose = false)
                     push!(in_vars, out_var)
                     copy_block = ProgramBlock(
                         FreeVar(t0, t0, vars_mapping[v], nothing),
-                        t0,
+                        push!(types, t0),
                         0.0,
                         [vars_mapping[v]],
                         out_var,
@@ -151,7 +151,7 @@ function _extract_blocks(task, target_program, verbose = false)
             else
                 context = unify(context, var_types[vars_mapping[p.var_id]], return_of_type(tp))
             end
-            bl = ProgramBlock(p.v, tp, 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
+            bl = ProgramBlock(p.v, push!(types, tp), 0.0, in_vars, vars_mapping[p.var_id], is_reversible(p.v))
             if isa(p.v, FreeVar)
                 push!(copy_blocks, bl)
             else
@@ -183,7 +183,13 @@ function _extract_blocks(task, target_program, verbose = false)
                 end
             end
 
-            bl = ReverseProgramBlock(p.v, tp, 0.0, [vars_mapping[p.inp_var_id]], [vars_mapping[v] for v in p.var_ids])
+            bl = ReverseProgramBlock(
+                p.v,
+                push!(types, tp),
+                0.0,
+                [vars_mapping[p.inp_var_id]],
+                [vars_mapping[v] for v in p.var_ids],
+            )
             if !haskey(rev_blocks, vars_mapping[p.inp_var_id])
                 rev_blocks[vars_mapping[p.inp_var_id]] = []
             end
@@ -191,7 +197,14 @@ function _extract_blocks(task, target_program, verbose = false)
             p = p.b
         elseif p isa FreeVar
             in_var = vars_mapping[p.var_id]
-            bl = ProgramBlock(FreeVar(t0, t0, in_var, nothing), t0, 0.0, [in_var], vars_mapping["out"], false)
+            bl = ProgramBlock(
+                FreeVar(t0, t0, in_var, nothing),
+                push!(types, t0),
+                0.0,
+                [in_var],
+                vars_mapping["out"],
+                false,
+            )
             push!(copy_blocks, bl)
             break
         else
@@ -210,7 +223,7 @@ function _extract_blocks(task, target_program, verbose = false)
                     push!(in_vars, out_var)
                     copy_block = ProgramBlock(
                         FreeVar(t0, t0, vars_mapping[v], nothing),
-                        t0,
+                        push!(types, t0),
                         0.0,
                         [vars_mapping[v]],
                         out_var,
@@ -222,7 +235,7 @@ function _extract_blocks(task, target_program, verbose = false)
                     push!(in_vars, vars_mapping[v])
                 end
             end
-            bl = ProgramBlock(p, tp, 0.0, in_vars, vars_mapping["out"], is_reversible(p))
+            bl = ProgramBlock(p, push!(types, tp), 0.0, in_vars, vars_mapping["out"], is_reversible(p))
             if !haskey(out_blocks, vars_mapping["out"])
                 out_blocks[vars_mapping["out"]] = []
             end
@@ -564,15 +577,15 @@ function build_manual_trace(
             error("Invalid target program $target_program for task $task")
         end
 
-        rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
-            _extract_blocks(task, target_program, verbose_test)
-
         matching_vars = Dict{Any,Any}()
 
         start_time = time()
 
         # verbose_test = true
         sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test, true)
+
+        rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
+            _extract_blocks(sc.types, task, target_program, verbose_test)
 
         enqueue_updates(sc, guiding_model_channels, grammar)
 

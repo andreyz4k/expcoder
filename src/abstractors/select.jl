@@ -105,6 +105,8 @@ function reverse_rev_select()
         f_info = context.arguments[end]
         f = f_info.p
 
+        empty_workspace = Dict()
+
         if isa(f, Abstraction) &&
            isa(f.b, Apply) &&
            (isa(f.b.x, FreeVar) || isa(f.b.x, Index)) &&
@@ -118,20 +120,20 @@ function reverse_rev_select()
             selector = Abstraction(f.b.f.x)
 
             for i in 1:length(value)
-                selector_option = try_evaluate_program(selector, [value[i]], Dict())
+                selector_option = try_evaluate_program(selector, [value[i]], empty_workspace)
                 if in(selector_option, checked_options)
                     continue
                 end
                 push!(checked_options, selector_option)
                 results_base = Array{Any}(undef, size(value)...)
                 results_others = Array{Any}(undef, size(value)...)
-                for j in 1:length(value)
-                    if try_evaluate_program(selector, [value[j]], Dict()) == selector_option
-                        results_base[j] = value[j]
+                for (j, val) in enumerate(value)
+                    if try_evaluate_program(selector, [val], empty_workspace) == selector_option
+                        results_base[j] = val
                         results_others[j] = nothing
                     else
                         results_base[j] = any_object
-                        results_others[j] = value[j]
+                        results_others[j] = val
                     end
                 end
                 option_hash = hash((selector_option, results_base, results_others), context.block_id)
@@ -169,13 +171,13 @@ function reverse_rev_select()
         else
             results_base = Array{Any}(undef, size(value)...)
             results_others = Array{Any}(undef, size(value)...)
-            for i in 1:length(value)
-                if try_evaluate_program(f, [value[i]], Dict())
-                    results_base[i] = value[i]
+            for (i, val) in enumerate(value)
+                if try_evaluate_program(f, [val], empty_workspace)
+                    results_base[i] = val
                     results_others[i] = nothing
                 else
                     results_base[i] = any_object
-                    results_others[i] = value[i]
+                    results_others[i] = val
                 end
             end
             # if all(v == results_others[1] for v in results_others)

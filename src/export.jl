@@ -205,7 +205,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
     if !isnothing(previous_traces)
         for (trace, _) in previous_traces
             p = parse_program(trace.hit_program)
-            in_blocks, out_blocks, copy_blocks, vars_mapping, var_types = _extract_blocks(sc.task, p, false)
+            in_blocks, out_blocks, copy_blocks, vars_mapping, var_types = _extract_blocks(sc.types, sc.task, p, false)
             for (var, blocks) in Iterators.flatten([out_blocks, in_blocks])
                 for (i, block) in enumerate(blocks)
                     if isa(block.p, FreeVar)
@@ -244,7 +244,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_block_copy_id" => block_copy_id,
             "_block_type" => typeof(block),
             "_p" => string(block.p),
-            "_type" => string(block.type),
+            "_type" => string(sc.types[block.type_id]),
             "_cost" => block.cost,
             "_depth" => get(blocks_depths, block_id, -200) + rand(),
             "_root_branch" => sc.block_root_branches[block_id],

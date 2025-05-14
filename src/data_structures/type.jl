@@ -20,14 +20,27 @@ end
 
 using DataStructures
 
-struct TypeNamedArgsConstructor <: Tp
+struct TypeNamedArgsConstructor{K,V} <: Tp where {K,V}
     name::String
-    arguments::OrderedDict{Union{String,UInt64},Tp}
+    arguments::OrderedDict{K,V}
     output::Tp
     is_poly::Bool
     hash::UInt64
 
-    function TypeNamedArgsConstructor(name, arguments, output)
+    function TypeNamedArgsConstructor(name, arguments::OrderedDict{K,V}, output) where {K<:String,V}
+        TypeNamedArgsConstructor{String,V}(name, arguments, output)
+    end
+    function TypeNamedArgsConstructor(name, arguments::OrderedDict{UInt64,V}, output) where {V}
+        TypeNamedArgsConstructor{UInt64,V}(name, arguments, output)
+    end
+    function TypeNamedArgsConstructor(name, arguments::OrderedDict{K,V}, output) where {K,V}
+        TypeNamedArgsConstructor{Union{String,UInt64},V}(name, arguments, output)
+    end
+    function TypeNamedArgsConstructor{K}(name, arguments::OrderedDict{K2,V}, output) where {K,K2,V}
+        TypeNamedArgsConstructor{K,V}(name, arguments, output)
+    end
+
+    function TypeNamedArgsConstructor{K,V}(name, arguments, output) where {K,V}
         new(
             name,
             arguments,
@@ -49,9 +62,9 @@ Base.:(==)(a::TypeConstructor, b::TypeConstructor) = a.name == b.name && a.argum
 Base.:(==)(a::TypeNamedArgsConstructor, b::TypeNamedArgsConstructor) =
     a.name == b.name && a.arguments == b.arguments && a.output == b.output
 
-Base.hash(a::TypeVariable, h::Core.UInt64) = a.hash
-Base.hash(a::TypeConstructor, h::Core.UInt64) = a.hash
-Base.hash(a::TypeNamedArgsConstructor, h::Core.UInt64) = a.hash
+Base.hash(a::TypeVariable, h::Core.UInt64) = hash(a.hash, h)
+Base.hash(a::TypeConstructor, h::Core.UInt64) = hash(a.hash, h)
+Base.hash(a::TypeNamedArgsConstructor, h::Core.UInt64) = hash(a.hash, h)
 
 Base.show(io::IO, t::Tp) = print(io, show_type(t, true)...)
 
@@ -161,20 +174,20 @@ function instantiate(t::TypeConstructor, context, bindings = nothing)
     return (context, TypeConstructor(t.name, new_arguments))
 end
 
-function instantiate(t::TypeNamedArgsConstructor, context, bindings = nothing)
+function instantiate(t::TypeNamedArgsConstructor{K,V}, context, bindings = nothing) where {K,V}
     if !t.is_poly
         return context, t
     end
     if isnothing(bindings)
         bindings = Dict()
     end
-    new_arguments = OrderedDict{Union{String,UInt64},Tp}()
+    new_arguments = OrderedDict{K,V}()
     for (k, x) in t.arguments
         (context, new_x) = instantiate(x, context, bindings)
         new_arguments[k] = new_x
     end
     (context, new_output) = instantiate(t.output, context, bindings)
-    return (context, TypeNamedArgsConstructor(t.name, new_arguments, new_output))
+    return (context, TypeNamedArgsConstructor{K,V}(t.name, new_arguments, new_output))
 end
 
 arguments_of_type(t::TypeConstructor) =
@@ -355,17 +368,17 @@ function apply_context(context, t::TypeConstructor)
     (context, TypeConstructor(t.name, new_argtypes))
 end
 
-function apply_context(context, t::TypeNamedArgsConstructor)
+function apply_context(context, t::TypeNamedArgsConstructor{K,V}) where {K,V}
     if !is_polymorphic(t)
         (context, t)
     end
-    new_argtypes = OrderedDict{Union{String,UInt64},Tp}()
+    new_argtypes = OrderedDict{K,V}()
     for (k, x) in t.arguments
         context, xt = apply_context(context, x)
         new_argtypes[k] = xt
     end
     context, ot = apply_context(context, t.output)
-    (context, TypeNamedArgsConstructor(t.name, new_argtypes, ot))
+    (context, TypeNamedArgsConstructor{K,V}(t.name, new_argtypes, ot))
 end
 
 using ParserCombinator

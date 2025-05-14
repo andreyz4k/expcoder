@@ -277,11 +277,7 @@ function closed_inference(p)
     var_env = OrderedDict()
     (context, rt) = infer_program_type(empty_context, [], var_env, p)
     if !isempty(var_env)
-        vars_dict = OrderedDict{Union{String,UInt64},Tp}()
-        for (k, v) in var_env
-            _, t = apply_context(context, v)
-            vars_dict[k] = t
-        end
+        vars_dict = OrderedDict(k => apply_context(context, v)[2] for (k, v) in var_env)
         return TypeNamedArgsConstructor(ARROW, vars_dict, rt)
     else
         return rt

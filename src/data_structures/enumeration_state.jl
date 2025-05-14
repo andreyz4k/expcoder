@@ -57,8 +57,7 @@ function enqueue_matches_with_known_var(sc, branch_id)
     entry = sc.entries[entry_id]
     tp = sc.types[sc.branch_types[branch_id]]
     for (pr, output_var_id, output_br_id, prev_matches_count) in matching_with_known_candidates(sc, entry, branch_id)
-        type_id =
-            push!(sc.types, TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(var_id => tp), tp))
+        type_id = push!(sc.types, TypeNamedArgsConstructor{UInt64}(ARROW, OrderedDict(var_id => tp), tp))
         bl = ProgramBlock(
             pr,
             type_id,
@@ -182,8 +181,7 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
     entry = sc.entries[entry_id]
     for (pr, in_var_id, in_branch_id, in_type, prev_matches_count) in
         matching_with_unknown_candidates(sc, entry, branch_id)
-        type_id =
-            push!(sc.types, TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(in_var_id => in_type), in_type))
+        type_id = push!(sc.types, TypeNamedArgsConstructor{UInt64}(ARROW, OrderedDict(in_var_id => in_type), in_type))
         bl = ProgramBlock(
             pr,
             type_id,

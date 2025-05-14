@@ -249,12 +249,8 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
     arg_types = _get_free_vars(p)
     _, return_type = apply_context(bp.context, bp.root_request)
     if !isempty(arg_types)
-        new_arg_types = OrderedDict{Union{String,UInt64},Tp}()
-        for (var_id, (t, fix_t)) in arg_types
-            _, t = apply_context(bp.context, t)
-            new_arg_types[var_id] = t
-        end
-        p_type = TypeNamedArgsConstructor(ARROW, new_arg_types, return_type)
+        new_arg_types = OrderedDict(var_id => apply_context(bp.context, t)[2] for (var_id, (t, fix_t)) in arg_types)
+        p_type = TypeNamedArgsConstructor{UInt64}(ARROW, new_arg_types, return_type)
     else
         p_type = return_type
     end
@@ -340,10 +336,8 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
         new_p, new_vars = capture_new_free_vars(sc, p)
 
         if !isempty(new_vars)
-            arg_types = OrderedDict{Union{String,UInt64},Tp}(
-                new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars
-            )
-            new_p_type = TypeNamedArgsConstructor(ARROW, arg_types, return_of_type(p_type))
+            arg_types = OrderedDict{UInt64,Tp}(new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars)
+            new_p_type = TypeNamedArgsConstructor{UInt64}(ARROW, arg_types, return_of_type(p_type))
         else
             new_p_type = p_type
         end
@@ -571,12 +565,8 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
     arg_types = _get_free_vars(p)
     _, return_type = apply_context(bp.context, bp.root_request)
     if !isempty(arg_types)
-        new_arg_types = OrderedDict{Union{String,UInt64},Tp}()
-        for (var_id, (t, fix_t)) in arg_types
-            _, t = apply_context(bp.context, t)
-            new_arg_types[var_id] = t
-        end
-        p_type = TypeNamedArgsConstructor(ARROW, new_arg_types, return_type)
+        new_arg_types = OrderedDict(var_id => apply_context(bp.context, t)[2] for (var_id, (t, fix_t)) in arg_types)
+        p_type = TypeNamedArgsConstructor{UInt64}(ARROW, new_arg_types, return_type)
     else
         p_type = return_type
     end
@@ -664,10 +654,8 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
     if isnothing(block_id)
         new_p, new_vars = capture_new_free_vars(sc, p)
 
-        arg_types = OrderedDict{Union{String,UInt64},Tp}(
-            new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars
-        )
-        p_type = TypeNamedArgsConstructor(ARROW, arg_types, return_of_type(p_type))
+        arg_types = OrderedDict(new_var => p_type.arguments[old_var] for (old_var, new_var) in new_vars)
+        p_type = TypeNamedArgsConstructor{UInt64}(ARROW, arg_types, return_of_type(p_type))
         _, new_p_type = instantiate(p_type, empty_context)
 
         new_p_type_id = push!(sc.types, new_p_type)

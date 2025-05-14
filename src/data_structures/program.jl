@@ -49,10 +49,11 @@ struct Invented <: Program
     t::Tp
     b::Program
     is_reversible::Bool
+    name::String
     hash_value::UInt64
-    Invented(t::Tp, b::Program) = new(t, b, is_reversible(b), hash(b))
+    Invented(t::Tp, b::Program) = new(t, b, is_reversible(b), "#" * string(b), hash(b))
 end
-Base.:(==)(p::Invented, q::Invented) = p.b == q.b
+Base.:(==)(p::Invented, q::Invented) = p.name == q.name
 
 struct Hole <: Program
     t::Tp
@@ -131,7 +132,7 @@ show_program(p::Apply, is_function::Bool) =
 show_program(p::Primitive, is_function::Bool) = [p.name]
 show_program(p::FreeVar, is_function::Bool) = ["\$", (isa(p.var_id, UInt64) ? "v" : ""), "$(p.var_id)"]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
-show_program(p::Invented, is_function::Bool) = vcat(["#"], show_program(p.b, false))
+show_program(p::Invented, is_function::Bool) = [p.name]
 show_program(p::SetConst, is_function::Bool) = vcat(["Const("], show_type(p.t, true), [", ", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let \$v$(p.var_id) = "], show_program(p.v, false), [" in "], show_program(p.b, false))

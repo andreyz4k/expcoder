@@ -35,7 +35,9 @@ using solver:
     t2,
     allow_vars_only,
     is_reversible,
-    AbductibleEntry
+    AbductibleEntry,
+    Grammar,
+    make_dummy_contextual
 
 using DataStructures
 
@@ -98,8 +100,8 @@ using DataStructures
         context, root_type = instantiate(t0, context)
 
         if !haskey(sc.entry_grammars, (entry_id, false))
-            productions = Tuple{Program,Tp,Float64}[(p, p.t, 0.0) for p in grammar]
-            g = Grammar(0.0, -3.0, -3.0, productions)
+            production_scores = Dict{UInt64,Float64}(p.hash_value => 0.0 for p in grammar)
+            g = Grammar(0.0, -3.0, -3.0, grammar, production_scores)
             sc.entry_grammars[(entry_id, false)] = make_dummy_contextual(g)
         end
 

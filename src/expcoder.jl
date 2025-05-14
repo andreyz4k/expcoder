@@ -1254,14 +1254,14 @@ function main(; kwargs...)
     @info "Parsed arguments $parsed_args"
 
     hyperparameters = Dict{String,Any}(
-        "path_cost_power" => 3.0,
-        "complexity_power" => 2.0,
-        "block_cost_power" => 6.0,
-        "explained_penalty_power" => 6.0,
+        "path_cost_power" => 1.5,
+        "complexity_power" => 1.5,
+        "block_cost_power" => 2.5,
+        "explained_penalty_power" => 7.0,
         "explained_penalty_mult" => 5.0,
-        "match_duplicates_penalty" => 80.0,
-        "type_var_penalty_mult" => 2.0,
-        "type_var_penalty_power" => 6.0,
+        "match_duplicates_penalty" => 35.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 4.0,
     )
 
     grammar_hash = hash(grammar)
@@ -1274,13 +1274,13 @@ function main(; kwargs...)
     type_weights = Dict{String,Any}(
         "int" => 0.5,
         "list" => 2.0,
-        "color" => 2.0,
-        "bool" => 1.0,
+        "color" => 4.0,
+        "bool" => 4.0,
         "grid" => 2.0,
         "tuple2" => 2.0,
         "set" => 4.0,
-        "any" => 1.0,
-        "either" => 0.5,
+        "any" => 2.0,
+        "either" => 0.0,
     )
 
     # tasks = tasks[begin:10]

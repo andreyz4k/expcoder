@@ -3,7 +3,8 @@ struct Grammar
     log_variable::Float64
     log_lambda::Float64
     log_free_var::Float64
-    library::Vector{Tuple{Program,Tp,Float64}}
+    library::Vector{Program}
+    weights::Dict{UInt64,Float64}
 end
 
 struct ContextualGrammar
@@ -13,7 +14,7 @@ struct ContextualGrammar
 end
 
 function make_dummy_contextual(g::Grammar)
-    contextual_library = Dict(e => [g for _ in arguments_of_type(t)] for (e, t, _) in g.library)
+    contextual_library = Dict(e => [g for _ in arguments_of_type(e.t)] for e in g.library)
     cg = ContextualGrammar(g, g, contextual_library)
     prune_contextual_grammar(cg)
 end
@@ -25,8 +26,8 @@ function _prune(expression, gs)
     map(zip(argument_types, gs)) do (arg_type, g)
         argument_type = return_of_type(arg_type)
         context, argument_type = instantiate(argument_type, empty_context)
-        filtered_library = filter(g.library) do (_, child_type, _)
-            child_type = return_of_type(child_type)
+        filtered_library = filter(g.library) do child
+            child_type = return_of_type(child.t)
             if might_unify(argument_type, child_type)
                 k, child_type = instantiate(child_type, context)
                 return !isnothing(unify(k, child_type, argument_type))
@@ -34,7 +35,7 @@ function _prune(expression, gs)
                 return false
             end
         end
-        Grammar(g.log_variable, g.log_lambda, g.log_free_var, filtered_library)
+        Grammar(g.log_variable, g.log_lambda, g.log_free_var, filtered_library, g.weights)
     end
 end
 
@@ -141,39 +142,48 @@ function unifying_expressions(
     else
         grammar_candidates = collect(
             Tuple{Program,Vector{Tp},Vector{Tp},Context,Float64},
-            skipmissing(map(g.library) do (p, t, ll)
-                if in_lambda_wrapper && p != every_primitive["rev_fix_param"]
-                    return missing
-                end
-
-                for (f, ind) in current_hole.locations
-                    if violates_symmetry(f, p, ind)
+            skipmissing(
+                map(g.library) do p
+                    if in_lambda_wrapper && p != every_primitive["rev_fix_param"]
                         return missing
                     end
-                end
 
-                if !candidates_filter(p, skeleton, path)
-                    return missing
-                end
+                    for (f, ind) in current_hole.locations
+                        if violates_symmetry(f, p, ind)
+                            return missing
+                        end
+                    end
 
-                if !might_unify(return_of_type(t), request)
-                    return missing
-                else
-                    new_context, new_t = instantiate(t, context)
-                    new_context = unify(new_context, return_of_type(new_t), request)
-                    if isnothing(new_context)
+                    if !candidates_filter(p, skeleton, path)
                         return missing
                     end
-                    new_context, root_t = instantiate(t, new_context)
-                    new_context = unify(new_context, return_of_type(root_t), root_request)
-                    if isnothing(new_context)
+
+                    t = p.t
+                    if !might_unify(return_of_type(t), request)
                         return missing
+                    else
+                        new_context, new_t = instantiate(t, context)
+                        new_context = unify(new_context, return_of_type(new_t), request)
+                        if isnothing(new_context)
+                            return missing
+                        end
+                        new_context, root_t = instantiate(t, new_context)
+                        new_context = unify(new_context, return_of_type(root_t), root_request)
+                        if isnothing(new_context)
+                            return missing
+                        end
+                        (new_context, new_t) = apply_context(new_context, new_t)
+                        (new_context, root_t) = apply_context(new_context, root_t)
+                        return (
+                            p,
+                            arguments_of_type(new_t),
+                            arguments_of_type(root_t),
+                            new_context,
+                            g.weights[p.hash_value],
+                        )
                     end
-                    (new_context, new_t) = apply_context(new_context, new_t)
-                    (new_context, root_t) = apply_context(new_context, root_t)
-                    return (p, arguments_of_type(new_t), arguments_of_type(root_t), new_context, ll)
-                end
-            end),
+                end,
+            ),
         )
     end
 

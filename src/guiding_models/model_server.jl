@@ -254,11 +254,6 @@ end
 
 contextual_grammar_cache = Dict()
 
-function _grammar_with_weights(grammar::Grammar, production_scores, log_variable, log_lambda, log_free_var)
-    productions = Tuple{Program,Tp,Float64}[(p, t, production_scores[p]) for (p, t, _) in grammar.library]
-    return Grammar(log_variable, log_lambda, log_free_var, productions)
-end
-
 function receive_grammar_weights(sc::SolutionContext, guiding_model_channels, grammar)
     receiver_channel = guiding_model_channels[2]
     while isready(receiver_channel)
@@ -292,22 +287,18 @@ function process_grammar_results(sc::SolutionContext, entry_id, is_rev, result, 
     log_free_var = result[end]
     grammar_len = length(grammar)
 
+    production_scores = Dict{UInt64,Float64}(p.hash_value => result[i] for (i, p) in enumerate(grammar))
     sc.entry_grammars[(entry_id, is_rev)] = if !haskey(contextual_grammar_cache, grammar_len)
-        productions = Tuple{Program,Tp,Float64}[(p, p.t, result[i]) for (i, p) in enumerate(grammar)]
-        g = Grammar(log_variable, log_lambda, log_free_var, productions)
+        g = Grammar(log_variable, log_lambda, log_free_var, grammar, production_scores)
         contextual_grammar_cache[grammar_len] = make_dummy_contextual(g)
         contextual_grammar_cache[grammar_len]
     else
         prototype = contextual_grammar_cache[grammar_len]
-        production_scores = Dict{Program,Float64}(p => result[i] for (i, p) in enumerate(grammar))
         ContextualGrammar(
-            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
-            _grammar_with_weights(prototype.no_context, production_scores, log_variable, log_lambda, log_free_var),
+            Grammar(log_variable, log_lambda, log_free_var, prototype.no_context.library, production_scores),
+            Grammar(log_variable, log_lambda, log_free_var, prototype.no_context.library, production_scores),
             Dict(
-                p => [
-                    _grammar_with_weights(g, production_scores, log_variable, log_lambda, log_free_var) for
-                    g in grammars
-                ] for (p, grammars) in prototype.contextual_library
+                p => [Grammar(log_variable, log_lambda, log_free_var, g.library, production_scores) for g in grammars] for (p, grammars) in prototype.contextual_library
             ),
         )
     end

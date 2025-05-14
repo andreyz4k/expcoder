@@ -10,21 +10,12 @@ using solver:
     t0,
     is_reversible,
     FreeVar,
-    Apply,
-    Abstraction,
-    Hole,
-    Primitive,
-    Invented,
     create_starting_context,
     enqueue_updates,
     save_changes!,
     enumeration_iteration,
-    state_finished,
     get_connected_from,
     get_connected_to,
-    show_program,
-    HitResult,
-    BlockPrototype,
     application_parse,
     every_primitive,
     create_arc_task,
@@ -3029,7 +3020,7 @@ using DataStructures
                     ],
                 ),
             )
-            hit, cost = test_build_manual_trace(task, target_solution, grammar3, true)
+            hit, cost = test_build_manual_trace(task, target_solution, grammar3)
             @test !isnothing(hit)
         end
     end

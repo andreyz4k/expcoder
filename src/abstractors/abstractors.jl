@@ -11,6 +11,8 @@ struct CombinedArgChecker
     inner_checkers::Vector
 end
 
+custom_arg_checkers = Dict{UInt64,Vector{Any}}()
+
 function CombinedArgChecker(checkers::Vector)
     should_be_reversible = nothing
     max_index = nothing
@@ -161,20 +163,26 @@ function step_arg_checker(c::SimpleArgChecker, arg)
 end
 
 function _get_custom_arg_checkers(p::Primitive)
-    if haskey(all_abstractors, p)
-        [c[2] for c in all_abstractors[p][1]]
-    else
-        []
+    if !haskey(custom_arg_checkers, p.hash_value)
+        if haskey(all_abstractors, p)
+            custom_arg_checkers[p.hash_value] = [c[2] for c in all_abstractors[p][1]]
+        else
+            custom_arg_checkers[p.hash_value] = []
+        end
     end
+    return custom_arg_checkers[p.hash_value]
 end
 
 _get_custom_arg_checkers(p::Index) = []
 _get_custom_arg_checkers(p::FreeVar) = []
 
 function _get_custom_arg_checkers(p::Invented)
-    checkers, indices_checkers = __get_custom_arg_checkers(p, nothing, Dict())
-    @assert isempty(indices_checkers)
-    return checkers
+    if !haskey(custom_arg_checkers, p.hash_value)
+        checkers, indices_checkers = __get_custom_arg_checkers(p, nothing, Dict())
+        @assert isempty(indices_checkers)
+        custom_arg_checkers[p.hash_value] = checkers
+    end
+    return custom_arg_checkers[p.hash_value]
 end
 
 function __get_custom_arg_checkers(p::Primitive, checker::Nothing, indices_checkers::Dict)

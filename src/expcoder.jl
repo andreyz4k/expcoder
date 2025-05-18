@@ -431,6 +431,10 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
                 sc.related_unknown_complexity_branches[branch_id, inds] = true
             end
         end
+        if length(input_branches) > 0
+            _save_block_branch_connections(sc, block_id, block, input_branches, UInt64[output_branch_id])
+            update_complexity_factors_unknown(sc, input_branches, output_branch_id)
+        end
         if length(either_branch_ids) >= 1
             constrained_branches = get_connected_from(sc.constrained_branches, output_branch_id)
             if sc.verbose
@@ -439,6 +443,13 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             constrained_branches = union(constrained_branches, either_branch_ids)
 
             sc.constrained_branches[constrained_branches, constrained_branches] = true
+            for branch_id in either_branch_ids
+                for child_branch_id in get_all_children(sc, branch_id)
+                    if sc.branch_is_explained[child_branch_id]
+                        tighten_constraint(sc, child_branch_id, branch_id)
+                    end
+                end
+            end
         end
     else
         min_path_cost = sc.unknown_min_path_costs[output_branch_id] + cost
@@ -469,6 +480,10 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
             sc.unknown_complexity_factors[branch_id] = complexity_factor
 
             input_branches[var_id] = branch_id
+        end
+        if length(input_branches) > 0
+            _save_block_branch_connections(sc, block_id, block, input_branches, UInt64[output_branch_id])
+            update_complexity_factors_unknown(sc, input_branches, output_branch_id)
         end
     end
 

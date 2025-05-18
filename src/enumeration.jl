@@ -655,7 +655,6 @@ function try_run_block_with_downstream(
 end
 
 function add_new_block(sc::SolutionContext, block_id, inputs, target_output)
-    # assert_context_consistency(sc)
     if sc.verbose
         @info "Adding block $block_id $(sc.blocks[block_id]) $inputs $target_output"
     end
@@ -665,11 +664,6 @@ function add_new_block(sc::SolutionContext, block_id, inputs, target_output)
         #     error("Not implemented, fix active constraints")
         # end
         try_run_block_with_downstream(sc, block_id, inputs, target_output, true, Dict())
-        # assert_context_consistency(sc)
-    else
-        block = sc.blocks[block_id]
-        _save_block_branch_connections(sc, block_id, block, inputs, UInt64[b_id for (_, b_id) in target_output])
-        update_complexity_factors_unknown(sc, inputs, target_output[block.output_var])
     end
     if sc.verbose
         @info "Inserted block $block_id"

@@ -753,6 +753,9 @@ function build_manual_trace(
                 if !isnothing(ll) && !isinf(ll)
                     dt = time() - start_time
                     res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
+                    if sc.verbose
+                        export_solution_context(sc)
+                    end
                     return res, -cost + ll
                 end
             end

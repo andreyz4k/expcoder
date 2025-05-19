@@ -833,7 +833,6 @@ function enumeration_iteration_insert_copy_block(sc::SolutionContext, block_info
 end
 
 function enumeration_iteration(
-    run_context,
     sc::SolutionContext,
     max_free_parameters::Int,
     bp::BlockPrototype,
@@ -846,11 +845,7 @@ function enumeration_iteration(
             @info "Checking finished $bp"
         end
         transaction(sc) do
-            unfinished_prototypes =
-                @run_with_timeout run_context "program_timeout" enumeration_iteration_finished(sc, bp)
-            if isnothing(unfinished_prototypes)
-                throw(EnumerationException())
-            end
+            unfinished_prototypes = enumeration_iteration_finished(sc, bp)
             for new_bp in unfinished_prototypes
                 if sc.verbose
                     @info "Enqueing $new_bp"
@@ -894,7 +889,7 @@ function solve_task(
 
     enumeration_timeout = get_enumeration_timeout(timeout)
 
-    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose)
+    sc = create_starting_context(task, task_name, type_weights, hyperparameters, run_context, verbose)
 
     # Store the hits in a priority queue
     # We will only ever maintain maximumFrontier best solutions
@@ -963,7 +958,7 @@ function solve_task(
                 q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
                 bp = dequeue!(q)
 
-                enumeration_iteration(run_context, sc, max_free_parameters, bp, entry_id, is_forward)
+                enumeration_iteration(sc, max_free_parameters, bp, entry_id, is_forward)
                 found_solutions = []
             end
 

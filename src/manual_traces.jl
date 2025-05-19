@@ -477,7 +477,6 @@ function enumeration_iteration_insert_copy_block_traced(
 end
 
 function enumeration_iteration_traced(
-    run_context,
     sc::SolutionContext,
     max_free_parameters::Int,
     bp::BlockPrototype,
@@ -493,11 +492,7 @@ function enumeration_iteration_traced(
             @info "Target blocks $target_blocks"
         end
         transaction(sc) do
-            unfinished_prototypes =
-                @run_with_timeout run_context "program_timeout" enumeration_iteration_finished(sc, bp)
-            if isnothing(unfinished_prototypes)
-                throw(EnumerationException())
-            end
+            unfinished_prototypes = enumeration_iteration_finished(sc, bp)
 
             for new_bp in unfinished_prototypes
                 if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
@@ -582,7 +577,7 @@ function build_manual_trace(
         start_time = time()
 
         # verbose_test = true
-        sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test, true)
+        sc = create_starting_context(task, task_name, type_weights, hyperparameters, run_context, verbose_test, true)
 
         rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
             _extract_blocks(sc.types, task, target_program, verbose_test)
@@ -733,7 +728,6 @@ function build_manual_trace(
                 target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
 
                 enumeration_iteration_traced(
-                    run_context,
                     sc,
                     max_free_parameters,
                     bp,

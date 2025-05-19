@@ -285,19 +285,25 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_
 
     sc.block_runs_count += 1
 
-    calculated_values = DefaultDict(() -> [])
-    for value in out_entry.values
-        calculated_value = try_run_function(run_in_reverse, [p, value, block_id])
-        if length(calculated_value) != new_vars_count
-            @warn p
-            @warn p_fix_type
-            @warn value
-            @warn calculated_value
+    calculated_values = @run_with_timeout sc.run_context "program_timeout" begin
+        calculated_values = DefaultDict(() -> [])
+        for value in out_entry.values
+            calculated_value = try_run_function(run_in_reverse, [p, value, block_id])
+            if length(calculated_value) != new_vars_count
+                @warn p
+                @warn p_fix_type
+                @warn value
+                @warn calculated_value
+            end
+            # check_reversed_program_forward(new_p, new_vars, calculated_value, value)
+            for (k, v) in calculated_value
+                push!(calculated_values[k], v)
+            end
         end
-        # check_reversed_program_forward(new_p, new_vars, calculated_value, value)
-        for (k, v) in calculated_value
-            push!(calculated_values[k], v)
-        end
+        calculated_values
+    end
+    if isnothing(calculated_values)
+        throw(EnumerationException())
     end
 
     new_entries = []
@@ -471,30 +477,36 @@ function try_run_block(
 
     sc.block_runs_count += 1
 
-    outs = []
-    for i in 1:sc.example_count
-        xs = inputs[i]
-        out_value = try
-            try_evaluate_program(block.p, [], xs)
-        catch e
-            if !isa(e, EnumerationException)
-                @error e
-                @error xs
-                @error block.p
-            end
-            rethrow()
-        end
-        if isnothing(out_value) || !match_at_index(expected_output, i, out_value)
-            if sc.verbose
-                if isnothing(out_value)
-                    @info "Got nothing for $(block.p) $xs"
-                else
-                    @info "Can't match $out_value for $(block.p) with $expected_output at $i"
+    outs = @run_with_timeout sc.run_context "program_timeout" begin
+        outs = []
+        for i in 1:sc.example_count
+            xs = inputs[i]
+            out_value = try
+                try_evaluate_program(block.p, [], xs)
+            catch e
+                if !isa(e, EnumerationException)
+                    @error e
+                    @error xs
+                    @error block.p
                 end
+                rethrow()
             end
-            throw(EnumerationException())
+            if isnothing(out_value) || !match_at_index(expected_output, i, out_value)
+                if sc.verbose
+                    if isnothing(out_value)
+                        @info "Got nothing for $(block.p) $xs"
+                    else
+                        @info "Can't match $out_value for $(block.p) with $expected_output at $i"
+                    end
+                end
+                throw(EnumerationException())
+            end
+            push!(outs, out_value)
         end
-        push!(outs, out_value)
+        outs
+    end
+    if isnothing(outs)
+        throw(EnumerationException())
     end
     return value_updates(
         sc,
@@ -534,28 +546,33 @@ function try_run_block(
 
     out_entries = Dict(var_id => sc.entries[sc.branch_entries[target_output[var_id]]] for var_id in block.output_vars)
 
-    outs = DefaultDict(() -> [])
-
     sc.block_runs_count += 1
 
-    for i in 1:sc.example_count
-        xs = inputs[i]
-        out_values = try
-            try_run_function(run_in_reverse, vcat([block.p], xs, [block_id]))
-        catch e
-            @error xs
-            @error block.p
-            rethrow()
-        end
-        if isnothing(out_values)
-            throw(EnumerationException())
-        end
-        for (v_id, v) in out_values
-            if !match_at_index(out_entries[v_id], i, v)
+    outs = @run_with_timeout sc.run_context "program_timeout" begin
+        outs = DefaultDict(() -> [])
+        for i in 1:sc.example_count
+            xs = inputs[i]
+            out_values = try
+                try_run_function(run_in_reverse, vcat([block.p], xs, [block_id]))
+            catch e
+                @error xs
+                @error block.p
+                rethrow()
+            end
+            if isnothing(out_values)
                 throw(EnumerationException())
             end
-            push!(outs[v_id], v)
+            for (v_id, v) in out_values
+                if !match_at_index(out_entries[v_id], i, v)
+                    throw(EnumerationException())
+                end
+                push!(outs[v_id], v)
+            end
         end
+        outs
+    end
+    if isnothing(outs)
+        throw(EnumerationException())
     end
     return value_updates(
         sc,

@@ -64,6 +64,7 @@ using DataStructures
         "type_var_penalty_mult" => 1.0,
         "type_var_penalty_power" => 1.0,
     )
+    run_context = Dict{String,Any}()
     grammar = [
         parse_program(p) for p in [
             "map",
@@ -232,7 +233,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, run_context, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
@@ -290,7 +291,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, run_context, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1
@@ -405,7 +406,7 @@ using DataStructures
             ],
         )
 
-        sc = create_starting_context(task, task.name, type_weights, hyperparameters, false)
+        sc = create_starting_context(task, task.name, type_weights, hyperparameters, run_context, false)
         inp_var_id::UInt64 = 1
         out_var_id::UInt64 = 2
         inp_branch_id::UInt64 = 1

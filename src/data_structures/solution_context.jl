@@ -72,6 +72,7 @@ mutable struct SolutionContext
     example_count::Int64
     type_weights::Dict{String,Float64}
     hyperparameters::Dict{String,Any}
+    run_context::Dict{String,Any}
     blocks_found::Int64
     rev_blocks_found::Int64
     blocks_inserted::Int64
@@ -112,6 +113,7 @@ function create_starting_context(
     task_name,
     type_weights,
     hyperparameters,
+    run_context,
     verbose,
     traced = false,
 )::SolutionContext
@@ -159,6 +161,7 @@ function create_starting_context(
         example_count,
         type_weights,
         hyperparameters,
+        run_context,
         0,
         0,
         0,

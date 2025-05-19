@@ -328,7 +328,6 @@ using DataStructures
         guiding_model_server,
         guiding_model_channels,
         grammar,
-        run_context,
         mfp,
         verbose,
     )
@@ -447,7 +446,6 @@ using DataStructures
                     guiding_model_server,
                     guiding_model_channels,
                     grammar,
-                    run_context,
                     mfp,
                     verbose,
                 )
@@ -475,7 +473,6 @@ using DataStructures
         guiding_model_server,
         guiding_model_channels,
         grammar,
-        run_context,
         mfp,
         verbose,
     )
@@ -491,7 +488,6 @@ using DataStructures
                 guiding_model_server,
                 guiding_model_channels,
                 grammar,
-                run_context,
                 mfp,
                 verbose,
             )
@@ -623,7 +619,6 @@ using DataStructures
                     guiding_model_server,
                     guiding_model_channels,
                     grammar,
-                    run_context,
                     mfp,
                     verbose,
                 )
@@ -638,7 +633,7 @@ using DataStructures
                         @info "on path"
                     end
 
-                    enumeration_iteration(run_context, sc, mfp, bp, entry_id, true)
+                    enumeration_iteration(sc, mfp, bp, entry_id, true)
                 else
                     push!(not_on_path_bp, (bp, p))
                     if verbose
@@ -664,7 +659,6 @@ using DataStructures
         guiding_model_server,
         guiding_model_channels,
         grammar,
-        run_context,
         mfp,
         verbose,
     )
@@ -779,7 +773,6 @@ using DataStructures
                     guiding_model_server,
                     guiding_model_channels,
                     grammar,
-                    run_context,
                     mfp,
                     verbose,
                 )
@@ -793,7 +786,7 @@ using DataStructures
                     if verbose
                         @info "on path"
                     end
-                    enumeration_iteration(run_context, sc, mfp, bp, in_entry_id, false)
+                    enumeration_iteration(sc, mfp, bp, in_entry_id, false)
                 else
                     if verbose
                         @info "not on path"
@@ -817,7 +810,6 @@ using DataStructures
         guiding_model_server,
         guiding_model_channels,
         grammar,
-        run_context,
         mfp,
         verbose,
     )
@@ -868,7 +860,6 @@ using DataStructures
                         guiding_model_server,
                         guiding_model_channels,
                         grammar,
-                        run_context,
                         mfp,
                         verbose,
                     )
@@ -941,7 +932,7 @@ using DataStructures
                 guiding_model_channels = (request_channel, result_channel, end_tasks_channel)
             end
 
-            sc = create_starting_context(task, task.name, type_weights, hyperparameters, verbose_test)
+            sc = create_starting_context(task, task.name, type_weights, hyperparameters, run_context, verbose_test)
 
             blocks, vars_mapping = _extract_blocks(sc.types, task, target_program, verbose_test)
             if verbose_test
@@ -983,7 +974,6 @@ using DataStructures
                     guiding_model_server,
                     guiding_model_channels,
                     task_grammar,
-                    run_context,
                     mfp,
                     verbose_test,
                 )

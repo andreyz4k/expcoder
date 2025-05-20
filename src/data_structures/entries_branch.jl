@@ -668,10 +668,11 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
         out_block_branches = keys(get_connected_to(sc.branch_incoming_blocks, b_copy_id))
         target_branches = UInt64[haskey(out_branches, b) ? out_branches[b] : b for b in out_block_branches]
 
-        following_entries = union([get_connected_from(sc.branch_foll_entries, b) for b in target_branches]...)
-        union!(following_entries, [sc.branch_entries[b] for b in target_branches])
-
-        if any(in(sc.branch_entries[b], following_entries) for b in values(inputs))
+        if any(
+            sc.branch_entries[out_br] == sc.branch_entries[in_br] ||
+            sc.branch_foll_entries[out_br, sc.branch_entries[in_br]] for in_br in values(inputs) for
+            out_br in target_branches
+        )
             if sc.verbose
                 @info "Fixing constraint leads to a redundant block"
             end
@@ -964,26 +965,13 @@ function _save_block_branch_connections(sc, block_id, block, fixed_branches, out
     sc.branch_outgoing_blocks[input_br_ids, block_copy_id] = block_id
     sc.branch_incoming_blocks[out_branches, block_copy_id] = block_id
 
-    following_entries = Set{UInt64}()
-    following_branches = Set{UInt64}()
-    for br_id in out_branches
-        union!(following_entries, get_connected_from(sc.branch_foll_entries, br_id))
-        push!(following_entries, sc.branch_entries[br_id])
-        union!(following_branches, get_connected_from(sc.previous_branches, br_id))
-        push!(following_branches, br_id)
+    for out_br_id in out_branches
+        for in_br_id in input_br_ids
+            sc.previous_branches[in_br_id, out_br_id] = true
+            sc.branch_prev_entries[out_br_id, sc.branch_entries[in_br_id]] = true
+            sc.branch_foll_entries[in_br_id, sc.branch_entries[out_br_id]] = true
+        end
     end
-    prev_entries = Set{UInt64}()
-    prev_branches = Set{UInt64}()
-    for br_id in input_br_ids
-        union!(prev_entries, get_connected_from(sc.branch_prev_entries, br_id))
-        push!(prev_entries, sc.branch_entries[br_id])
-        union!(prev_branches, get_connected_to(sc.previous_branches, br_id))
-        push!(prev_branches, br_id)
-    end
-
-    sc.branch_prev_entries[following_branches, prev_entries] = true
-    sc.branch_foll_entries[prev_branches, following_entries] = true
-    sc.previous_branches[prev_branches, following_branches] = true
 
     if sc.verbose
         inputs = [

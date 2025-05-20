@@ -289,15 +289,14 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
 
     for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
         if sc.branch_is_unknown[branch_id]
-            foll_entries = get_connected_from(sc.branch_foll_entries, branch_id)
-            if sc.traced || all(!in(entry_id, foll_entries) for (_, entry_id, _) in input_vars)
+            if sc.traced || all(!sc.branch_foll_entries[branch_id, entry_id] for (_, entry_id, _) in input_vars)
                 if sc.verbose
                     @info "Adding $((false, branch_id, block_info)) to insert queue"
                 end
                 sc.blocks_to_insert[(branch_id, block_info)] = sc.unknown_min_path_costs[branch_id] + block_info[4]
             else
                 if sc.verbose
-                    @info "Skipping $((false, branch_id, block_info)) because of following entries $foll_entries"
+                    @info "Skipping $((false, branch_id, block_info)) because of following entries"
                 end
             end
         end
@@ -618,8 +617,7 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
                sc.branch_is_not_copy[branch_id] &&
                !isnothing(sc.explained_min_path_costs[branch_id]) &&
                sc.branch_is_not_const[branch_id]
-                prev_entries = get_connected_from(sc.branch_prev_entries, branch_id)
-                if sc.traced || all(!in(entry_id, prev_entries) for (_, entry_id, _) in output_vars)
+                if sc.traced || all(!sc.branch_prev_entries[branch_id, entry_id] for (_, entry_id, _) in output_vars)
                     if sc.verbose
                         @info "Adding $((true, branch_id, block_info)) to insert queue"
                     end
@@ -627,7 +625,7 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
                         sc.explained_min_path_costs[branch_id] + block_info[3]
                 else
                     if sc.verbose
-                        @info "Skipping $((true, branch_id, block_info)) because of previous entries $prev_entries"
+                        @info "Skipping $((true, branch_id, block_info)) because of previous entries"
                     end
                 end
             end
@@ -848,7 +846,7 @@ function enumeration_iteration(
             unfinished_prototypes = enumeration_iteration_finished(sc, bp)
             for new_bp in unfinished_prototypes
                 if sc.verbose
-                    @info "Enqueing $new_bp"
+                    @info "Enqueing $new_bp with cost $(new_bp.cost)"
                 end
                 q[new_bp] = new_bp.cost
             end
@@ -860,7 +858,7 @@ function enumeration_iteration(
         new_bps = block_state_successors(sc, max_free_parameters, bp)
         for new_bp in new_bps
             if sc.verbose
-                @info "Enqueing $new_bp"
+                @info "Enqueing $new_bp with cost $(new_bp.cost)"
             end
             q[new_bp] = new_bp.cost
         end

@@ -8,8 +8,8 @@ function sort_vars_and_blocks(sc::SolutionContext)
     input_vars = collect(keys(sc.input_keys))
     var_groups = [input_vars, [output_var]]
     for var_id in output_var+1:sc.vars_count[]
-        prev_vars = get_connected_to(sc.previous_vars, var_id)
-        foll_vars = get_connected_from(sc.previous_vars, var_id)
+        prev_vars = collect(get_connected_to(sc.previous_vars, var_id))
+        foll_vars = collect(get_connected_from(sc.previous_vars, var_id))
         min_i = 0
         max_i = length(var_groups) + 1
         for (i, group) in enumerate(var_groups)

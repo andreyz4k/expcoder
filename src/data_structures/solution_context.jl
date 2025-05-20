@@ -59,13 +59,13 @@ mutable struct SolutionContext
     unmatched_complexities::VectorStorage{Float64}
 
     "[previous_var_id x following_var_id] -> {false, true}"
-    previous_vars::ConnectionGraphStorage
-    previous_branches::ConnectionGraphStorage
+    previous_vars::DenseConnectionGraphStorage
+    previous_branches::DenseConnectionGraphStorage
 
     "[branch_id x previous_entry_id] -> {false, true}"
-    branch_prev_entries::ConnectionGraphStorage
+    branch_prev_entries::DenseProjectionConnectionGraphStorage
     "[branch_id x following_entry_id] -> {false, true}"
-    branch_foll_entries::ConnectionGraphStorage
+    branch_foll_entries::DenseProjectionConnectionGraphStorage
 
     input_keys::Dict{UInt64,String}
     target_branch_id::UInt64
@@ -119,6 +119,7 @@ function create_starting_context(
 )::SolutionContext
     argument_types = arguments_of_type(task.task_type)
     example_count = length(task.train_outputs)
+    previous_branches = DenseConnectionGraphStorage()
     sc = SolutionContext(
         task,
         task_name,
@@ -152,10 +153,10 @@ function create_starting_context(
         VectorStorage{Float64}(),
         VectorStorage{Float64}(),
         VectorStorage{Float64}(),
-        ConnectionGraphStorage(),
-        ConnectionGraphStorage(),
-        ConnectionGraphStorage(),
-        ConnectionGraphStorage(),
+        DenseConnectionGraphStorage(),
+        previous_branches,
+        DenseProjectionConnectionGraphStorage(previous_branches, true),
+        DenseProjectionConnectionGraphStorage(previous_branches, false),
         Dict{UInt64,String}(),
         0,
         example_count,
@@ -349,6 +350,9 @@ function start_transaction!(sc::SolutionContext, depth)
     start_transaction!(sc.unused_explained_complexities, depth)
     start_transaction!(sc.unmatched_complexities, depth)
     start_transaction!(sc.previous_vars, depth)
+    start_transaction!(sc.previous_branches, depth)
+    start_transaction!(sc.branch_prev_entries, depth)
+    start_transaction!(sc.branch_foll_entries, depth)
     start_transaction!(sc.branch_unknown_from_output, depth)
     start_transaction!(sc.branch_known_from_input, depth)
     start_transaction!(sc.known_var_locations, depth)
@@ -389,6 +393,9 @@ function save_changes!(sc::SolutionContext, depth)
     save_changes!(sc.unused_explained_complexities, depth)
     save_changes!(sc.unmatched_complexities, depth)
     save_changes!(sc.previous_vars, depth)
+    save_changes!(sc.previous_branches, depth)
+    save_changes!(sc.branch_prev_entries, depth)
+    save_changes!(sc.branch_foll_entries, depth)
     save_changes!(sc.branch_unknown_from_output, depth)
     save_changes!(sc.branch_known_from_input, depth)
     save_changes!(sc.known_var_locations, depth)
@@ -429,6 +436,9 @@ function drop_changes!(sc::SolutionContext, depth)
     drop_changes!(sc.unused_explained_complexities, depth)
     drop_changes!(sc.unmatched_complexities, depth)
     drop_changes!(sc.previous_vars, depth)
+    drop_changes!(sc.previous_branches, depth)
+    drop_changes!(sc.branch_prev_entries, depth)
+    drop_changes!(sc.branch_foll_entries, depth)
     drop_changes!(sc.branch_unknown_from_output, depth)
     drop_changes!(sc.branch_known_from_input, depth)
     drop_changes!(sc.known_var_locations, depth)
@@ -1059,29 +1069,31 @@ function _update_prev_follow_vars(sc::SolutionContext, bl::ProgramBlock)
     if isempty(bl.input_vars)
         return
     end
-    inp_prev_vars = union([get_connected_to(sc.previous_vars, inp_var) for inp_var in bl.input_vars]...)
-    out_foll_vars = get_connected_from(sc.previous_vars, bl.output_var)
-    sc.previous_vars[inp_prev_vars, out_foll_vars] = true
+    for inp_var in bl.input_vars
+        sc.previous_vars[inp_var, bl.output_var] = true
+    end
 end
 
 function _update_prev_follow_vars(sc, bl::ReverseProgramBlock)
     if isempty(bl.output_vars)
         return
     end
-    inp_prev_vars = union([get_connected_to(sc.previous_vars, inp_var) for inp_var in bl.input_vars]...)
-    out_foll_vars = union([get_connected_from(sc.previous_vars, out_var) for out_var in bl.output_vars]...)
-    sc.previous_vars[inp_prev_vars, out_foll_vars] = true
+    for out_var in bl.output_vars
+        for inp_var in bl.input_vars
+            sc.previous_vars[inp_var, out_var] = true
+        end
+    end
 end
 
 function vars_in_loop(sc::SolutionContext, known_var_id, unknown_var_id)
-    prev_known = get_connected_to(sc.previous_vars, known_var_id)
-    foll_unknown = get_connected_from(sc.previous_vars, unknown_var_id)
-    !isempty(intersect(prev_known, foll_unknown))
+    return sc.previous_vars[unknown_var_id, known_var_id]
 end
 
 function is_block_loops(sc::SolutionContext, block::ProgramBlock)
-    out_vars = [block.output_var]
-    prev_inputs = union(Set{UInt64}(), [get_connected_to(sc.previous_vars, inp_var) for inp_var in block.input_vars]...)
-    foll_outputs = union([get_connected_from(sc.previous_vars, out_var) for out_var in out_vars]...)
-    return !isempty(intersect(prev_inputs, foll_outputs))
+    for inp_var in block.input_vars
+        if sc.previous_vars[block.output_var, inp_var]
+            return true
+        end
+    end
+    return false
 end

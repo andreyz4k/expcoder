@@ -28,6 +28,7 @@ end
 _is_reversible_selector(p::Primitive, is_top_index) = 2
 _is_reversible_selector(p::SetConst, is_top_index) = 2
 _is_reversible_selector(p::Invented, is_top_index) = 2
+_is_reversible_selector(p::FreeVar, is_top_index) = 2
 _is_reversible_selector(p::Program, is_top_index) = 0
 
 # TODO: define rules for lambdas in selector

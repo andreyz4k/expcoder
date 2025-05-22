@@ -298,40 +298,43 @@ function _is_reversible(p::Apply, environment, args, in_lambda)
     if !haskey(reversible_cache, key)
         filled_x = _fill_args(p.x, environment)
         checkers = _is_reversible(p.f, environment, vcat(args, [filled_x]), in_lambda)
-        reversible_cache[key] = begin
-            if isnothing(checkers)
-                # @info "Returned nothing for $(p.f) $environment $args $filled_x"
-                return nothing
-            end
+        if isnothing(checkers)
+            # @info "Returned nothing for $(p.f) $environment $args $filled_x"
+            reversible_cache[key] = nothing
+        else
+            checker = nothing
             if isempty(checkers)
-                if isa(filled_x, Hole)
+                reversible_cache[key] = if isa(filled_x, Hole)
                     if !in_lambda && !isarrow(filled_x.t)
-                        return checkers
+                        checkers
                     else
-                        return nothing
+                        nothing
                     end
+                elseif isa(filled_x, Index) || isa(filled_x, FreeVar)
+                    checkers
+                elseif isa(filled_x, Abstraction)
+                    checkers
+                else
+                    checker = x -> !isnothing(_is_reversible(x, Dict(), [], in_lambda))
                 end
-                if isa(filled_x, Index) || isa(filled_x, FreeVar)
-                    return checkers
-                end
-                if isa(filled_x, Abstraction)
-                    return checkers
-                end
-                checker = x -> !isnothing(_is_reversible(x, Dict(), [], in_lambda))
             else
                 checker = checkers[1]
                 if isnothing(checker)
                     if isa(filled_x, Abstraction)
-                        return view(checkers, 2:length(checkers))
+                        reversible_cache[key] = view(checkers, 2:length(checkers))
+                    else
+                        checker = x -> !isnothing(_is_reversible(x, Dict(), [], in_lambda))
                     end
-                    checker = x -> !isnothing(_is_reversible(x, Dict(), [], in_lambda))
                 end
             end
-            if !checker(filled_x)
-                # @info "Checker failed for $checker $(p) $(filled_x) "
-                return nothing
-            else
-                return view(checkers, 2:length(checkers))
+            if !isnothing(checker)
+                # @info "Running checker $checker $(p) $(filled_x)"
+                if !checker(filled_x)
+                    # @info "Checker failed for $checker $(p) $(filled_x) "
+                    reversible_cache[key] = nothing
+                else
+                    reversible_cache[key] = view(checkers, 2:length(checkers))
+                end
             end
         end
     end
@@ -990,6 +993,7 @@ end
 function run_in_reverse(p::Program, output, block_id::UInt64)
     # @info p
     # start_time = time()
+    # @info "Running in reverse $p $output"
     p_info = gather_info(p)
     success, computed_output, context = _run_in_reverse(p_info, output, ReverseRunContext(block_id))
     # @info success, computed_output, context

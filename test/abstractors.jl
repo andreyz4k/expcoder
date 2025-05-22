@@ -447,6 +447,12 @@ using DataStructures: OrderedDict, Accumulator
                 Hole(tlist(tint), tlist(tint), [], nothing, nothing),
             ),
         )
+
+        @test is_reversible(
+            parse_program(
+                "(#(lambda (lambda (lambda (#(lambda (lambda (lambda (rev_fix_param (rev_select_grid (lambda (eq? \$0 \$3)) \$1 \$0) \$2 (lambda Const(color, 0)))))) (tuple2_second \$2) \$1 \$0)))) \$v4 \$v7 \$v17)",
+            ),
+        )
     end
 
     @testcase_log "Reverse repeat" begin

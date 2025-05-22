@@ -59,14 +59,7 @@ function enqueue_matches_with_known_var(sc, branch_id)
     for (pr, output_var_id, output_br_id, prev_matches_count) in matching_with_known_candidates(sc, entry, branch_id)
         type_id =
             push!(sc.types, TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(var_id => tp), tp))
-        bl = ProgramBlock(
-            pr,
-            type_id,
-            EPSILON + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count,
-            [var_id],
-            output_var_id,
-            false,
-        )
+        bl = ProgramBlock(pr, type_id, EPSILON, [var_id], output_var_id, false)
         if isnothing(sc.explained_min_path_costs[branch_id])
             if isnothing(sc.unknown_min_path_costs[branch_id])
                 cost = sc.unknown_min_path_costs[output_br_id]
@@ -82,7 +75,7 @@ function enqueue_matches_with_known_var(sc, branch_id)
                 @info "Adding $((bl, Dict(var_id => branch_id), Dict(output_var_id => output_br_id))) to duplicate copies queue"
             end
             sc.duplicate_copies_queue[(bl, Dict(var_id => branch_id), Dict(output_var_id => output_br_id))] =
-                cost + bl.cost
+                cost + bl.cost + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count
         else
             if sc.verbose
                 @info "Adding $((bl, Dict(var_id => branch_id), Dict(output_var_id => output_br_id))) to copies queue"
@@ -186,14 +179,7 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
             sc.types,
             TypeNamedArgsConstructor(ARROW, OrderedDict{Union{String,UInt64},Tp}(in_var_id => in_type), in_type),
         )
-        bl = ProgramBlock(
-            pr,
-            type_id,
-            EPSILON + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count,
-            [in_var_id],
-            var_id,
-            false,
-        )
+        bl = ProgramBlock(pr, type_id, EPSILON, [in_var_id], var_id, false)
         if isnothing(sc.explained_min_path_costs[in_branch_id])
             if isnothing(sc.unknown_min_path_costs[in_branch_id])
                 cost = sc.unknown_min_path_costs[branch_id]
@@ -208,7 +194,8 @@ function enqueue_matches_with_unknown_var(sc, branch_id)
             if sc.verbose
                 @info "Adding $((bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))) to duplicate copies queue"
             end
-            sc.duplicate_copies_queue[(bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))] = cost + bl.cost
+            sc.duplicate_copies_queue[(bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))] =
+                cost + bl.cost + sc.hyperparameters["match_duplicates_penalty"] * prev_matches_count
         else
             if sc.verbose
                 @info "Adding $((bl, Dict(in_var_id => in_branch_id), Dict(var_id => branch_id))) to copies queue"

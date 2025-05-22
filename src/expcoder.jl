@@ -394,6 +394,7 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
                 branch_id = exact_match
             else
                 branch_id = increment!(sc.branches_count)
+                sc.branch_creation_iterations[branch_id] = sc.iterations_count
                 sc.branch_entries[branch_id] = entry_index
                 sc.branch_vars[branch_id] = var_id
                 sc.branch_types[branch_id] = entry.type_id
@@ -462,6 +463,7 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
                 branch_id = exact_match
             else
                 branch_id = increment!(sc.branches_count)
+                sc.branch_creation_iterations[branch_id] = sc.iterations_count
                 sc.branch_entries[branch_id] = entry_index
                 sc.branch_vars[branch_id] = var_id
                 sc.branch_types[branch_id] = entry.type_id
@@ -723,6 +725,7 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
             branch_id = exact_match
         else
             branch_id = increment!(sc.branches_count)
+            sc.branch_creation_iterations[branch_id] = sc.iterations_count
             sc.branch_entries[branch_id] = entry_index
             sc.branch_vars[branch_id] = var_id
             sc.branch_types[branch_id] = entry.type_id

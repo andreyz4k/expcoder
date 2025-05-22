@@ -81,6 +81,9 @@ mutable struct SolutionContext
     iterations_count::Int64
     block_runs_count::Int64
 
+    branch_creation_iterations::VectorStorage{Int64}
+    block_creation_iterations::VectorStorage{Int64}
+
     pq_forward::NDPriorityQueue{UInt64,Float64}
     pq_reverse::NDPriorityQueue{UInt64,Float64}
     entry_queues_forward::Dict{UInt64,PriorityQueue}
@@ -169,6 +172,8 @@ function create_starting_context(
         0,
         0,
         0,
+        VectorStorage{Int64}(),
+        VectorStorage{Int64}(),
         NDPriorityQueue{UInt64,Float64}(),
         NDPriorityQueue{UInt64,Float64}(),
         Dict(),
@@ -209,6 +214,7 @@ function create_starting_context(
         sc.input_keys[var_id] = key
 
         branch_id = increment!(sc.branches_count)
+        sc.branch_creation_iterations[branch_id] = sc.iterations_count
 
         sc.branch_entries[branch_id] = entry_id
         sc.branch_vars[branch_id] = var_id
@@ -242,6 +248,7 @@ function create_starting_context(
     entry_id = push!(sc.entries, entry)
     var_id = create_next_var(sc)
     branch_id = increment!(sc.branches_count)
+    sc.branch_creation_iterations[branch_id] = sc.iterations_count
 
     sc.branch_entries[branch_id] = entry_id
     sc.branch_vars[branch_id] = var_id
@@ -354,6 +361,8 @@ function start_transaction!(sc::SolutionContext, depth)
     start_transaction!(sc.branch_foll_entries, depth)
     start_transaction!(sc.branch_unknown_from_output, depth)
     start_transaction!(sc.branch_known_from_input, depth)
+    start_transaction!(sc.branch_creation_iterations, depth)
+    start_transaction!(sc.block_creation_iterations, depth)
     start_transaction!(sc.known_var_locations, depth)
     start_transaction!(sc.unknown_var_locations, depth)
     sc.transaction_depth = depth
@@ -397,6 +406,8 @@ function save_changes!(sc::SolutionContext, depth)
     save_changes!(sc.branch_foll_entries, depth)
     save_changes!(sc.branch_unknown_from_output, depth)
     save_changes!(sc.branch_known_from_input, depth)
+    save_changes!(sc.branch_creation_iterations, depth)
+    save_changes!(sc.block_creation_iterations, depth)
     save_changes!(sc.known_var_locations, depth)
     save_changes!(sc.unknown_var_locations, depth)
     sc.transaction_depth = depth
@@ -440,6 +451,8 @@ function drop_changes!(sc::SolutionContext, depth)
     drop_changes!(sc.branch_foll_entries, depth)
     drop_changes!(sc.branch_unknown_from_output, depth)
     drop_changes!(sc.branch_known_from_input, depth)
+    drop_changes!(sc.branch_creation_iterations, depth)
+    drop_changes!(sc.block_creation_iterations, depth)
     drop_changes!(sc.known_var_locations, depth)
     drop_changes!(sc.unknown_var_locations, depth)
     sc.transaction_depth = depth

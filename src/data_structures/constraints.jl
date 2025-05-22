@@ -95,6 +95,7 @@ function _tighten_constraint(sc, constrained_branches, new_var_id, new_branch_id
                 # @info entry_index
 
                 created_branch_id = increment!(sc.branches_count)
+                sc.branch_creation_iterations[created_branch_id] = sc.iterations_count
                 sc.branch_entries[created_branch_id] = new_entry_index
                 sc.branch_vars[created_branch_id] = var_id
                 sc.branch_types[created_branch_id] = new_br_entry.type_id

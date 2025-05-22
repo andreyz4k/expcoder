@@ -356,6 +356,7 @@ function _setup_new_branch(
     set_unmatched_complexity = true,
 )
     new_branch_id = increment!(sc.branches_count)
+    sc.branch_creation_iterations[new_branch_id] = sc.iterations_count
     sc.branch_entries[new_branch_id] = new_entry_index
     sc.branch_vars[new_branch_id] = var_id
     sc.branch_types[new_branch_id] = t_id
@@ -445,7 +446,7 @@ function updated_branches(
     else
         allow_fails, next_blocks = _downstream_blocks_new_branch(sc, var_id, new_branch_id, fixed_branches)
     end
-    return new_branch_id, !has_constrained_parents, true, allow_fails, next_blocks, true, block_created_paths
+    return new_branch_id, true, true, allow_fails, next_blocks, true, block_created_paths
 end
 
 function updated_branches(
@@ -544,7 +545,7 @@ function updated_branches(
     else
         allow_fails, next_blocks = _downstream_blocks_new_branch(sc, var_id, new_branch_id, fixed_branches)
     end
-    return new_branch_id, !has_constrained_parents, true, allow_fails, next_blocks, true, block_created_paths
+    return new_branch_id, true, true, allow_fails, next_blocks, true, block_created_paths
 end
 
 function _get_abducted_values(sc, out_block_id, branches)
@@ -618,6 +619,7 @@ function _abduct_next_block(sc, out_block_copy_id, out_block_id, new_branch_id, 
                 out_branches[b_id] = exact_match
             else
                 created_branch_id = increment!(sc.branches_count)
+                sc.branch_creation_iterations[created_branch_id] = sc.iterations_count
                 sc.branch_entries[created_branch_id] = new_entry_index
                 sc.branch_vars[created_branch_id] = v_id
                 sc.branch_types[created_branch_id] = new_br_entry.type_id
@@ -800,6 +802,7 @@ function _downstream_branch_options_known(sc, block_id, block_copy_id, fixed_bra
                         inputs[var_id] = exact_match
                     else
                         created_branch_id = increment!(sc.branches_count)
+                        sc.branch_creation_iterations[created_branch_id] = sc.iterations_count
                         sc.branch_entries[created_branch_id] = new_entry_id
                         sc.branch_vars[created_branch_id] = var_id
                         sc.branch_types[created_branch_id] = new_type_id
@@ -961,6 +964,8 @@ function _save_block_branch_connections(sc, block_id, block, fixed_branches, out
     end
 
     block_copy_id = increment!(sc.block_copies_count)
+    sc.block_creation_iterations[block_copy_id] = sc.iterations_count
+
     sc.branch_outgoing_blocks[input_br_ids, block_copy_id] = block_id
     sc.branch_incoming_blocks[out_branches, block_copy_id] = block_id
 

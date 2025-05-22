@@ -129,6 +129,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_prev_branches" => string(get_connected_to(sc.previous_branches, branch_id)),
             "_foll_branches" => string(get_connected_from(sc.previous_branches, branch_id)),
             "_constraints" => string(get_connected_from(sc.constrained_branches, branch_id)),
+            "_creation_iteration" => sc.branch_creation_iterations[branch_id],
         )
         if !isa(entry, NoDataEntry)
             vertex_dict["_entry_value"] = string(entry.values)
@@ -252,6 +253,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_cost" => block.cost,
             "_depth" => get(blocks_depths, block_id, -200) + rand(),
             "_root_branch" => sc.block_root_branches[block_id],
+            "_creation_iteration" => sc.block_creation_iterations[block_copy_id],
         )
 
         if isa(block, ProgramBlock)

@@ -445,15 +445,30 @@ end
 function (p::Abstraction)(environment, workspace)
     return BoundAbstraction(p, environment, workspace)
 end
+function _build_run_expression(p::Abstraction)
+    body_ex = _build_run_expression(p.b)
+    quote
+        let arguments = environment, environment
+            function (v)
+                environment = vcat(arguments, Any[v])
+                $body_ex
+            end
+        end
+    end
+end
 (p::BoundAbstraction)(x) = p.p.b(vcat(p.arguments, [x]), p.workspace)
 
 (p::Index)(environment, workspace) = environment[end-p.n]
+_build_run_expression(p::Index) = :(environment[end-$(p.n)])
 
 (p::FreeVar)(environment, workspace) = workspace[p.var_id]
+_build_run_expression(p::FreeVar) = :(workspace[$(p.var_id)])
 
 (p::Primitive)(environment, workspace) = p.code
+_build_run_expression(p::Primitive) = :($(p.code))
 
 (p::Invented)(environment, workspace) = p.b(environment, workspace)
+_build_run_expression(p::Invented) = _build_run_expression(p.b)
 
 function wrap_any_object_call(f)
     # Should I put this in @define_primitive macro?
@@ -519,8 +534,50 @@ function (p::Apply)(environment, workspace)
         end
     end
 end
+function _build_run_expression(p::Apply)
+    if isa(p.f, Apply) && isa(p.f.f, Apply) && isa(p.f.f.f, Primitive) && p.f.f.f.name == "if"
+        cond_ex = _build_run_expression(p.f.f.x)
+        true_ex = _build_run_expression(p.f.x)
+        false_ex = _build_run_expression(p.x)
+        quote
+            let branch
+                branch = $cond_ex
+                if branch
+                    $true_ex
+                else
+                    $false_ex
+                end
+            end
+        end
+    else
+        f_ex = _build_run_expression(p.f)
+        x_ex = _build_run_expression(p.x)
+        quote
+            let f, x
+                f = $f_ex
+                x = $x_ex
+                _fun_call_wrapper(f, x)
+                # if x === nothing
+                #     error("Parameter is nothing")
+                # elseif x isa PatternWrapper
+                #     wrap_any_object_call(f)(x.value)
+                # else
+                #     try
+                #         f(x)
+                #     catch e
+                #         if e isa MethodError && any(arg === any_object for arg in e.args)
+                #             error("MethodError with any_object")
+                #         end
+                #         rethrow()
+                #     end
+                # end
+            end
+        end
+    end
+end
 
 (p::SetConst)(environment, workspace) = p.value
+_build_run_expression(p::SetConst) = :($(p.value))
 
 function (p::LetClause)(environment, workspace)
     v = p.v(environment, workspace)
@@ -546,6 +603,25 @@ function (p::LetRevClause)(environment, workspace)
     end
     return b
 end
+ex_cache = Dict{Program,Any}()
+
+# function run_with_arguments(p::Program, arguments, workspace)
+#     if !haskey(ex_cache, p)
+#         ex = _build_run_expression(p)
+#         ex_cache[p] = eval(:((workspace, environment) -> $ex))
+#     end
+#     # @info "Running $p $arguments $workspace"
+#     # @info "Running $f_ex"
+#     # dump(f_ex)
+
+#     # l = eval(ex_cache[p])
+#     # @info l
+#     l = Base.invokelatest(ex_cache[p], workspace, Any[])
+#     for x in arguments
+#         l = Base.invokelatest(l, x)
+#     end
+#     return l
+# end
 
 function run_with_arguments(p::Program, arguments, workspace)
     l = p([], workspace)

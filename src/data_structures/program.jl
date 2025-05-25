@@ -17,6 +17,14 @@ struct Abstraction <: Program
 end
 Base.:(==)(p::Abstraction, q::Abstraction) = p.b == q.b
 
+struct Abstraction2{B} <: Program
+    b::B
+    hash_value::UInt64
+    base::Abstraction
+    Abstraction2(b::B, base::Abstraction) where {B} = new{B}(b, hash(b), base)
+end
+Base.:(==)(p::Abstraction2, q::Abstraction2) = p.b == q.b
+
 struct Apply <: Program
     f::Program
     x::Program
@@ -24,6 +32,14 @@ struct Apply <: Program
     Apply(f::Program, x::Program) = new(f, x, hash(f, hash(x)))
 end
 Base.:(==)(p::Apply, q::Apply) = p.f == q.f && p.x == q.x
+
+struct Apply2{F,X} <: Program
+    f::F
+    x::X
+    hash_value::UInt64
+    Apply2(f::F, x::X) where {F,X} = new{F,X}(f, x, hash(f, hash(x)))
+end
+Base.:(==)(p::Apply2, q::Apply2) = p.f == q.f && p.x == q.x
 
 struct Primitive <: Program
     t::Tp
@@ -34,6 +50,16 @@ struct Primitive <: Program
 end
 
 Base.:(==)(p::Primitive, q::Primitive) = p.name == q.name
+
+struct Primitive2{C} <: Program
+    t::Tp
+    name::String
+    code::Any
+    hash_value::UInt64
+    Primitive2(t::Tp, name::String, code::Any) = new{Val{Symbol(name)}}(t, name, code, hash(name))
+end
+
+Base.:(==)(p::Primitive2, q::Primitive2) = p.name == q.name
 
 every_primitive = Dict{String,Primitive}()
 
@@ -54,6 +80,16 @@ struct Invented <: Program
     Invented(t::Tp, b::Program) = new(t, b, is_reversible(b), "#" * string(b), hash(b))
 end
 Base.:(==)(p::Invented, q::Invented) = p.name == q.name
+
+struct Invented2{B} <: Program
+    t::Tp
+    b::B
+    is_reversible::Bool
+    name::String
+    hash_value::UInt64
+    Invented2(t::Tp, b::B) where {B} = new{B}(t, b, is_reversible(b), "#" * string(b), hash(b))
+end
+Base.:(==)(p::Invented2, q::Invented2) = p.name == q.name
 
 struct Hole <: Program
     t::Tp
@@ -97,6 +133,14 @@ struct SetConst <: Program
 end
 Base.:(==)(p::SetConst, q::SetConst) = p.t == q.t && p.value == q.value
 
+struct SetConst2{V} <: Program
+    t::Tp
+    value::V
+    hash_value::UInt64
+    SetConst2(t::Tp, value::V) where {V} = new{V}(t, value, hash(t, hash(value)))
+end
+Base.:(==)(p::SetConst2, q::SetConst2) = p.t == q.t && p.value == q.value
+
 struct LetClause <: Program
     var_id::UInt64
     v::Program
@@ -123,17 +167,27 @@ Base.print(io::IO, p::Program) = print(io, show_program(p, false)...)
 
 show_program(p::Index, is_function::Bool) = ["\$", p.n]
 show_program(p::Abstraction, is_function::Bool) = vcat(["(lambda "], show_program(p.b, false), [")"])
+show_program(p::Abstraction2, is_function::Bool) = vcat(["(lambda "], show_program(p.b, false), [")"])
 show_program(p::Apply, is_function::Bool) =
     if is_function
         vcat(show_program(p.f, true), [" "], show_program(p.x, false))
     else
         vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
     end
+show_program(p::Apply2, is_function::Bool) =
+    if is_function
+        vcat(show_program(p.f, true), [" "], show_program(p.x, false))
+    else
+        vcat(["("], show_program(p.f, true), [" "], show_program(p.x, false), [")"])
+    end
 show_program(p::Primitive, is_function::Bool) = [p.name]
+show_program(p::Primitive2, is_function::Bool) = [p.name]
 show_program(p::FreeVar, is_function::Bool) = ["\$", (isa(p.var_id, UInt64) ? "v" : ""), "$(p.var_id)"]
 show_program(p::Hole, is_function::Bool) = ["??(", p.t, ")"]
 show_program(p::Invented, is_function::Bool) = [p.name]
+show_program(p::Invented2, is_function::Bool) = [p.name]
 show_program(p::SetConst, is_function::Bool) = vcat(["Const("], show_type(p.t, true), [", ", p.value, ")"])
+show_program(p::SetConst2, is_function::Bool) = vcat(["Const("], show_type(p.t, true), [", ", p.value, ")"])
 show_program(p::LetClause, is_function::Bool) =
     vcat(["let \$v$(p.var_id) = "], show_program(p.v, false), [" in "], show_program(p.b, false))
 show_program(p::LetRevClause, is_function::Bool) = vcat(
@@ -272,6 +326,8 @@ function infer_program_type(context, environment, var_env, p::FreeVar)::Tuple{Co
 end
 
 infer_program_type(context, environment, var_env, p::SetConst)::Tuple{Context,Tp} = instantiate(p.t, context)
+
+using DataStructures
 
 function closed_inference(p)
     var_env = OrderedDict()
@@ -436,24 +492,26 @@ function _application_parse(p::Apply, arguments)
 end
 _application_parse(p::Program, args) = (p, reverse(args))
 
-struct BoundAbstraction <: Function
-    p::Abstraction
+struct BoundAbstraction{B} <: Function
+    p::Abstraction2{B}
+    p_base::Abstraction
     arguments::Vector{Any}
     workspace::Dict{Any,Any}
 end
 
-function (p::Abstraction)(environment, workspace)
-    return BoundAbstraction(p, environment, workspace)
+function __run_with_arguments(p::Abstraction2{B}, environment, workspace) where {B}
+    return BoundAbstraction{B}(p, p.base, environment, workspace)
 end
-(p::BoundAbstraction)(x) = p.p.b(vcat(p.arguments, [x]), p.workspace)
 
-(p::Index)(environment, workspace) = environment[end-p.n]
+(p::BoundAbstraction)(x) = __run_with_arguments(p.p.b, vcat(p.arguments, [x]), p.workspace)
 
-(p::FreeVar)(environment, workspace) = workspace[p.var_id]
+__run_with_arguments(p::Index, environment, workspace) = environment[end-p.n]
 
-(p::Primitive)(environment, workspace) = p.code
+__run_with_arguments(p::FreeVar, environment, workspace) = workspace[p.var_id]
 
-(p::Invented)(environment, workspace) = p.b(environment, workspace)
+__run_with_arguments(p::Primitive2, environment, workspace) = p.code
+
+__run_with_arguments(p::Invented2, environment, workspace) = __run_with_arguments(p.b, environment, workspace)
 
 function wrap_any_object_call(f)
     # Should I put this in @define_primitive macro?
@@ -480,57 +538,55 @@ function wrap_any_object_call(f)
     return _inner
 end
 
-function (p::Apply)(environment, workspace)
-    if isa(p.f, Apply) && isa(p.f.f, Apply) && isa(p.f.f.f, Primitive) && p.f.f.f.name == "if"
-        branch = p.f.f.x(environment, workspace)
-        if branch
-            p.f.x(environment, workspace)
-        else
-            p.x(environment, workspace)
-        end
+function __run_with_arguments(
+    p::Apply2{Apply2{Apply2{Primitive2{Val{:if}},X2},X3},X},
+    environment,
+    workspace,
+) where {X2,X3,X}
+    branch = __run_with_arguments(p.f.f.x, environment, workspace)
+    if branch
+        __run_with_arguments(p.f.x, environment, workspace)
     else
-        f = p.f(environment, workspace)
-        x = p.x(environment, workspace)
-        if x === nothing
-            error("Parameter is nothing")
-        elseif x isa PatternWrapper
-            return wrap_any_object_call(f)(x.value)
-            # if x.value === any_object
-            #     return wrap_any_object_call(f)(x.value)
-            # else
-            #     try
-            #         return _wrap_wildcard(f(x.value))
-            #     catch e
-            #         if e isa MethodError && any(arg === any_object for arg in e.args)
-            #             error("MethodError with any_object")
-            #         end
-            #         rethrow()
-            #     end
-            # end
-        else
-            try
-                return f(x)
-            catch e
-                if e isa MethodError && any(arg === any_object for arg in e.args)
-                    error("MethodError with any_object")
-                end
-                rethrow()
-            end
-        end
+        __run_with_arguments(p.x, environment, workspace)
     end
 end
 
-(p::SetConst)(environment, workspace) = p.value
+function __run_with_arguments(p::Apply2{F,X}, environment, workspace) where {F,X}
+    f = __run_with_arguments(p.f, environment, workspace)
+    x = __run_with_arguments(p.x, environment, workspace)
+    _fun_call_wrapper(f, x)
+end
 
-function (p::LetClause)(environment, workspace)
-    v = p.v(environment, workspace)
+function _fun_call_wrapper(f, x::Nothing)
+    error("Parameter is nothing")
+end
+
+function _fun_call_wrapper(f, x::PatternWrapper)
+    wrap_any_object_call(f)(x.value)
+end
+
+function _fun_call_wrapper(f, x)
+    try
+        f(x)
+    catch e
+        if e isa MethodError && any(arg === any_object for arg in e.args)
+            error("MethodError with any_object")
+        end
+        rethrow()
+    end
+end
+
+__run_with_arguments(p::SetConst2, environment, workspace) = p.value
+
+function __run_with_arguments(p::LetClause, environment, workspace)
+    v = __run_with_arguments(_build_typed_expression(p.v), environment, workspace)
     workspace[p.var_id] = v
-    b = p.b(environment, workspace)
+    b = __run_with_arguments(_build_typed_expression(p.b), environment, workspace)
     delete!(workspace, p.var_id)
     return b
 end
 
-function (p::LetRevClause)(environment, workspace)
+function __run_with_arguments(p::LetRevClause, environment, workspace)
     vals = run_in_reverse(p.v, workspace[p.inp_var_id], rand(UInt64))
     for (k, v) in vals
         if isa(v, EitherOptions) || isa(v, AbductibleValue)
@@ -540,15 +596,61 @@ function (p::LetRevClause)(environment, workspace)
         end
         workspace[k] = v
     end
-    b = p.b(environment, workspace)
+    b = __run_with_arguments(_build_typed_expression(p.b), environment, workspace)
     for var_id in p.var_ids
         delete!(workspace, var_id)
     end
     return b
 end
 
+ex_typed_cache = Dict{Program,Any}()
+
+function _build_typed_expression(p::Abstraction)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = Abstraction2(_build_typed_expression(p.b), p)
+    end
+    return ex_typed_cache[p]
+end
+
+function _build_typed_expression(p::Apply)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = Apply2(_build_typed_expression(p.f), _build_typed_expression(p.x))
+    end
+    return ex_typed_cache[p]
+end
+
+function _build_typed_expression(p::Primitive)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = Primitive2(p.t, p.name, p.code)
+    end
+    return ex_typed_cache[p]
+end
+
+function _build_typed_expression(p::Invented)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = Invented2(p.t, _build_typed_expression(p.b))
+    end
+    return ex_typed_cache[p]
+end
+
+function _build_typed_expression(p::SetConst)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = SetConst2(p.t, p.value)
+    end
+    return ex_typed_cache[p]
+end
+
+function _build_typed_expression(p::Program)
+    return p
+end
+
 function run_with_arguments(p::Program, arguments, workspace)
-    l = p([], workspace)
+    if !haskey(ex_typed_cache, p)
+        ex_typed_cache[p] = _build_typed_expression(p)
+    end
+    # @info "Running $p $arguments $workspace"
+
+    l = __run_with_arguments(ex_typed_cache[p], [], workspace)
     for x in arguments
         l = l(x)
     end

@@ -505,7 +505,7 @@ function gather_info(p::BoundAbstraction)
             filled_indices[i] = (0, arg_info.p)
         end
     end
-    _gather_info(p.p, filled_indices, [])
+    _gather_info(p.p_base, filled_indices, [])
 end
 
 function _run_in_reverse(p_info, output, context, splitter::EitherOptions)
@@ -816,7 +816,7 @@ function _precalculate_arg(p_info, context)
     end
     try
         # @info "Precalculating $(p_info.p) with $env and $(context.filled_vars)"
-        calculated_output = p_info.p(env, context.filled_vars)
+        calculated_output = __run_with_arguments(_build_typed_expression(p_info.p), env, context.filled_vars)
         # @info calculated_output
         if isa(calculated_output, Function) ||
            isa(calculated_output, AbductibleValue) ||

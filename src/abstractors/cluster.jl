@@ -16,7 +16,7 @@ end
 function reverse_rev_greedy_cluster()
     function _reverse_rev_greedy_cluster(groups, context)
         f = context.arguments[end]
-        grouper = f.p([], Dict())
+        grouper = __run_with_arguments(_build_typed_expression(f.p), [], Dict())
 
         if isempty(groups)
             return false, groups, context

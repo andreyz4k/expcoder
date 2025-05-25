@@ -62,7 +62,7 @@ function reverse_fix_param()
         for (i, v) in context.filled_indices
             env[end-i] = v
         end
-        fixer_func = fixer.p(env, context.filled_vars)
+        fixer_func = __run_with_arguments(_build_typed_expression(fixer.p), env, context.filled_vars)
 
         # fixer_value = try_evaluate_program(fixer.p, [value], Dict())
         fixer_value = try_run_function(fixer_func, [value])

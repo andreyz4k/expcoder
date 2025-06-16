@@ -65,6 +65,14 @@ function _get_free_vars(p::Abstraction)
     return _get_free_vars(p.b)
 end
 
+function _get_free_vars(p::LetClause)
+    return merge(_get_free_vars(p.v), _get_free_vars(p.b))
+end
+
+function _get_free_vars(p::LetRevClause)
+    return merge(_get_free_vars(p.v), _get_free_vars(p.b))
+end
+
 function _get_free_vars(p::Program)
     return OrderedDict{Union{String,UInt64},Tuple{Tp,Tp}}()
 end

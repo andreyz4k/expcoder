@@ -94,6 +94,15 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
         # default_weight = Inf,
     )
     vars_depths, blocks_depths = sort_vars_and_blocks(sc)
+    all_creation_iterations = Set{Int64}()
+    for branch_id in 1:sc.branches_count[]
+        push!(all_creation_iterations, sc.branch_creation_iterations[branch_id])
+    end
+    for block_copy_id in 1:sc.block_copies_count[]
+        push!(all_creation_iterations, sc.block_creation_iterations[block_copy_id])
+    end
+    all_creation_iterations = sort(collect(all_creation_iterations))
+
     for branch_id in 1:sc.branches_count[]
         entry_id = sc.branch_entries[branch_id]
         entry = sc.entries[entry_id]
@@ -129,7 +138,7 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_prev_branches" => string(get_connected_to(sc.previous_branches, branch_id)),
             "_foll_branches" => string(get_connected_from(sc.previous_branches, branch_id)),
             "_constraints" => string(get_connected_from(sc.constrained_branches, branch_id)),
-            "_creation_iteration" => sc.branch_creation_iterations[branch_id],
+            "_creation_iteration" => indexin(sc.branch_creation_iterations[branch_id], all_creation_iterations)[1],
         )
         if !isa(entry, NoDataEntry)
             vertex_dict["_entry_value"] = string(entry.values)
@@ -253,7 +262,8 @@ function export_solution_context(sc::SolutionContext, previous_traces = nothing)
             "_cost" => block.cost,
             "_depth" => get(blocks_depths, block_id, -200) + rand(),
             "_root_branch" => sc.block_root_branches[block_id],
-            "_creation_iteration" => sc.block_creation_iterations[block_copy_id],
+            "_creation_iteration" =>
+                indexin(sc.block_creation_iterations[block_copy_id], all_creation_iterations)[1],
         )
 
         if isa(block, ProgramBlock)

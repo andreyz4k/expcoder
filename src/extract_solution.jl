@@ -57,27 +57,27 @@ function extract_solution(sc::SolutionContext, solution_path::Path)
     return (output, cost, trace_values)
 end
 
-function has_var(p::LetClause, var_id::UInt64)
+function has_var(p::LetClause, var_id)
     return has_var(p.v, var_id) || has_var(p.b, var_id)
 end
 
-function has_var(p::LetRevClause, var_id::UInt64)
+function has_var(p::LetRevClause, var_id)
     return has_var(p.b, var_id)
 end
 
-function has_var(p::FreeVar, var_id::UInt64)
+function has_var(p::FreeVar, var_id)
     return p.var_id == var_id
 end
 
-function has_var(p::Abstraction, var_id::UInt64)
+function has_var(p::Abstraction, var_id)
     return has_var(p.b, var_id)
 end
 
-function has_var(p::Apply, var_id::UInt64)
+function has_var(p::Apply, var_id)
     return has_var(p.f, var_id) || has_var(p.x, var_id)
 end
 
-function has_var(p::Program, var_id::UInt64)
+function has_var(p::Program, var_id)
     return false
 end
 
@@ -88,7 +88,7 @@ function alpha_substitution(p::LetClause, replacements, let_vars, used_vars, nex
         elseif length([v for (v, r) in replacements if r == replacements[p.v.var_id]]) > 1 ||
                has_var(p.b, p.v.var_id) ||
                in(p.v.var_id, used_vars)
-            new_v, next_index = alpha_substitution(p.v, replacements, let_vars, Set{UInt64}(), next_index, input_keys)
+            new_v, next_index = alpha_substitution(p.v, replacements, let_vars, Set(), next_index, input_keys)
             replacements[p.var_id] = next_index
             new_b, next_index2 = alpha_substitution(p.b, replacements, let_vars, used_vars, next_index + 1, input_keys)
             return LetClause(next_index, new_v, new_b), next_index2
@@ -117,7 +117,7 @@ function alpha_substitution(p::LetRevClause, replacements, let_vars, used_vars, 
         push!(new_var_ids, next_index)
         next_index += 1
     end
-    new_v, next_index = alpha_substitution(p.v, replacements, let_vars, Set{UInt64}(), next_index, input_keys)
+    new_v, next_index = alpha_substitution(p.v, replacements, let_vars, Set(), next_index, input_keys)
     if haskey(input_keys, p.inp_var_id)
         new_inp_var_id = input_keys[p.inp_var_id]
     elseif haskey(replacements, p.inp_var_id)

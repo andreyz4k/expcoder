@@ -42,6 +42,19 @@ function check_repeating_blocks(task, program)
     return true
 end
 
+function _get_noncopy_free_vars(p::LetClause)
+    if isa(p.v, FreeVar)
+        return _get_noncopy_free_vars(p.b)
+    end
+    return merge(_get_free_vars(p.v), _get_noncopy_free_vars(p.b))
+end
+
+function _get_noncopy_free_vars(p::LetRevClause)
+    return merge(_get_free_vars(p.v), _get_noncopy_free_vars(p.b))
+end
+
+_get_noncopy_free_vars(p::Program) = _get_free_vars(p)
+
 function _insert_copy_blocks(
     p::LetRevClause,
     next_var_id::UInt64,
@@ -58,7 +71,7 @@ function _insert_copy_blocks(
     base_mapping::Dict{Any,Any},
 )
     used_vars = _get_free_vars(p.v)
-    used_body_vars = keys(_get_free_vars(p.b))
+    used_body_vars = keys(_get_noncopy_free_vars(p.b))
     new_v = alpha_substitution(p.v, replacements, Set(), Set(), next_var_id, Dict())[1]
     copy_blocks = []
     if !isa(new_v, FreeVar)

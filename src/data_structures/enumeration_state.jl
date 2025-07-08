@@ -85,24 +85,6 @@ function enqueue_matches_with_known_var(sc, branch_id)
     end
 end
 
-function enqueue_known_bp(sc, bp, q, branch_id)
-    if sc.verbose
-        @info "enqueueing $bp"
-    end
-    if (isnothing(bp.input_vars) || all(br -> sc.branch_is_explained[br[2]], bp.input_vars)) &&
-       !isnothing(sc.explained_min_path_costs[branch_id])
-        q[bp] = bp.cost
-    else
-        out_branch_id = bp.output_var[2]
-        if !haskey(sc.branch_queues_unknown, out_branch_id)
-            sc.branch_queues_unknown[out_branch_id] = PriorityQueue{BlockPrototype,Float64}()
-        end
-        out_q = sc.branch_queues_unknown[out_branch_id]
-        out_q[bp] = bp.cost
-        update_branch_priority(sc, out_branch_id, false)
-    end
-end
-
 entry_has_data(entry::NoDataEntry) = false
 entry_has_data(entry::PatternEntry) = any(_value_has_data, entry.values)
 entry_has_data(entry::AbductibleEntry) = any(_value_has_data, entry.values)
@@ -146,26 +128,6 @@ function enqueue_known_var(sc, branch_id, guiding_model_channels, grammar)
                 end
             end
         end
-    end
-end
-
-function enqueue_unknown_bp(sc, bp, q)
-    if sc.verbose
-        @info "enqueueing $bp"
-    end
-    if !isnothing(bp.input_vars) &&
-       !isempty(bp.input_vars) &&
-       all(br -> sc.branch_is_explained[br[2]], bp.input_vars) &&
-       !isnothing(sc.explained_min_path_costs[first(bp.input_vars)[2]])
-        inp_branch_id = first(bp.input_vars)[2]
-        if !haskey(sc.branch_queues_explained, inp_branch_id)
-            sc.branch_queues_explained[inp_branch_id] = PriorityQueue{BlockPrototype,Float64}()
-        end
-        in_q = sc.branch_queues_explained[inp_branch_id]
-        in_q[bp] = bp.cost
-        update_branch_priority(sc, inp_branch_id, true)
-    else
-        q[bp] = bp.cost
     end
 end
 

@@ -29,6 +29,77 @@ function build_manual_solution(task_name, guiding_model_server, grammar)
     end
 end
 
+function build_manual_solution(task_name, guiding_model_server::PythonGuidingModelServer, grammar)
+    all_tasks = get_arc_tasks()
+    task = first(filter(t -> t.name == task_name, all_tasks))
+    solutions = JSON.parsefile(joinpath(@__DIR__, "..", "data", "partial_solutions.json"))
+    partial_solution = join(solutions[task_name][1], " ")
+
+    redis_db = guiding_model_server.model.redis_db
+    conn = get_redis_connection(redis_db)
+    task_name = "$(task.name)_$(randstring(6))"
+
+    @info "Building partial manual solution for $(task.name)"
+    @time build_partial_solution(task, task_name, partial_solution, conn, grammar)
+    return
+end
+
+function enumeration_iteration_traced_save_skipped(
+    sc::SolutionContext,
+    max_free_parameters::Int,
+    bp::BlockPrototype,
+    entry_id::UInt64,
+    is_forward::Bool,
+    target_blocks,
+    skipped_blocks,
+)
+    q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
+    if state_finished(bp)
+        if sc.verbose
+            @info "Checking finished $bp"
+            @info "Target blocks $target_blocks"
+        end
+        transaction(sc) do
+            unfinished_prototypes = enumeration_iteration_finished(sc, bp)
+
+            for new_bp in unfinished_prototypes
+                if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
+                    if sc.verbose
+                        @info "On path $new_bp"
+                        @info "Enqueing $new_bp"
+                    end
+                    q[new_bp] = new_bp.cost
+                else
+                    if sc.verbose
+                        @info "Not on path $new_bp"
+                    end
+                    push!(skipped_blocks, (entry_id, is_forward, new_bp))
+                end
+            end
+        end
+    else
+        if sc.verbose
+            @info "Checking unfinished $bp"
+            @info "Target blocks $target_blocks"
+        end
+        for new_bp in block_state_successors(sc, max_free_parameters, bp)
+            if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
+                if sc.verbose
+                    @info "On path $new_bp"
+                    @info "Enqueing $new_bp"
+                end
+                q[new_bp] = new_bp.cost
+            else
+                if sc.verbose
+                    @info "Not on path $new_bp"
+                end
+                push!(skipped_blocks, (entry_id, is_forward, new_bp))
+            end
+        end
+    end
+    update_entry_priority(sc, entry_id, !is_forward)
+end
+
 function build_partial_solution(task::Task, task_name, target_solution, guiding_model_channels, grammar, timeout = 20)
     verbose_test = false
     max_free_parameters = 10
@@ -39,35 +110,42 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         "list" => 1.0,
         "color" => 1.0,
         "bool" => 1.0,
-        "float" => 1.0,
         "grid" => 1.0,
         "tuple2" => 1.0,
-        "tuple3" => 1.0,
-        "coord" => 1.0,
         "set" => 1.0,
         "any" => 1.0,
         "either" => 0.0,
     )
 
-    hyperparameters = Dict("path_cost_power" => 1.0, "complexity_power" => 1.0, "block_cost_power" => 1.0)
-
-    # @info target_solution
-    target_program = parse_program(target_solution)
-
-    in_blocks, out_blocks, vars_mapping = _extract_blocks(task, target_program, verbose_test)
-    rev_vars_mapping = Dict(v => k for (k, v) in vars_mapping)
-
-    start_time = time()
-
-    # verbose_test = false
-    sc = create_starting_context(task, task_name, type_weights, hyperparameters, verbose_test, true)
+    hyperparameters = Dict(
+        "path_cost_power" => 1.0,
+        "complexity_power" => 1.0,
+        "block_cost_power" => 1.0,
+        "explained_penalty_power" => 1.0,
+        "explained_penalty_mult" => 5.0,
+        "match_duplicates_penalty" => 3.0,
+        "type_var_penalty_mult" => 1.0,
+        "type_var_penalty_power" => 1.0,
+    )
 
     try
+        target_program = parse_program(target_solution)
+
+        start_time = time()
+
+        # verbose_test = false
+        sc = create_starting_context(task, task_name, type_weights, hyperparameters, run_context, verbose_test, true)
+
+        rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
+            _extract_blocks(sc.types, task, target_program, verbose_test)
+        rev_vars_mapping = Dict(v => k for (k, v) in vars_mapping)
+
         enqueue_updates(sc, guiding_model_channels, grammar)
 
         if verbose_test
-            @info in_blocks
+            @info rev_blocks
             @info out_blocks
+            @info copy_blocks
         end
 
         save_changes!(sc, 0)
@@ -82,60 +160,197 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 end
             end
         end
-        inner_mapping[vars_mapping["out"]] = first(get_connected_from(sc.branch_vars, sc.target_branch_id))
-        rev_inner_mapping[first(get_connected_from(sc.branch_vars, sc.target_branch_id))] = vars_mapping["out"]
+        inner_mapping[vars_mapping["out"]] = sc.branch_vars[sc.target_branch_id]
+        rev_inner_mapping[sc.branch_vars[sc.target_branch_id]] = vars_mapping["out"]
         if verbose_test
             @info inner_mapping
         end
 
-        from_input = true
+        matching_vars = Dict{Any,Any}()
 
+        phase = 4
+
+        skipped_insert_blocks = []
+        skipped_rev_insert_blocks = []
+        skipped_copy_blocks = []
         skipped_blocks = []
 
-        while (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches))
+        while (
+            !isempty(sc.pq_forward) ||
+            !isempty(sc.pq_reverse) ||
+            !isempty(sc.copies_queue) ||
+            !isempty(sc.duplicate_copies_queue) ||
+            !isempty(sc.blocks_to_insert) ||
+            !isempty(sc.rev_blocks_to_insert) ||
+            !isempty(sc.waiting_entries)
+        )
             receive_grammar_weights(sc, guiding_model_channels, grammar)
-            from_input = !from_input
-            pq = from_input ? sc.pq_input : sc.pq_output
-            if isempty(pq)
-                sleep(0.0001)
-                continue
-            end
-            (br_id, is_explained) = draw(pq)
-            q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-            bp = dequeue!(q)
 
-            target_blocks_group = from_input ? in_blocks : out_blocks
-            var_id = first(get_connected_from(sc.branch_vars, br_id))
-            if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
-                if haskey(rev_inner_mapping, var_id) && haskey(rev_vars_mapping, rev_inner_mapping[var_id])
-                    orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
-                    if sc.verbose
-                        @info "Skipping branch $var_id $orig_var_id $br_id $is_explained $from_input $bp"
+            phase = (phase + 1) % 5
+
+            if phase == 2
+                if isempty(sc.blocks_to_insert)
+                    continue
+                end
+                (br_id, block_info), cost = peek(sc.blocks_to_insert)
+                br_id, block_info = dequeue!(sc.blocks_to_insert)
+
+                target_blocks_group = out_blocks
+
+                var_id = sc.branch_vars[br_id]
+                if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
+                    if haskey(rev_inner_mapping, var_id) && haskey(rev_vars_mapping, rev_inner_mapping[var_id])
+                        orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
+                        if sc.verbose
+                            @info "Skipping insert block $var_id $orig_var_id $br_id $block_info"
+                        end
+                        push!(skipped_insert_blocks, (br_id, block_info, cost))
+                    else
+                        if sc.verbose
+                            @info "Skipping insert block $var_id $br_id $block_info"
+                        end
                     end
-                    push!(skipped_blocks, (br_id, is_explained, from_input, bp))
+                    continue
+                end
+
+                target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
+
+                found_solutions = enumeration_iteration_insert_block_traced(
+                    sc,
+                    false,
+                    br_id,
+                    block_info,
+                    guiding_model_channels,
+                    grammar,
+                    target_blocks,
+                    inner_mapping,
+                    rev_inner_mapping,
+                )
+                sc.iterations_count += 1
+            elseif phase == 3
+                if isempty(sc.rev_blocks_to_insert)
+                    continue
+                end
+                (br_id, block_info), cost = peek(sc.rev_blocks_to_insert)
+                br_id, block_info = dequeue!(sc.rev_blocks_to_insert)
+
+                target_blocks_group = rev_blocks
+
+                var_id = sc.branch_vars[br_id]
+                if !haskey(rev_inner_mapping, var_id) || !haskey(target_blocks_group, rev_inner_mapping[var_id])
+                    if haskey(rev_inner_mapping, var_id) && haskey(rev_vars_mapping, rev_inner_mapping[var_id])
+                        orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
+                        if sc.verbose
+                            @info "Skipping rev insert block $var_id $orig_var_id $br_id $block_info"
+                        end
+                        push!(skipped_rev_insert_blocks, (br_id, block_info, cost))
+                    else
+                        if sc.verbose
+                            @info "Skipping rev insert block $var_id $br_id $block_info"
+                        end
+                    end
+                    continue
+                end
+
+                target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
+
+                found_solutions = enumeration_iteration_insert_block_traced(
+                    sc,
+                    true,
+                    br_id,
+                    block_info,
+                    guiding_model_channels,
+                    grammar,
+                    target_blocks,
+                    inner_mapping,
+                    rev_inner_mapping,
+                )
+            elseif phase == 4
+                if isempty(sc.copies_queue)
+                    if isempty(sc.duplicate_copies_queue)
+                        continue
+                    end
+                    block_info, cost = peek(sc.duplicate_copies_queue)
+                    block_info = dequeue!(sc.duplicate_copies_queue)
+                    is_duplicate = true
                 else
+                    block_info, cost = peek(sc.copies_queue)
+                    block_info = dequeue!(sc.copies_queue)
+                    is_duplicate = false
+                end
+
+                block, _ = block_info
+                if is_block_loops(sc, block)
+                    continue
+                end
+
+                filtered_target_blocks = filter(bl -> is_var_on_path(block, bl, inner_mapping, sc.verbose), copy_blocks)
+
+                if isempty(filtered_target_blocks)
                     if sc.verbose
-                        @info "Skipping branch $var_id $br_id $is_explained $bp"
+                        @info "Skipping copy block $block_info"
+                    end
+                    push!(skipped_copy_blocks, (block_info, cost, is_duplicate))
+                    continue
+                end
+
+                found_solutions = enumeration_iteration_insert_copy_block_traced(
+                    sc,
+                    block_info,
+                    guiding_model_channels,
+                    grammar,
+                    copy_blocks,
+                    inner_mapping,
+                    rev_inner_mapping,
+                )
+            else
+                if phase == 0
+                    pq = sc.pq_forward
+                    is_forward = true
+                else
+                    pq = sc.pq_reverse
+                    is_forward = false
+                end
+                if isempty(pq)
+                    sleep(0.0001)
+                    continue
+                end
+                entry_id = draw(pq)
+                q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
+                bp = dequeue!(q)
+                target_blocks_group = is_forward ? out_blocks : rev_blocks
+
+                if !haskey(matching_vars, (entry_id, is_forward))
+                    entry = sc.entries[entry_id]
+                    matching_vars[(entry_id, is_forward)] = []
+                    for (var_id) in keys(target_blocks_group)
+                        if might_unify(sc.types[entry.type_id], var_types[var_id])
+                            push!(matching_vars[(entry_id, is_forward)], var_id)
+                        end
                     end
                 end
-                update_branch_priority(sc, br_id, is_explained)
-                continue
-            end
-            target_blocks = target_blocks_group[rev_inner_mapping[var_id]]
 
-            found_solutions = enumeration_iteration_traced(
-                run_context,
-                sc,
-                max_free_parameters,
-                guiding_model_channels,
-                grammar,
-                bp,
-                br_id,
-                is_explained,
-                target_blocks,
-                inner_mapping,
-                rev_inner_mapping,
-            )
+                if isempty(matching_vars[(entry_id, is_forward)])
+                    if sc.verbose
+                        @info "Skipping branch $entry_id $is_forward $bp"
+                    end
+                    push!(skipped_blocks, (entry_id, is_forward, bp))
+                    update_entry_priority(sc, entry_id, !is_forward)
+                    continue
+                end
+                target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
+
+                enumeration_iteration_traced_save_skipped(
+                    sc,
+                    max_free_parameters,
+                    bp,
+                    entry_id,
+                    is_forward,
+                    target_blocks,
+                    skipped_blocks,
+                )
+                found_solutions = []
+            end
 
             for solution_path in found_solutions
                 solution, cost, trace_values = extract_solution(sc, solution_path)
@@ -146,6 +361,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                     res = HitResult(join(show_program(solution, false)), -cost, ll, dt, trace_values)
                     @info "Found solution"
                     @info "$solution"
+                    export_solution_context(sc)
                     return res, -cost + ll
                 end
             end
@@ -154,41 +370,22 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         all_blocks = [sc.blocks[UInt64(i)] for i in 1:length(sc.blocks)]
         # @info all_blocks
         missing_blocks = []
-        for (var_id, blocks) in in_blocks
+        for (var_id, blocks) in rev_blocks
             if !haskey(inner_mapping, var_id)
                 append!(missing_blocks, [(block, var_id) for block in blocks])
                 continue
             end
             inner_var_id = inner_mapping[var_id]
             for block in blocks
-                if isa(block, ReverseProgramBlock)
-                    matching_blocks = filter(
-                        b ->
-                            isa(b, ReverseProgramBlock) &&
-                                b.input_vars == [inner_var_id] &&
-                                is_on_path(b.p, block.p, Dict(), true),
-                        all_blocks,
-                    )
-                    if isempty(matching_blocks)
-                        push!(missing_blocks, (block, var_id))
-                    end
-                else
-                    if !haskey(inner_mapping, block.output_var)
-                        push!(missing_blocks, (block, var_id))
-                        continue
-                    end
-                    dest_var_id = inner_mapping[block.output_var]
-                    matching_blocks = filter(
-                        b ->
-                            isa(b, ProgramBlock) &&
-                                isa(b.p, FreeVar) &&
-                                b.input_vars == [inner_var_id] &&
-                                b.output_var == dest_var_id,
-                        all_blocks,
-                    )
-                    if isempty(matching_blocks)
-                        push!(missing_blocks, (block, var_id))
-                    end
+                matching_blocks = filter(
+                    b ->
+                        isa(b, ReverseProgramBlock) &&
+                            b.input_vars == [inner_var_id] &&
+                            is_on_path(b.p, block.p, Dict()),
+                    all_blocks,
+                )
+                if isempty(matching_blocks)
+                    push!(missing_blocks, (block, var_id))
                 end
             end
         end
@@ -200,8 +397,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
             inner_var_id = inner_mapping[var_id]
             for block in blocks
                 matching_blocks = filter(
-                    b ->
-                        isa(b, ProgramBlock) && b.output_var == inner_var_id && is_on_path(b.p, block.p, Dict(), true),
+                    b -> isa(b, ProgramBlock) && b.output_var == inner_var_id && is_on_path(b.p, block.p, Dict()),
                     all_blocks,
                 )
 
@@ -212,8 +408,34 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 end
             end
         end
+        for block in copy_blocks
+            var_id = block.input_vars[1]
+            if !haskey(inner_mapping, var_id)
+                push!(missing_blocks, (block, var_id))
+                continue
+            end
+            inner_var_id = inner_mapping[var_id]
+            if !haskey(inner_mapping, block.output_var)
+                push!(missing_blocks, (block, var_id))
+                continue
+            end
+            dest_var_id = inner_mapping[block.output_var]
+            matching_blocks = filter(
+                b ->
+                    isa(b, ProgramBlock) &&
+                        isa(b.p, FreeVar) &&
+                        b.input_vars == [inner_var_id] &&
+                        b.output_var == dest_var_id,
+                all_blocks,
+            )
+            if isempty(matching_blocks)
+                push!(missing_blocks, (block, var_id))
+            end
+        end
         if !isempty(missing_blocks)
+            export_solution_context(sc)
             @info "Missing blocks"
+            @info missing_blocks
             @info [(bl, rev_vars_mapping[var_id]) for (bl, var_id) in missing_blocks]
             error("Could not find all blocks")
         end
@@ -223,7 +445,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         unused_known_vars = Dict{UInt64,Any}()
         unused_unknown_vars = DefaultDict{UInt64,Any}(() -> UInt64[])
         for branch_id in 1:sc.branches_count[]
-            var_id = first(get_connected_from(sc.branch_vars, branch_id))
+            var_id = sc.branch_vars[branch_id]
 
             out_blocks = get_connected_from(sc.branch_outgoing_blocks, branch_id)
             if !isempty(out_blocks)
@@ -267,70 +489,123 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         for (var_id, branch_ids) in unused_unknown_vars
             if haskey(rev_inner_mapping, var_id)
                 orig_var_id = rev_vars_mapping[rev_inner_mapping[var_id]]
-                @info "Unused unexplained var $orig_var_id"
+                @info "Unused unexplained var $orig_var_id $var_id"
             else
-                continue
                 @info "Unused unexplained var inner $var_id"
+                continue
             end
             for branch_id in branch_ids
                 entry = sc.entries[sc.branch_entries[branch_id]]
+                @info "Entry_id $(sc.branch_entries[branch_id])"
                 @info sc.types[entry.type_id]
                 @info entry.values
             end
         end
 
-        for (branch_id, is_explained, from_input, bp) in skipped_blocks
-            if !is_explained
-                if haskey(sc.branch_queues_unknown, branch_id)
-                    q = sc.branch_queues_unknown[branch_id]
+        # if !isempty(unused_unknown_vars) || !isempty(unused_known_vars)
+        #     export_solution_context(sc)
+        #     error("Unused vars")
+        # end
+
+        # export_solution_context(sc)
+        # error("Could not find solution")
+
+        for (entry_id, is_forward, bp) in skipped_blocks
+            if is_forward
+                if haskey(sc.entry_queues_forward, entry_id)
+                    q = sc.entry_queues_forward[entry_id]
                 else
                     q = PriorityQueue{BlockPrototype,Float64}()
                 end
 
-                enqueue_unknown_bp(sc, bp, q)
-                if !isempty(q)
-                    sc.branch_queues_unknown[branch_id] = q
-                    update_branch_priority(sc, branch_id, false)
-                end
+                q[bp] = bp.cost
+                update_entry_priority(sc, entry_id, false)
             else
-                if haskey(sc.branch_queues_explained, branch_id)
-                    q = sc.branch_queues_explained[branch_id]
+                if haskey(sc.entry_queues_reverse, entry_id)
+                    q = sc.entry_queues_reverse[entry_id]
                 else
                     q = PriorityQueue{BlockPrototype,Float64}()
                 end
-                enqueue_known_bp(sc, bp, q, branch_id)
-                if !isempty(q)
-                    sc.branch_queues_explained[branch_id] = q
-                    update_branch_priority(sc, branch_id, true)
-                end
+                q[bp] = bp.cost
+                update_entry_priority(sc, entry_id, true)
+            end
+        end
+
+        for (br_id, block_info, cost) in skipped_insert_blocks
+            sc.blocks_to_insert[(br_id, block_info)] = cost
+        end
+        for (br_id, block_info, cost) in skipped_rev_insert_blocks
+            sc.rev_blocks_to_insert[(br_id, block_info)] = cost
+        end
+        for (block_info, cost, is_duplicate) in skipped_copy_blocks
+            if is_duplicate
+                sc.duplicate_copies_queue[block_info] = cost
+            else
+                sc.copies_queue[block_info] = cost
             end
         end
 
         enumeration_timeout = get_enumeration_timeout(timeout)
 
-        while (!(enumeration_timed_out(enumeration_timeout))) &&
-            (!isempty(sc.pq_input) || !isempty(sc.pq_output) || !isempty(sc.waiting_branches))
-            receive_grammar_weights(sc, guiding_model_channels, grammar)
-            from_input = !from_input
-            pq = from_input ? sc.pq_input : sc.pq_output
-            if isempty(pq)
-                sleep(0.0001)
-                continue
-            end
-            (br_id, is_explained) = draw(pq)
-            q = (is_explained ? sc.branch_queues_explained : sc.branch_queues_unknown)[br_id]
-            bp = dequeue!(q)
+        phase = 4
 
-            found_solutions = enumeration_iteration(
-                run_context,
-                sc,
-                max_free_parameters,
-                guiding_model_channels,
-                grammar,
-                bp,
-                br_id,
-                is_explained,
-            )
+        while (!(enumeration_timed_out(enumeration_timeout))) && (
+            !isempty(sc.pq_forward) ||
+            !isempty(sc.pq_reverse) ||
+            !isempty(sc.copies_queue) ||
+            !isempty(sc.blocks_to_insert) ||
+            !isempty(sc.rev_blocks_to_insert) ||
+            !isempty(sc.waiting_entries)
+        )
+            receive_grammar_weights(sc, guiding_model_channels, grammar)
+
+            phase = (phase + 1) % 5
+
+            if phase == 2
+                if isempty(sc.blocks_to_insert)
+                    continue
+                end
+                br_id, block_info = dequeue!(sc.blocks_to_insert)
+
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, false, br_id, block_info, guiding_model_channels, grammar)
+            elseif phase == 3
+                if isempty(sc.rev_blocks_to_insert)
+                    continue
+                end
+                br_id, block_info = dequeue!(sc.rev_blocks_to_insert)
+
+                found_solutions =
+                    enumeration_iteration_insert_block(sc, true, br_id, block_info, guiding_model_channels, grammar)
+            elseif phase == 4
+                if isempty(sc.copies_queue)
+                    continue
+                end
+                block_info = dequeue!(sc.copies_queue)
+
+                found_solutions =
+                    enumeration_iteration_insert_copy_block(sc, block_info, guiding_model_channels, grammar)
+            else
+                if phase == 0
+                    pq = sc.pq_forward
+                    is_forward = true
+                else
+                    pq = sc.pq_reverse
+                    is_forward = false
+                end
+                if isempty(pq)
+                    sleep(0.0001)
+                    continue
+                end
+                entry_id = draw(pq)
+                q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
+                bp = dequeue!(q)
+
+                enumeration_iteration(sc, max_free_parameters, bp, entry_id, is_forward)
+                found_solutions = []
+            end
+
+            sc.iterations_count += 1
 
             for solution_path in found_solutions
                 solution, cost, trace_values = extract_solution(sc, solution_path)
@@ -346,11 +621,15 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
             end
         end
 
+        export_solution_context(sc)
         @info "Iterations count $(sc.iterations_count)"
-        @info "Total number of valid blocks $(sc.total_number_of_enumerated_programs)"
+        @info "Blocks found $(sc.blocks_found)"
+        @info "Blocks inserted $(sc.blocks_inserted)"
+        @info "Copy blocks inserted $(sc.copy_blocks_inserted)"
     catch e
         bt = catch_backtrace()
-        @error "Error in build_manual_trace" exception = (e, bt)
+        export_solution_context(sc)
+        @error "Error in build_partial_solution" exception = (e, bt)
         rethrow()
     finally
         mark_task_finished(guiding_model_channels, task_name)

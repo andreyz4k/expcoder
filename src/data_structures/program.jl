@@ -327,8 +327,6 @@ end
 
 infer_program_type(context, environment, var_env, p::SetConst)::Tuple{Context,Tp} = instantiate(p.t, context)
 
-using DataStructures
-
 function closed_inference(p)
     var_env = OrderedDict()
     (context, rt) = infer_program_type(empty_context, [], var_env, p)

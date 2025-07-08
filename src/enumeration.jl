@@ -1,6 +1,4 @@
 
-using DataStructures
-
 get_enumeration_timeout(timeout)::Float64 = time() + timeout
 enumeration_timed_out(timeout)::Bool = time() > timeout
 

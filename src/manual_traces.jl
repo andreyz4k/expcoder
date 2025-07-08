@@ -483,7 +483,6 @@ function enumeration_iteration_traced(
     entry_id::UInt64,
     is_forward::Bool,
     target_blocks,
-    vars_mapping,
 )
     q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
     if state_finished(bp)
@@ -727,15 +726,7 @@ function build_manual_trace(
                 end
                 target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
 
-                enumeration_iteration_traced(
-                    sc,
-                    max_free_parameters,
-                    bp,
-                    entry_id,
-                    is_forward,
-                    target_blocks,
-                    inner_mapping,
-                )
+                enumeration_iteration_traced(sc, max_free_parameters, bp, entry_id, is_forward, target_blocks)
                 found_solutions = []
             end
             sc.iterations_count += 1

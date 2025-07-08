@@ -1,7 +1,6 @@
 
 abstract type Entry end
 
-using DataStructures: Accumulator
 struct ValueEntry <: Entry
     type_id::UInt64
     values::Vector

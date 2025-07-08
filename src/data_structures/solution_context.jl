@@ -1,5 +1,4 @@
 
-using DataStructures: PriorityQueue
 using NDPriorityQueues
 
 "Solution context"

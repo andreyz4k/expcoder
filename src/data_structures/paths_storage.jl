@@ -1,6 +1,4 @@
 
-using DataStructures: OrderedDict
-
 struct Path
     main_path::OrderedDict{UInt64,UInt64}
     side_vars::Dict{UInt64,UInt64}
@@ -70,7 +68,6 @@ end
 extract_block_sequence(path::Path) = unique(collect(values(path.main_path)))
 
 STORE_MAX_PATHS = 10
-using DataStructures: SortedSet, DefaultDict
 
 mutable struct PathsStorage
     transaction_depth::Int

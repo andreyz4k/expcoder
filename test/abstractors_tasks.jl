@@ -54,7 +54,7 @@ using solver:
             push!(train_inputs, example["inputs"])
             push!(train_outputs, example["output"])
         end
-        task = Task(name, parse_type(type_str), supervised_task_checker, train_inputs, train_outputs, [], [])
+        task = Task(name, name, parse_type(type_str), supervised_task_checker, train_inputs, train_outputs, [], [])
         return task
     end
 

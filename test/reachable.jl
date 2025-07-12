@@ -150,6 +150,7 @@ using DataStructures
     function create_task(task_dict)
         return Task(
             task_dict["name"],
+            task_dict["name"],
             parse_type(task_dict["request"]),
             supervised_task_checker,
             [ex["inputs"] for ex in task_dict["examples"]],

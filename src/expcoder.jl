@@ -18,6 +18,7 @@ function create_arc_task(fname, tp)
         push!(test_inputs, Dict("inp0" => vcat([reshape(r, (1, length(r))) for r in example["input"]]...)))
         push!(test_outputs, vcat([reshape(r, (1, length(r))) for r in example["output"]]...))
     end
+    arc_folder = normpath(joinpath(@__DIR__, "..", "data"))
 
     return Task(basename(fname), tp, supervised_task_checker, train_inputs, train_outputs, test_inputs, test_outputs)
 end
@@ -1287,14 +1288,6 @@ function main(; kwargs...)
         "type_var_penalty_mult" => 1.0,
         "type_var_penalty_power" => 4.0,
     )
-
-    grammar_hash = hash(grammar)
-    guiding_model_server = GuidingModelServer(guiding_model)
-    start_server(guiding_model_server)
-    send_wandb_config(guiding_model_server, hyperparameters)
-    set_current_grammar!(guiding_model, grammar)
-    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
-
     type_weights = Dict{String,Any}(
         "int" => 0.5,
         "list" => 2.0,
@@ -1307,7 +1300,19 @@ function main(; kwargs...)
         "either" => 0.0,
     )
 
+    grammar_hash = hash(grammar)
+    guiding_model_server = GuidingModelServer(guiding_model)
+    start_server(guiding_model_server)
+    send_wandb_config(
+        guiding_model_server,
+        merge(hyperparameters, Dict("weight_$key" => value for (key, value) in type_weights)),
+    )
+    set_current_grammar!(guiding_model, grammar)
+    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
+
     # tasks = tasks[begin:10]
+    task_status = Dict{String,Int}()
+    tasks_dict = Dict{String,Task}(t.name => t for t in tasks)
 
     try
         while i <= parsed_args[:iterations]
@@ -1328,6 +1333,23 @@ function main(; kwargs...)
             # @info "Finished updating model with manual traces"
 
             cur_traces = traces[grammar_hash][2]
+            for task_name in keys(cur_traces)
+                if !haskey(task_status, task_name)
+                    task_status[task_name] = 0
+                end
+            end
+            send_wandb_log(
+                guiding_model_server,
+                Dict(
+                    "task_status" => Dict(
+                        "type" => "table",
+                        "columns" => ["task_name", "status"],
+                        "data" =>
+                            [[tasks_dict[task_name].full_name, status] for (task_name, status) in task_status],
+                    ),
+                ),
+            )
+
             new_traces = try_solve_tasks(
                 worker_pool,
                 tasks,
@@ -1344,7 +1366,6 @@ function main(; kwargs...)
             if !haskey(traces, grammar_hash)
                 traces[grammar_hash] = (grammar, Dict{String,Any}())
             end
-            send_wandb_log(guiding_model_server, Dict("solved_tasks" => length(new_traces)))
             for task_traces in new_traces
                 task_name = task_traces["task"].name
                 if !haskey(cur_traces, task_name)
@@ -1357,8 +1378,22 @@ function main(; kwargs...)
                         dequeue!(cur_traces[task_name])
                     end
                 end
+                if !haskey(task_status, task_name) || task_status[task_name] == 0
+                    task_status[task_name] = i
+                end
             end
-
+            send_wandb_log(
+                guiding_model_server,
+                Dict(
+                    "solved_tasks" => length(new_traces),
+                    "task_status" => Dict(
+                        "type" => "table",
+                        "columns" => ["task_name", "status"],
+                        "data" =>
+                            [[tasks_dict[task_name].full_name, status] for (task_name, status) in task_status],
+                    ),
+                ),
+            )
             cur_traces, grammar = compress_traces(tasks, cur_traces, grammar)
             grammar_hash = hash(grammar)
             traces[grammar_hash] = (grammar, cur_traces)

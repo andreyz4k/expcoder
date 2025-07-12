@@ -889,7 +889,13 @@ def wandb_logs_loop(redis_db):
             sleep(0.001)
             continue
         log_dict = orjson.loads(log_str)
-        wandb.log(log_dict)
+        parsed_log_dict = {}
+        for k, v in log_dict.items():
+            if isinstance(v, dict) and "type" in v and v["type"] == "table":
+                parsed_log_dict[k] = wandb.Table(data=v["data"], columns=v["columns"])
+            else:
+                parsed_log_dict[k] = v
+        wandb.log(parsed_log_dict)
 
 
 def main():

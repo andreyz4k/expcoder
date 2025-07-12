@@ -1,6 +1,7 @@
 
 struct Task
     name::String
+    full_name::String
     task_type::Tp
     log_likelihood_checker::Any
     train_inputs::Any

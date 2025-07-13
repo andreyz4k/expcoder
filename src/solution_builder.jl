@@ -44,62 +44,6 @@ function build_manual_solution(task_name, guiding_model_server::PythonGuidingMod
     return
 end
 
-function enumeration_iteration_traced_save_skipped(
-    sc::SolutionContext,
-    max_free_parameters::Int,
-    bp::BlockPrototype,
-    entry_id::UInt64,
-    is_forward::Bool,
-    target_blocks,
-    skipped_blocks,
-)
-    q = (is_forward ? sc.entry_queues_forward : sc.entry_queues_reverse)[entry_id]
-    if state_finished(bp)
-        if sc.verbose
-            @info "Checking finished $bp"
-            @info "Target blocks $target_blocks"
-        end
-        transaction(sc) do
-            unfinished_prototypes = enumeration_iteration_finished(sc, bp)
-
-            for new_bp in unfinished_prototypes
-                if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
-                    if sc.verbose
-                        @info "On path $new_bp"
-                        @info "Enqueing $new_bp"
-                    end
-                    q[new_bp] = new_bp.cost
-                else
-                    if sc.verbose
-                        @info "Not on path $new_bp"
-                    end
-                    push!(skipped_blocks, (entry_id, is_forward, new_bp))
-                end
-            end
-        end
-    else
-        if sc.verbose
-            @info "Checking unfinished $bp"
-            @info "Target blocks $target_blocks"
-        end
-        for new_bp in block_state_successors(sc, max_free_parameters, bp)
-            if any(is_bp_on_path(new_bp, bl) for bl in target_blocks)
-                if sc.verbose
-                    @info "On path $new_bp"
-                    @info "Enqueing $new_bp"
-                end
-                q[new_bp] = new_bp.cost
-            else
-                if sc.verbose
-                    @info "Not on path $new_bp"
-                end
-                push!(skipped_blocks, (entry_id, is_forward, new_bp))
-            end
-        end
-    end
-    update_entry_priority(sc, entry_id, !is_forward)
-end
-
 function build_partial_solution(task::Task, task_name, target_solution, guiding_model_channels, grammar, timeout = 20)
     verbose_test = false
     max_free_parameters = 10
@@ -128,14 +72,14 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
         "type_var_penalty_power" => 1.0,
     )
 
+    target_program = parse_program(target_solution)
+
+    start_time = time()
+
+    # verbose_test = false
+    sc = create_starting_context(task, task_name, type_weights, hyperparameters, run_context, verbose_test, false)
+
     try
-        target_program = parse_program(target_solution)
-
-        start_time = time()
-
-        # verbose_test = false
-        sc = create_starting_context(task, task_name, type_weights, hyperparameters, run_context, verbose_test, true)
-
         rev_blocks, out_blocks, copy_blocks, vars_mapping, var_types =
             _extract_blocks(sc.types, task, target_program, verbose_test)
         rev_vars_mapping = Dict(v => k for (k, v) in vars_mapping)
@@ -170,8 +114,6 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
 
         phase = 4
 
-        skipped_insert_blocks = []
-        skipped_rev_insert_blocks = []
         skipped_copy_blocks = []
         skipped_blocks = []
 
@@ -204,7 +146,6 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                         if sc.verbose
                             @info "Skipping insert block $var_id $orig_var_id $br_id $block_info"
                         end
-                        push!(skipped_insert_blocks, (br_id, block_info, cost))
                     else
                         if sc.verbose
                             @info "Skipping insert block $var_id $br_id $block_info"
@@ -243,7 +184,6 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                         if sc.verbose
                             @info "Skipping rev insert block $var_id $orig_var_id $br_id $block_info"
                         end
-                        push!(skipped_rev_insert_blocks, (br_id, block_info, cost))
                     else
                         if sc.verbose
                             @info "Skipping rev insert block $var_id $br_id $block_info"
@@ -340,15 +280,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 end
                 target_blocks = vcat([target_blocks_group[v] for v in matching_vars[(entry_id, is_forward)]]...)
 
-                enumeration_iteration_traced_save_skipped(
-                    sc,
-                    max_free_parameters,
-                    bp,
-                    entry_id,
-                    is_forward,
-                    target_blocks,
-                    skipped_blocks,
-                )
+                enumeration_iteration_traced(sc, max_free_parameters, bp, entry_id, is_forward, target_blocks)
                 found_solutions = []
             end
 
@@ -482,6 +414,7 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 @info "Unused explained var inner $var_id"
             end
             entry = sc.entries[sc.branch_entries[branch_id]]
+            @info "Entry_id $(sc.branch_entries[branch_id])"
             @info sc.types[entry.type_id]
             @info entry.values
         end
@@ -531,12 +464,10 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
             end
         end
 
-        for (br_id, block_info, cost) in skipped_insert_blocks
-            sc.blocks_to_insert[(br_id, block_info)] = cost
-        end
-        for (br_id, block_info, cost) in skipped_rev_insert_blocks
-            sc.rev_blocks_to_insert[(br_id, block_info)] = cost
-        end
+        @info "Skipped insert blocks"
+        @info length(skipped_copy_blocks)
+        @info length(skipped_blocks)
+
         for (block_info, cost, is_duplicate) in skipped_copy_blocks
             if is_duplicate
                 sc.duplicate_copies_queue[block_info] = cost

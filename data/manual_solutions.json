@@ -482,5 +482,26 @@
             "let $v25 = (rev_grid_elements $v24 $v9 $v10) in",
             "(rev_select_grid (lambda (eq? $0 $v1)) $v7 $v25)"
         ]
+    ],
+    "11868b19.json": [
+        [
+            "let $v1 = Const(color, 0) in",
+            "let $v2, $v3, $v4 = rev($inp0 = (rev_fix_param (rev_select_grid (lambda (eq? $0 $v2)) $v3 $v4) $v2 (lambda Const(color, 0)))) in",
+            "let $v5, $v6, $v7 = rev($v4 = (rev_grid_elements $v5 $v6 $v7)) in",
+            "let $v8 = rev($v5 = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (tuple2_first (tuple2_first $0)) (tuple2_first (tuple2_first $2)))) 1)) (not (gt? (abs (- (tuple2_second (tuple2_first $0)) (tuple2_second (tuple2_first $2)))) 1)))) $0))) $1 $0))) empty_set $v8)) in",
+            "let $v9 = rev($v8 = (map_set (lambda (map_set (lambda (tuple2 $0 (tuple2_second $1))) (tuple2_first $0))) $v9)) in",
+            "let $v10 = rev($v9 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first $0) (tuple2_first $1)) (+ (tuple2_second $0) (tuple2_second $1)))) $1) $0 (lambda (tuple2 (fold (lambda (lambda (if (gt? $0 $1) $1 $0))) (map (lambda (tuple2_first $0)) (collect $0)) max_int) (fold (lambda (lambda (if (gt? $0 $1) $1 $0))) (map (lambda (tuple2_second $0)) (collect $0)) max_int))))) (tuple2_first (tuple2_first $1)))) (tuple2_second (tuple2_first $0))) (tuple2_second $0))) $v10)) in",
+            "let $v11, $v12, $v13 = rev($v10 = (rev_fix_param (rev_select_set (lambda (eq? (tuple2_second (tuple2_first $0)) $v11)) $v12 $v13) $v11 (lambda Const(set(tuple2(int, int)), Set([(1, 2), (1, 1), (0, 1), (2, 1), (1, 0)]))))) in",
+            "let $v14 = Const(color, 7) in",
+            "let $v15, $v16 = rev($v12 = (map_set (lambda (tuple2 $0 $v15)) $v16)) in",
+            "let $v17 = (map_set (lambda (tuple2 $0 $v14)) $v16) in",
+            "let $v18 = (rev_select_set (lambda (eq? (tuple2_second (tuple2_first $0)) $v11)) $v17 $v13) in",
+            "let $v19 = (map_set (lambda (tuple2 ((lambda ((lambda (rev_fix_param (map_set (lambda (tuple2 (+ (tuple2_first $0) (tuple2_first $1)) (+ (tuple2_second $0) (tuple2_second $1)))) $1) $0 (lambda (tuple2 (fold (lambda (lambda (if (gt? $0 $1) $1 $0))) (map (lambda (tuple2_first $0)) (collect $0)) max_int) (fold (lambda (lambda (if (gt? $0 $1) $1 $0))) (map (lambda (tuple2_second $0)) (collect $0)) max_int))))) (tuple2_first (tuple2_first $1)))) (tuple2_second (tuple2_first $0))) (tuple2_second $0))) $v18) in",
+            "let $v20 = (map_set (lambda (map_set (lambda (tuple2 $0 (tuple2_second $1))) (tuple2_first $0))) $v19) in",
+            "let $v21 = (rev_fold_set (lambda (lambda (rev_greedy_cluster (lambda (lambda (any_set (lambda (and (not (gt? (abs (- (tuple2_first (tuple2_first $0)) (tuple2_first (tuple2_first $2)))) 1)) (not (gt? (abs (- (tuple2_second (tuple2_first $0)) (tuple2_second (tuple2_first $2)))) 1)))) $0))) $1 $0))) empty_set $v20) in",
+            "let $v22 = $v6 in",
+            "let $v23 = (rev_grid_elements $v21 $v22 $v6) in",
+            "(rev_select_grid (lambda (eq? $0 $v1)) $inp0 $v23)"
+        ]
     ]
 }

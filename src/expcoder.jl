@@ -20,7 +20,16 @@ function create_arc_task(fname, tp)
     end
     arc_folder = normpath(joinpath(@__DIR__, "..", "data"))
 
-    return Task(basename(fname), tp, supervised_task_checker, train_inputs, train_outputs, test_inputs, test_outputs)
+    return Task(
+        basename(fname),
+        relpath(fname, arc_folder),
+        tp,
+        supervised_task_checker,
+        train_inputs,
+        train_outputs,
+        test_inputs,
+        test_outputs,
+    )
 end
 
 function get_arc_tasks()

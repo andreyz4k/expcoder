@@ -342,6 +342,7 @@ end
 is_subeither(wide::EitherOptions, narrow) = any(is_subeither(op, narrow) for (h, op) in wide.options)
 is_subeither(wide, narrow::EitherOptions) = false
 is_subeither(wide, narrow) = _match_value(wide, narrow)
+is_subeither(wide::AbductibleValue, narrow::AbductibleValue) = _match_value(wide.value, narrow.value)
 
 function is_subeither(wide::EitherOptions, narrow::EitherOptions)
     check_level = any(haskey(wide.options, k) for k in keys(narrow.options))

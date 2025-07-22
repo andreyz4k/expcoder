@@ -431,7 +431,11 @@ function build_partial_solution(task::Task, task_name, target_solution, guiding_
                 entry = sc.entries[sc.branch_entries[branch_id]]
                 @info "Entry_id $(sc.branch_entries[branch_id])"
                 @info sc.types[entry.type_id]
-                @info entry.values
+                if isa(entry, NoDataEntry)
+                    @info "No data entry"
+                else
+                    @info entry.values
+                end
             end
         end
 

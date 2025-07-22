@@ -1394,6 +1394,7 @@ function main(; kwargs...)
             send_wandb_log(
                 guiding_model_server,
                 Dict(
+                    "iteration" => i,
                     "solved_tasks" => length(new_traces),
                     "task_status" => Dict(
                         "type" => "table",

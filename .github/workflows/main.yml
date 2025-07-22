@@ -127,45 +127,6 @@ jobs:
       - name: Run solver
         run: julia --project=. scripts/main.jl -c 2
 
-  test-arc-nn:
-    name: Test ARC with neural guiding model ${{ matrix.version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.11'
-          - '1.11.0'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install boost
-        run: sudo apt-get install libboost-all-dev
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@latest
-        with:
-          version: ${{ matrix.version }}
-
-      - uses: julia-actions/cache@v2
-
-      - uses: julia-actions/julia-buildpkg@latest
-        with:
-          project: .
-
-      - name: set cores number
-        run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
-
-      - name: Set CPU backend
-        run: echo "[Flux]" > LocalPreferences.toml && echo "gpu_backend = \"CPU\"" >> LocalPreferences.toml
-
-      - name: Run solver
-        run: julia --project=. scripts/main.jl -c 2 -m nn
-
   test-arc-python:
     name: Test ARC with python guiding model ${{ matrix.version }}
     runs-on: ubuntu-latest

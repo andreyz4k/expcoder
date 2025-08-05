@@ -21,6 +21,7 @@ Solution programs are written in a custom dialect of parametrically-typed lambda
         - [Adding manually written solutions to the training data](#adding-manually-written-solutions-to-the-training-data)
         - [Using representation complexity](#using-representation-complexity)
     - [Learning new functions](#learning-new-functions)
+- [Technical features](#technical-features)
 - [Example solutions](#example-solutions)
 - [Limitations](#limitations)
 - [How to run](#how-to-run)
@@ -228,6 +229,21 @@ The final point is that we use [Non-deterministic priority queues](https://githu
 
 We are using a [slightly modified version](https://github.com/andreyz4k/stitch) of the [STITCH](https://arxiv.org/abs/2211.16605) algorithm for learning new useful functions.
 It searches for repeating patterns in the solutions found by the system, saves them as new composite functions, and rewrites the solution programs using them.
+
+## Technical features
+
+- Worker pool for solving several tasks in parallel that restarts worker processes if they crash or need to be killed for any reason.
+- Since generated code can contain infinite loops or very inefficient algorithms, we have a timeout system that interrupts the execution without aborting the whole solving process.
+It is orchestrated from the main process and uses [SharedMemoryLocks.jl](https://github.com/andreyz4k/SharedMemoryLocks.jl) to synchronize the timeout state without overhead and prevent race conditions.
+- The guiding model runs in a separate Python process that all solver workers can use.
+Communication is done via Redis queues.
+- The inference process in the guiding model is separated into several stages, each running in a separate loop in its own thread.
+Data between stages is passed via Redis queues.
+This allows us to use caches for embeddings without having half-empty batches all the time.
+If an embedding for a requested value is in the cache, it is sent to the next stage immediately; otherwise, the request goes to the embedding queue.
+- Embeddings for textual values are computed using a transformer embedding model with a dynamic batch size that is calculated based on the length of the values to maintain roughly the same GPU memory footprint for every batch.
+- If different variables in different search branches have the same value, they share the same inner search tree to avoid doing the same work multiple times.
+- All information about the search context, including variables, types, values, program blocks, and other elements, is stored in a custom in-memory data structure that supports transactions and rollbacks, greatly simplifying the task of maintaining search state consistency.
 
 ## Example solutions
 

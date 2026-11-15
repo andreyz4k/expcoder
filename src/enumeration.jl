@@ -369,21 +369,27 @@ function try_get_reversed_values(sc::SolutionContext, p::Program, p_type, p_fix_
     return new_entries, unfixed_vars, has_eithers, has_abductibles
 end
 
+run_times = []
+
 function try_run_function(f::Function, xs)
+    start_time = time()
     try
-        f(xs...)
+        res = f(xs...)
+        return res
     catch e
         #  We have to be a bit careful with exceptions if the
         #     synthesized program generated an exception, then we just
         #     terminate w/ false but if the enumeration timeout was
         #     triggered during program evaluation, we need to pass the
         #     exception on
+        push!(run_times, (f, xs, time() - start_time, e))
         if isa(e, InterruptException)
             @warn "Interrupted running $f with $xs"
             rethrow()
         elseif isa(e, UnknownPrimitive)
             error("Unknown primitive: $(e.name)")
         elseif isa(e, MethodError)
+            @error "Method error" exception = (e, catch_backtrace())
             @error f
             @error(xs)
             rethrow()
@@ -391,6 +397,8 @@ function try_run_function(f::Function, xs)
             # @error "Error while running $f with $xs" exception = (e, catch_backtrace())
             throw(EnumerationException())
         end
+    else
+        push!(run_times, (f, xs, time() - start_time, res))
     end
 end
 

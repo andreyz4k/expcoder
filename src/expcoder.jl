@@ -38,11 +38,11 @@ function get_arc_tasks()
     arc_folder = normpath(joinpath(@__DIR__, "..", "data"))
     dirs = [joinpath(arc_folder, "sortOfARC"), joinpath(arc_folder, "ARC/data/training")]
     concept_arc_dir = joinpath(arc_folder, "ConceptARC/corpus")
-    for category_dir in readdir(concept_arc_dir; join = true)
+    for category_dir in readdir(concept_arc_dir; join=true)
         push!(dirs, category_dir)
     end
     for dir in dirs
-        for fname in readdir(dir; join = true)
+        for fname in readdir(dir; join=true)
             if endswith(fname, ".json")
                 task = create_arc_task(fname, tp)
                 push!(tasks, task)
@@ -98,8 +98,8 @@ function enqueue_updates(sc::SolutionContext, guiding_model_channels, grammar)
             empty!(sc.duplicate_copies_queue)
         end
         if !sc.branch_is_not_copy[branch_id] ||
-           in(branch_id, new_explained_branches) ||
-           branch_id == sc.target_branch_id
+            in(branch_id, new_explained_branches) ||
+            branch_id == sc.target_branch_id
             continue
         end
         push!(updated_known_entries, sc.branch_entries[branch_id])
@@ -251,8 +251,8 @@ function enumeration_iteration_finished_output(sc::SolutionContext, bp::BlockPro
     output_entry = sc.entries[bp.root_entry]
     is_reverse =
         is_reversible(bp.skeleton) &&
-        !isa(output_entry, AbductibleEntry) &&
-        !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
+            !isa(output_entry, AbductibleEntry) &&
+            !(isa(output_entry, PatternEntry) && all(v == PatternWrapper(any_object) for v in output_entry.values))
 
     p = bp.skeleton
 
@@ -390,7 +390,7 @@ function insert_block(sc::SolutionContext, output_branch_id::UInt64, block_info)
         if !has_abductibles
             complexity_factor -=
                 out_entry.complexity -
-                sum(sc.entries[entry_id].complexity for (_, entry_id, _) in input_vars; init = 0.0)
+                    sum(sc.entries[entry_id].complexity for (_, entry_id, _) in input_vars; init=0.0)
         end
 
         either_branch_ids = UInt64[]
@@ -627,9 +627,9 @@ function create_reversed_block(sc::SolutionContext, bp::BlockPrototype)
 
         for branch_id in get_connected_to(sc.branch_entries, bp.root_entry)
             if sc.branch_is_explained[branch_id] &&
-               sc.branch_is_not_copy[branch_id] &&
-               !isnothing(sc.explained_min_path_costs[branch_id]) &&
-               sc.branch_is_not_const[branch_id]
+                sc.branch_is_not_copy[branch_id] &&
+                !isnothing(sc.explained_min_path_costs[branch_id]) &&
+                sc.branch_is_not_const[branch_id]
                 prev_entries = get_connected_from(sc.branch_prev_entries, branch_id)
                 if sc.traced || all(!in(entry_id, prev_entries) for (_, entry_id, _) in output_vars)
                     if sc.verbose
@@ -722,7 +722,7 @@ function insert_reverse_block(sc::SolutionContext, input_branch_id::UInt64, bloc
     if !has_abductibles
         complexity_factor -=
             input_entry.complexity -
-            sum(sc.entries[entry_id].complexity for (_, entry_id, _) in output_vars; init = 0.0)
+                sum(sc.entries[entry_id].complexity for (_, entry_id, _) in output_vars; init=0.0)
     end
     new_branches = Dict{UInt64,UInt64}()
     out_related_complexity_branches = get_connected_from(sc.related_explained_complexity_branches, input_branch_id)
@@ -918,15 +918,15 @@ function solve_task(
         phase = 4
 
         while (!(enumeration_timed_out(enumeration_timeout))) &&
-                  (
-                      !isempty(sc.pq_forward) ||
-                      !isempty(sc.pq_reverse) ||
-                      !isempty(sc.copies_queue) ||
-                      !isempty(sc.blocks_to_insert) ||
-                      !isempty(sc.rev_blocks_to_insert) ||
-                      !isempty(sc.waiting_entries)
-                  ) &&
-                  length(hits) < maximum_solutions
+            (
+                !isempty(sc.pq_forward) ||
+                    !isempty(sc.pq_reverse) ||
+                    !isempty(sc.copies_queue) ||
+                    !isempty(sc.blocks_to_insert) ||
+                    !isempty(sc.rev_blocks_to_insert) ||
+                    !isempty(sc.waiting_entries)
+            ) &&
+            length(hits) < maximum_solutions
             receive_grammar_weights(sc, guiding_model_channels, grammar)
 
             phase = (phase + 1) % 5
@@ -998,7 +998,10 @@ function solve_task(
 
         log_results(sc, hits)
 
-        need_export = false
+        need_export = sc.verbose
+        # if isempty(hits) && !isnothing(previous_traces)
+        #     need_export = true
+        # end
         if need_export
             export_solution_context(sc, previous_traces)
         end
@@ -1070,8 +1073,8 @@ function try_solve_tasks(
     new_traces = pmap(
         worker_pool,
         tasks;
-        retry_check = (s, e) -> isa(e, ProcessExitedException),
-        retry_delays = zeros(5),
+        retry_check=(s, e) -> isa(e, ProcessExitedException),
+        retry_delays=zeros(5),
     ) do task
         # new_traces = map(tasks) do task
         task_name = "$(task.name)_$(randstring(6))"
@@ -1120,11 +1123,12 @@ function try_solve_tasks(
 )
     timeout_containers = worker_pool.timeout_containers
     redis_db = guiding_model_server.model.redis_db
+    @info "Solving tasks"
     new_traces = pmap(
         worker_pool,
         tasks;
-        retry_check = (s, e) -> isa(e, ProcessExitedException),
-        retry_delays = zeros(5),
+        retry_check=(s, e) -> isa(e, ProcessExitedException),
+        retry_delays=zeros(5),
     ) do task
         # new_traces = map(tasks) do task
         task_name = "$(task.name)_$(randstring(6))"
@@ -1271,7 +1275,7 @@ end
 
 function main(; kwargs...)
     @info "Starting enumeration service"
-    parsed_args = parse_args(ARGS, config_options(); as_symbols = true)
+    parsed_args = parse_args(ARGS, config_options(); as_symbols=true)
     merge!(parsed_args, kwargs)
     tasks = get_domain_tasks(parsed_args[:domain])
 
@@ -1404,6 +1408,9 @@ function main(; kwargs...)
                     ),
                 ),
             )
+
+            log_traces(cur_traces)
+            save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
             cur_traces, grammar = compress_traces(tasks, cur_traces, grammar)
             grammar_hash = hash(grammar)
             traces[grammar_hash] = (grammar, cur_traces)
@@ -1414,6 +1421,7 @@ function main(; kwargs...)
 
             clear_model_cache(guiding_model)
             i += 1
+            save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
             guiding_model = update_guiding_model(guiding_model, traces)
             save_checkpoint(parsed_args, i, traces, grammar, guiding_model)
             set_current_grammar!(guiding_model, grammar)

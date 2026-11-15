@@ -9,7 +9,7 @@ function _make_next_mask(next_masks)
             next_mask[i, j] = 1
             i += 1
         else
-            next_mask[i:i+length(m)-1, j] = m
+            next_mask[i:(i+length(m)-1), j] = m
             i += length(m)
         end
     end
@@ -218,7 +218,7 @@ function _build_likelihood_summary(
             p = FreeVar(
                 request,
                 request,
-                UInt64(maximum(filter(k -> isa(k, UInt64), keys(var_types)); init = 0) + 1),
+                UInt64(maximum(filter(k -> isa(k, UInt64), keys(var_types)); init=0) + 1),
                 isempty(locations) ? nothing : locations[1],
             )
             if checker(p, full_p, path)
@@ -299,7 +299,7 @@ function _build_likelihood_summary(
                 context,
                 environment,
                 arg_checker,
-                vcat(path, [LeftTurn() for _ in i+1:length(xs)], [RightTurn()]),
+                vcat(path, [LeftTurn() for _ in (i+1):length(xs)], [RightTurn()]),
                 [(f, i)],
                 var_types,
                 summary,
@@ -314,13 +314,15 @@ function _preprocess_summary(summary::LikelihoodSummary, grammar_length)
     for (i, count) in summary.uses
         uses[i] = count
     end
-    mask = fill(-Inf32, grammar_length, length(summary.normalizers))
+    # Candidate sets are sent as 0-based index lists instead of a dense -Inf mask,
+    # because -Inf can't be represented in JSON. The mask is rebuilt in Python.
+    norm_sets = Vector{Vector{Int}}(undef, length(summary.normalizers))
     N = zeros(Float32, length(summary.normalizers))
     for (i, (norm_set, count)) in enumerate(summary.normalizers)
         N[i] = count
-        mask[norm_set, i] .= 0
+        norm_sets[i] = collect(norm_set) .- 1
     end
-    return (uses, mask, N, summary.constant)
+    return (uses, norm_sets, N, summary.constant)
 end
 
 function build_likelihood_summary(grammar, request, p, is_reversed)
@@ -339,7 +341,7 @@ function build_likelihood_summary(grammar, request, p, is_reversed)
         Dict(),
         summary,
     )
-    if sum(values(summary.uses); init = 0) != sum(values(summary.normalizers); init = 0)
+    if sum(values(summary.uses); init=0) != sum(values(summary.normalizers); init=0)
         @info request
         @info p
         @info is_reversed

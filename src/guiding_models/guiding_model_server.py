@@ -697,17 +697,14 @@ class GuidingRedisDataset(Dataset):
             trace_mask = np.array(trace_mask)
             is_reversed = data["is_rev"]
 
-            uses, mask, N, constant = data["summary"]
+            uses, norm_sets, N, constant = data["summary"]
             uses = np.array(uses)
-            # print(mask)
-            mask = np.transpose(np.array(mask))
-            # print(mask)
             N = np.array(N)
 
             self.loaded_data.append(
                 (
                     (inputs, outputs, (trace_vals, trace_mask), is_reversed),
-                    (uses, mask, N, constant),
+                    (uses, norm_sets, N, constant),
                 )
             )
 
@@ -752,13 +749,18 @@ class BatchCombiner:
 
         idx_key = frozenset([x[0] for x in batch])
         if idx_key not in self.cache:
-            inputs = self.model.process_input_output_batch([x[1][0][0] for x in batch])
-            outputs = self.model.process_input_output_batch([x[1][0][1] for x in batch])
             trace_values = [x[1][0][2] for x in batch]
             all_traces = list(itertools.chain(*[t[0] for t in trace_values]))
             trace_mask = self.model.combine_masks([t[1] for t in trace_values])
 
             with self.model_lock:
+                # process_input_output_batch creates MPS tensors, so it must hold the lock
+                inputs = self.model.process_input_output_batch(
+                    [x[1][0][0] for x in batch]
+                )
+                outputs = self.model.process_input_output_batch(
+                    [x[1][0][1] for x in batch]
+                )
                 trace_embiddings = torch.stack(
                     self.embeddings_cache.get_batch(all_traces)
                 ).to(device)
@@ -773,22 +775,23 @@ class BatchCombiner:
                 uses = torch.utils.data.default_collate([x[1][1][0] for x in batch]).to(
                     device, dtype=torch.float32
                 )
-                mask = [x[1][1][1] for x in batch]
+                norm_sets = [x[1][1][1] for x in batch]
                 N = [x[1][1][2] for x in batch]
 
                 max_norm_count = max(len(n) for n in N)
+                # Padding columns stay 0 (not -inf): their N is 0, and a finite z
+                # avoids 0 * -inf = nan in the loss.
                 merged_mask = np.zeros(
                     (len(N), uses.shape[1], max_norm_count), dtype=np.float32
                 )
                 merged_N = np.zeros((len(N), max_norm_count), dtype=np.float32)
                 for i, n in enumerate(N):
                     merged_N[i, : len(n)] = n
-                    # print(mask[i])
-                    merged_mask[i, :, : len(n)] = mask[i]
+                    merged_mask[i, :, : len(n)] = -np.inf
+                    for j, idxs in enumerate(norm_sets[i]):
+                        merged_mask[i, np.asarray(idxs, dtype=np.intp), j] = 0
 
-                merged_mask = (
-                    torch.tensor(merged_mask).nan_to_num_(nan=-torch.inf).to(device)
-                )
+                merged_mask = torch.tensor(merged_mask).to(device)
                 merged_N = torch.tensor(merged_N).to(device)
 
                 constant = torch.utils.data.default_collate(
@@ -849,7 +852,7 @@ def update_model_loop(redis_db, model, model_lock, embeddings_cache):
             redis_conn.delete("update_model")
 
 
-def save_model_loop(redis_db, model):
+def save_model_loop(redis_db, model, model_lock):
     redis_conn = redis.Redis(
         host="localhost", port=6379, db=redis_db, decode_responses=True
     )
@@ -858,11 +861,12 @@ def save_model_loop(redis_db, model):
         if not path:
             sleep(0.01)
             continue
-        model.save(path)
+        with model_lock:
+            model.save(path)
         redis_conn.delete("save_model")
 
 
-def load_model_loop(redis_db, model):
+def load_model_loop(redis_db, model, model_lock):
     redis_conn = redis.Redis(
         host="localhost", port=6379, db=redis_db, decode_responses=True
     )
@@ -871,7 +875,8 @@ def load_model_loop(redis_db, model):
         if not path:
             sleep(0.01)
             continue
-        model.load(path)
+        with model_lock:
+            model.load(path)
         redis_conn.delete("load_model")
 
 
@@ -904,10 +909,13 @@ def main():
     cache_type = sys.argv[2]
     model = guiding_model.create_model()
 
-    load_model_thread = Thread(target=load_model_loop, args=(redis_db, model))
+    model_lock = Lock()
+
+    load_model_thread = Thread(
+        target=load_model_loop, args=(redis_db, model, model_lock)
+    )
     load_model_thread.start()
 
-    model_lock = Lock()
     current_grammar = [None]
     finished_tasks = set()
 
@@ -991,7 +999,9 @@ def main():
         target=update_model_loop, args=(redis_db, model, model_lock, embeddings_cache)
     )
     update_model_thread.start()
-    save_model_thread = Thread(target=save_model_loop, args=(redis_db, model))
+    save_model_thread = Thread(
+        target=save_model_loop, args=(redis_db, model, model_lock)
+    )
     save_model_thread.start()
     wandb_logs_thread = Thread(target=wandb_logs_loop, args=(redis_db,))
     wandb_logs_thread.start()

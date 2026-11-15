@@ -5,6 +5,9 @@ numpy = ""
 onnx = ""
 optimum = ""
 orjson = ""
+# Python 3.14 crashes (stack overflow / segfault) in Py_Finalize when Distributed
+# workers that embed it via PythonCall exit.
+python = ">=3.10,<3.14"
 redis-py = ""
 sqlite = ""
 tqdm = ""

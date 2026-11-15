@@ -8,20 +8,20 @@ end
 Base.:(==)(path1::Path, path2::Path) = path1.main_path == path2.main_path && path1.side_vars == path2.side_vars
 Base.hash(path::Path, h::UInt) = hash(path.main_path, hash(path.side_vars, h))
 
-Base.isless(path1::Path, path2::Path) = path1.cost < path2.cost
+Base.isless(path1::Path, path2::Path) = path1.cost < path2.cost || (path1.cost == path2.cost && repr(path1.main_path) < repr(path2.main_path) || (path1.cost == path2.cost && path1.main_path == path2.main_path && repr(path1.side_vars) < repr(path2.side_vars)))
 
 empty_path() = Path(OrderedDict{UInt64,UInt64}(), Dict{UInt64,UInt64}(), 0.0)
 
 function paths_compatible(path1::Path, path2::Path)
     for (v, b) in path2.main_path
         if (haskey(path1.main_path, v) && path1.main_path[v] != b) ||
-           (haskey(path1.side_vars, v) && path1.side_vars[v] != b)
+            (haskey(path1.side_vars, v) && path1.side_vars[v] != b)
             return false
         end
     end
     for (v, b) in path2.side_vars
         if (haskey(path1.main_path, v) && path1.main_path[v] != b) ||
-           (haskey(path1.side_vars, v) && path1.side_vars[v] != b)
+            (haskey(path1.side_vars, v) && path1.side_vars[v] != b)
             return false
         end
     end
@@ -34,7 +34,7 @@ function merge_paths(sc, path1::Path, path2::Path)
     end
     new_main_path = merge(path1.main_path, path2.main_path)
     new_side_vars = filter(p -> !haskey(new_main_path, p.first), merge(path1.side_vars, path2.side_vars))
-    new_cost = sum(sc.blocks[b_id].cost for b_id in unique(values(new_main_path)); init = 0.0)
+    new_cost = sum(sc.blocks[b_id].cost for b_id in unique(values(new_main_path)); init=0.0)
     return Path(new_main_path, new_side_vars, new_cost)
 end
 
@@ -45,7 +45,7 @@ function merge_path(sc, path::Path, var_id, block_id, side_vars)
     return Path(new_main_path, new_side_vars, new_cost)
 end
 
-path_cost(sc, path::Path) = sum(sc.blocks[b_id].cost for b_id in unique(values(path.main_path)); init = 0.0)
+path_cost(sc, path::Path) = sum(sc.blocks[b_id].cost for b_id in unique(values(path.main_path)); init=0.0)
 
 path_sets_var(path::Path, var_id) = haskey(path.main_path, var_id)
 
@@ -98,7 +98,7 @@ function save_changes!(storage::PathsStorage, depth)
                 last_values[k] = v
             end
             while length(last_values[k]) > STORE_MAX_PATHS
-                pop!(last_values[k])
+                popfirst!(last_values[k])
             end
         end
     end
@@ -114,7 +114,7 @@ end
 
 function Base.getindex(storage::PathsStorage, ind::UInt64)
     result = nothing
-    for i in 1:min(storage.transaction_depth + 1, length(storage.values_stack))
+    for i in 1:min(storage.transaction_depth+1, length(storage.values_stack))
         vals = storage.values_stack[i]
         if haskey(vals, ind)
             if result === nothing
@@ -132,7 +132,7 @@ end
 
 function Base.haskey(storage::PathsStorage, key::UInt64)
     return any(
-        haskey(storage.values_stack[i], key) for i in 1:min(storage.transaction_depth + 1, length(storage.values_stack))
+        haskey(storage.values_stack[i], key) for i in 1:min(storage.transaction_depth+1, length(storage.values_stack))
     )
 end
 
@@ -161,7 +161,7 @@ function add_path!(storage::PathsStorage, branch_id, path)
     if length(last_values[branch_id]) == STORE_MAX_PATHS
         if first(last_values[branch_id]) > path
             push!(last_values[branch_id], path)
-            pop!(last_values[branch_id])
+            popfirst!(last_values[branch_id])
             return true
         else
             return false
@@ -174,7 +174,7 @@ end
 
 function get_new_paths(storage::PathsStorage, branch_id)
     result = nothing
-    for i in 2:min(storage.transaction_depth + 1, length(storage.values_stack))
+    for i in 2:min(storage.transaction_depth+1, length(storage.values_stack))
         vals = storage.values_stack[i]
         if haskey(vals, branch_id)
             if result === nothing

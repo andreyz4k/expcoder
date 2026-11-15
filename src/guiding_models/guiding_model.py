@@ -463,13 +463,15 @@ class GuidingModel(nn.Module):
                             val_means.append(val_mean.item())
                             z_means.append(z_mean.item())
 
+                        # Use the floats read under the lock; .item() here would
+                        # touch the GPU outside the lock.
                         pbar.update()
-                        pbar.set_description(f"loss: {mean_loss.item():>7f}")
+                        pbar.set_description(f"loss: {mean_losses[-1]:>7f}")
                         wandb.log(
                             {
-                                "loss": loss.item(),
-                                "mean_loss": mean_loss.item(),
-                                "aux_loss": aux_loss.item(),
+                                "loss": losses[-1],
+                                "mean_loss": mean_losses[-1],
+                                "aux_loss": aux_losses[-1],
                             }
                         )
 
@@ -483,13 +485,15 @@ class GuidingModel(nn.Module):
             #     f"Epoch {t} finished, average loss: {np.mean(losses):>7f}, max: {max(losses):>7f}"
             # )
             if (t + 1) % 10 == 0:
-                self.save(
-                    os.path.join(
-                        "model_checkpoints", f"{datetime.now().isoformat()}.pt"
+                with lock:
+                    self.save(
+                        os.path.join(
+                            "model_checkpoints", f"{datetime.now().isoformat()}.pt"
+                        )
                     )
-                )
         if device == "mps":
-            torch.mps.empty_cache()
+            with lock:
+                torch.mps.empty_cache()
 
     def save(self, path):
         torch.save(self.state_dict(), path)

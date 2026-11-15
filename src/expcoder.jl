@@ -1005,8 +1005,10 @@ function solve_task(
         if need_export
             export_solution_context(sc, previous_traces)
         end
-    catch
-        export_solution_context(sc)
+    catch e
+        if !isa(e, InterruptException)
+            export_solution_context(sc)
+        end
         rethrow()
     finally
         mark_task_finished(guiding_model_channels, task_name)

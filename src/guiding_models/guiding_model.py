@@ -7,7 +7,7 @@ from time import time
 import torch.utils
 import torch.mps
 from tqdm import tqdm
-from transformers import AutoModel
+from transformers import AutoModel, AutoTokenizer
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
@@ -15,7 +15,7 @@ import torch
 import numpy as np
 import wandb
 
-d_emb = 768
+d_emb = 1024
 d_state_in = d_emb * 4 + 1
 d_state_h = 512
 d_state_out = 512
@@ -146,15 +146,31 @@ class Combiner:
 
 
 class Embedder:
+    model_name = "Qwen/Qwen3-Embedding-0.6B"
+    max_length = 32768
+
     def __init__(self) -> None:
-        self.model = AutoModel.from_pretrained(
-            "jinaai/jina-embeddings-v2-base-code", trust_remote_code=True
-        ).to(device)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name, padding_side="left"
+        )
+        self.model = AutoModel.from_pretrained(self.model_name).to(device)
+        self.model.eval()
         self.model.requires_grad_(False)
 
     def encode(self, batch):
         with torch.no_grad():
-            return self.model.encode(batch, convert_to_tensor=True).detach()
+            tokens = self.tokenizer(
+                list(batch),
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
+                return_tensors="pt",
+            ).to(device)
+            outputs = self.model(**tokens)
+            # Qwen3-Embedding uses last-token pooling; with left padding the
+            # last position always holds the final real token.
+            embeddings = outputs.last_hidden_state[:, -1]
+            return F.normalize(embeddings, p=2, dim=1).float().detach()
 
 
 class GuidingModelBody(nn.Module):

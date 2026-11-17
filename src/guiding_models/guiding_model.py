@@ -436,6 +436,15 @@ class GuidingModel(nn.Module):
         )
         return result
 
+    @staticmethod
+    def check_gradient(name, param):
+        def hook(grad):
+            # Here you can log or print the gradient statistics
+            if grad.norm() > 1e3 or grad.norm() < 1e-10:
+                print(f"Gradient {name} norm: {grad.norm()} {grad.max()} {grad.min()}")
+
+        param.register_hook(hook)
+
     def run_training(self, train_set, lock=Lock()):
         learning_rate = 1e-3
         iterations = 5000
@@ -444,14 +453,18 @@ class GuidingModel(nn.Module):
         epochs = min(math.ceil(iterations / train_set_size), 100)
 
         optimizer = torch.optim.Adam(
-            self.parameters(), lr=learning_rate, weight_decay=1e-3
+            self.parameters(), lr=learning_rate, weight_decay=5e-5
         )
+
+        # for name, param in self.named_parameters():
+        #     if param.requires_grad:
+        #         self.check_gradient(name, param)
 
         if not os.path.exists("model_checkpoints"):
             os.mkdir("model_checkpoints")
 
         print(f"Running training for {epochs} epochs")
-        # torch.set_printoptions(profile="full")
+        torch.set_printoptions(profile="full")
         self.train()
         for t in range(epochs):
             losses = []
@@ -465,6 +478,8 @@ class GuidingModel(nn.Module):
                     for j, (grammar_encodings, (inputs, summaries)) in enumerate(
                         data_group
                     ):
+                        # print(inputs)
+                        # return
                         with lock:
                             # Compute prediction and loss
                             pred = self(*grammar_encodings, *inputs)
@@ -490,9 +505,60 @@ class GuidingModel(nn.Module):
 
                             # Backpropagation
                             mean_loss.backward()
+
+                            large_gradients = []
+                            slightly_large_gradients = []
+                            for name, param in self.named_parameters():
+                                if param.requires_grad:
+                                    if param.grad.norm() > 1e3:
+                                        print(
+                                            f"Large gradient {name} norm: {param.grad.norm():>7f} {param.grad.max():>7f} {param.grad.min():>7f}"
+                                        )
+                                        large_gradients.append(name)
+                                        # print(inputs)
+                                        # print(summaries)
+                                        # for k in range(data_group.batch_size):
+                                        #     print(
+                                        #         data_group.dataset.loaded_data[
+                                        #             j * data_group.batch_size + k
+                                        #         ]
+                                        #     )
+                                        # raise Exception("Gradient is too large")
+                                    # if param.grad.norm() < 1e-10 and not name.endswith(
+                                    #     "bias"
+                                    # ):
+                                    #     print(
+                                    #         f"Small gradient {name} norm: {param.grad.norm():>7f} {param.grad.max():>7f} {param.grad.min():>7f}"
+                                    #     )
+                            if len(large_gradients) > 0:
+                                print(f"Loss {mean_loss.item():>7f}")
+                                # print(
+                                #     f"Before norm {before_norm_result.norm():>7f} {torch.std(before_norm_result):>7f} {before_norm_result.max():>7f} {before_norm_result.min():>7f}"
+                                # )
+                                for name, param in self.named_parameters():
+                                    if param.requires_grad and param.grad.norm() > 1:
+                                        slightly_large_gradients.append(name)
+                                        print(
+                                            f"Gradient {name} norm: {param.grad.norm():>7f} {param.norm():>7f} {param.grad.max():>7f} {param.max():>7f} {param.grad.min():>7f} {param.min():>7f}"
+                                        )
+
                             torch.nn.utils.clip_grad_norm_(self.parameters(), 1)
 
+                            for name, param in self.named_parameters():
+                                if name in slightly_large_gradients:
+                                    print(
+                                        f"Gradient after norm clipping {name} norm: {param.grad.norm():>7f} {param.grad.max():>7f} {param.grad.min():>7f}"
+                                    )
+
+                            # torch.nn.utils.clip_grad_value_(self.parameters(), 1)
                             optimizer.step()
+
+                            for name, param in self.named_parameters():
+                                if name in slightly_large_gradients:
+                                    print(
+                                        f"Param after update {name} norm: {param.norm():>7f} {param.max():>7f} {param.min():>7f}"
+                                    )
+
                             optimizer.zero_grad()
                             losses.append(loss.item())
                             mean_losses.append(mean_loss.item())
@@ -519,6 +585,8 @@ class GuidingModel(nn.Module):
             print(
                 f"Val std {np.mean(val_stds):>7f} {min(val_stds):>7f} {max(val_stds):>7f}, mean {np.mean(val_means):>7f} {np.mean(z_means):>7f}"
             )
+            if np.mean(val_stds) < 1e-6:
+                raise Exception("Zero val std")
             # print(
             #     f"Epoch {t} finished, average loss: {np.mean(losses):>7f}, max: {max(losses):>7f}"
             # )

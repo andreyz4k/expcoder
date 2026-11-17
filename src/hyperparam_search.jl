@@ -26,7 +26,10 @@ function hyperparam_search(; kwargs...)
     guiding_model_server = GuidingModelServer(guiding_model)
     start_server(guiding_model_server)
     set_current_grammar!(guiding_model, grammar)
-    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
+    worker_pool = ReplenishingWorkerPool(
+        parsed_args[:workers];
+        on_worker_died = pid -> cleanup_worker_tasks(guiding_model_server, pid),
+    )
 
     tasks_to_check = [t for t in tasks if haskey(traces[grammar_hash][2], t.name)]
     tasks = tasks_to_check

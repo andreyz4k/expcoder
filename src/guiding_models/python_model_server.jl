@@ -119,6 +119,9 @@ function start_server(server::PythonGuidingModelServer, is_test = false)
     # Reset redis db
     server.model.redis_conn = get_redis_connection(server.model.redis_db)
     Redis.flushdb(server.model.redis_conn, "sync")
+    lock(_python_task_states_lock) do
+        empty!(_python_task_states)
+    end
     cache_type = "sqlite"
     CondaPkg.withenv() do
         python = CondaPkg.which("python")
@@ -155,28 +158,89 @@ function get_redis_connection(redis_db)
     return Redis.RedisConnection(; db = redis_db)
 end
 
-function send_inputs_to_model(redis_conn::Redis.RedisConnection, model_inputs)
+# Protocol with guiding_model_server.py:
+#   task_io:<task>   - inputs and output of the task, sent once on the first request
+#   active_tasks     - set of tasks currently being solved; the server polls them round-robin
+#   requests:<task>  - per-task list of guiding requests, deleted as a whole when the task finishes
+#   <task>           - per-task list of responses
+#
+# Each task keeps at most PYTHON_MODEL_MAX_IN_FLIGHT requests on the server. The rest wait
+# locally, and the cheapest ones are sent first as responses come back.
+const PYTHON_MODEL_MAX_IN_FLIGHT = Ref(64)
+
+mutable struct PythonTaskState
+    in_flight::Int
+    queued::PriorityQueue{Tuple{UInt64,Bool},Float64}
+    queued_requests::Dict{Tuple{UInt64,Bool},Any}
+end
+
+PythonTaskState() = PythonTaskState(0, PriorityQueue{Tuple{UInt64,Bool},Float64}(), Dict{Tuple{UInt64,Bool},Any}())
+
+const _python_task_states = Dict{String,PythonTaskState}()
+const _python_task_states_lock = ReentrantLock()
+
+function _get_python_task_state!(redis_conn::Redis.RedisConnection, task_name, inputs, output)
+    state, is_new = lock(_python_task_states_lock) do
+        if haskey(_python_task_states, task_name)
+            _python_task_states[task_name], false
+        else
+            _python_task_states[task_name] = PythonTaskState()
+            _python_task_states[task_name], true
+        end
+    end
+    if is_new
+        # Lets the master clean up after this task if the worker process dies
+        Redis.sadd(redis_conn, "worker_tasks:$(myid())", task_name)
+        # task_io must be set before the task becomes visible in active_tasks
+        Redis.set(redis_conn, "task_io:$task_name", JSON.json(Dict("inputs" => inputs, "output" => output)))
+        Redis.sadd(redis_conn, "active_tasks", task_name)
+    end
+    return state
+end
+
+function _send_queued_requests(redis_conn::Redis.RedisConnection, task_name)
+    payloads = lock(_python_task_states_lock) do
+        state = get(_python_task_states, task_name, nothing)
+        payloads = String[]
+        if isnothing(state)
+            return payloads
+        end
+        while state.in_flight < PYTHON_MODEL_MAX_IN_FLIGHT[] && !isempty(state.queued)
+            key = dequeue!(state.queued)
+            trace_val, is_known, entry_id = pop!(state.queued_requests, key)
+            trace_val_batch = _unfold_trace_value(trace_val...)
+            push!(
+                payloads,
+                JSON.json(Dict("trace_val" => trace_val_batch, "is_known" => is_known, "entry_id" => entry_id)),
+            )
+            state.in_flight += 1
+        end
+        payloads
+    end
+    if !isempty(payloads)
+        Redis.rpush(redis_conn, "requests:$task_name", payloads...)
+    end
+end
+
+function send_inputs_to_model(redis_conn::Redis.RedisConnection, model_inputs, priority = 0.0)
     (inputs, output, trace_val, is_known, entry_id, task_name, max_summary, options_count) = model_inputs
-    trace_val_batch = _unfold_trace_value(trace_val...)
-    payload = JSON.json(
-        Dict(
-            "inputs" => inputs,
-            "output" => output,
-            "trace_val" => trace_val_batch,
-            "is_known" => is_known,
-            "entry_id" => entry_id,
-            "task_name" => task_name,
-        ),
-    )
-    Redis.rpush(redis_conn, "requests", payload)
+    state = _get_python_task_state!(redis_conn, task_name, inputs, output)
+    lock(_python_task_states_lock) do
+        key = (UInt64(entry_id), is_known)
+        state.queued_requests[key] = (trace_val, is_known, entry_id)
+        state.queued[key] = priority
+    end
+    _send_queued_requests(redis_conn, task_name)
 end
 
 function receive_grammar_weights(sc::SolutionContext, redis_conn::Redis.RedisConnection, grammar)
+    received = 0
     while true
         response = Redis.lpop(redis_conn, sc.task_name)
         if isnothing(response)
             break
         end
+        received += 1
         if sc.verbose
             @info "Got response from model $response"
         end
@@ -198,11 +262,52 @@ function receive_grammar_weights(sc::SolutionContext, redis_conn::Redis.RedisCon
         end
         process_grammar_results(sc, entry_id, is_rev, result, grammar)
     end
+    if received > 0
+        lock(_python_task_states_lock) do
+            state = get(_python_task_states, sc.task_name, nothing)
+            if !isnothing(state)
+                state.in_flight = max(state.in_flight - received, 0)
+            end
+        end
+        _send_queued_requests(redis_conn, sc.task_name)
+    end
+end
+
+function _drop_task_on_server(redis_conn::Redis.RedisConnection, task_name)
+    # Drop all pending requests at once, the server never reads them
+    Redis.srem(redis_conn, "active_tasks", task_name)
+    Redis.del(redis_conn, "requests:$task_name", "task_io:$task_name")
+    # Lets the server purge requests it has already fetched into its internal queues
+    Redis.rpush(redis_conn, "finished_tasks", task_name)
+    Redis.expire(redis_conn, task_name, 5)
 end
 
 function mark_task_finished(redis_conn::Redis.RedisConnection, task_name)
-    Redis.rpush(redis_conn, "finished_tasks", task_name)
-    Redis.expire(redis_conn, task_name, 5)
+    _drop_task_on_server(redis_conn, task_name)
+    Redis.srem(redis_conn, "worker_tasks:$(myid())", task_name)
+    lock(_python_task_states_lock) do
+        delete!(_python_task_states, task_name)
+    end
+end
+
+# Called on the master when a worker process dies without finishing its tasks.
+# The retried task gets a new name, so the old one would otherwise stay registered.
+function cleanup_worker_tasks(server::PythonGuidingModelServer, worker_id)
+    # The master's main connection may be in use by another task, so use a separate one
+    redis_conn = get_redis_connection(server.model.redis_db)
+    try
+        key = "worker_tasks:$worker_id"
+        task_names = Redis.smembers(redis_conn, key)
+        for task_name in task_names
+            _drop_task_on_server(redis_conn, task_name)
+        end
+        Redis.del(redis_conn, key)
+        if !isempty(task_names)
+            @warn "Cleaned up guiding model requests of dead worker $worker_id: $(collect(task_names))"
+        end
+    finally
+        Redis.disconnect(redis_conn)
+    end
 end
 
 function send_wandb_log(server::PythonGuidingModelServer, log_dict)

@@ -6,7 +6,10 @@ mutable struct ReplenishingWorkerPool <: AbstractWorkerPool
     timeout_containers::Dict{Int,TimeoutContainer}
     launcher_futures::Vector{Base.Task}
     pending_workers::Int
-    ReplenishingWorkerPool(num_workers) = new(WorkerPool(), num_workers, Dict(), [], 0)
+    # Called on the master with the pid of each worker that died, e.g. to clean up its tasks
+    on_worker_died::Function
+    ReplenishingWorkerPool(num_workers; on_worker_died = pid -> nothing) =
+        new(WorkerPool(), num_workers, Dict(), [], 0, on_worker_died)
 end
 
 function add_new_worker(pool::ReplenishingWorkerPool)
@@ -37,10 +40,15 @@ function Base.take!(pool::ReplenishingWorkerPool)
         error("No workers available")
     end
     filter!(f -> !istaskdone(f), pool.launcher_futures)
-    for worker in pool.pool.workers
-        if !Distributed.id_in_procs(worker)
-            delete!(pool.pool.workers, worker)
-            delete!(pool.timeout_containers, worker)
+    dead_workers = [worker for worker in pool.pool.workers if !Distributed.id_in_procs(worker)]
+    for worker in dead_workers
+        delete!(pool.pool.workers, worker)
+        delete!(pool.timeout_containers, worker)
+        try
+            pool.on_worker_died(worker)
+        catch e
+            bt = catch_backtrace()
+            @error "Failed to clean up after worker $worker" exception = (e, bt)
         end
     end
     if length(pool.pool.workers) + length(pool.launcher_futures) + pool.pending_workers < pool.num_workers

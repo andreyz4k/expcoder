@@ -1323,7 +1323,10 @@ function main(; kwargs...)
         merge(hyperparameters, Dict("weight_$key" => value for (key, value) in type_weights)),
     )
     set_current_grammar!(guiding_model, grammar)
-    worker_pool = ReplenishingWorkerPool(parsed_args[:workers])
+    worker_pool = ReplenishingWorkerPool(
+        parsed_args[:workers];
+        on_worker_died = pid -> cleanup_worker_tasks(guiding_model_server, pid),
+    )
 
     # tasks = tasks[begin:10]
     task_status = Dict{String,Int}()

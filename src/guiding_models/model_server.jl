@@ -244,7 +244,7 @@ function stop_server(server::GuidingModelServer, verbose = false)
     end
 end
 
-function send_inputs_to_model(guiding_model_channels, model_inputs)
+function send_inputs_to_model(guiding_model_channels, model_inputs, priority = 0.0)
     channel_queue_size = n_avail_c(guiding_model_channels[1])
     if channel_queue_size > 9900
         @warn "Request channel almost full $channel_queue_size"
@@ -347,6 +347,9 @@ function mark_task_finished(guiding_model_channels, task_name)
     put!(guiding_model_channels[3], task_name)
 end
 
+# A dead worker's tasks hold no resources in the in-process server worth cleaning up
+function cleanup_worker_tasks(server::GuidingModelServer, worker_id) end
+
 function generate_grammar(sc::SolutionContext, guiding_model_channels, entry_id, is_known, branch_id)
     if !in((entry_id, is_known), sc.waiting_entries)
         push!(sc.waiting_entries, (entry_id, is_known))
@@ -369,7 +372,11 @@ function generate_grammar(sc::SolutionContext, guiding_model_channels, entry_id,
     model_inputs =
         (inputs, output, trace_val, is_known, entry_id, sc.task_name, val_entry.max_summary, val_entry.options_count)
 
-    send_inputs_to_model(guiding_model_channels, model_inputs)
+    # Requests for cheaper branches are sent first when the model server is busy
+    path_cost = is_known ? sc.explained_min_path_costs[branch_id] : sc.unknown_min_path_costs[branch_id]
+    priority = isnothing(path_cost) ? Inf : path_cost
+
+    send_inputs_to_model(guiding_model_channels, model_inputs, priority)
     if sc.verbose
         @info "Sent inputs to model for ($entry_id, $is_known)"
         @info "Sent inputs to model for branch $branch_id $model_inputs"

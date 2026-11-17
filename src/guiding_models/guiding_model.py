@@ -149,28 +149,47 @@ class Embedder:
     model_name = "Qwen/Qwen3-Embedding-0.6B"
     max_length = 32768
 
-    def __init__(self) -> None:
+    def __init__(self, dtype=None) -> None:
+        if dtype is None:
+            # On MPS (M2 Max) float16 matches float32 outputs (cos sim 1.0) and is ~10%
+            # faster; bfloat16 is slower and less accurate there. Outputs are float32.
+            dtype = os.environ.get(
+                "EXPCODER_EMBEDDER_DTYPE", "float32" if device == "cpu" else "float16"
+            )
+        self.dtype = getattr(torch, dtype)
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name, padding_side="left"
         )
-        self.model = AutoModel.from_pretrained(self.model_name).to(device)
+        # Tokenizing runs outside the model lock, and fast tokenizers aren't thread-safe
+        self.tokenizer_lock = Lock()
+        self.model = AutoModel.from_pretrained(self.model_name, dtype=self.dtype).to(
+            device
+        )
         self.model.eval()
         self.model.requires_grad_(False)
 
-    def encode(self, batch):
+    def tokenize(self, batch):
+        """Token ids for each value, computed on CPU without padding."""
+        with self.tokenizer_lock:
+            return self.tokenizer(
+                list(batch), truncation=True, max_length=self.max_length
+            )["input_ids"]
+
+    def encode_tokens(self, input_ids):
         with torch.no_grad():
-            tokens = self.tokenizer(
-                list(batch),
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors="pt",
-            ).to(device)
+            with self.tokenizer_lock:
+                tokens = self.tokenizer.pad(
+                    {"input_ids": input_ids}, return_tensors="pt"
+                )
+            tokens = tokens.to(device)
             outputs = self.model(**tokens)
             # Qwen3-Embedding uses last-token pooling; with left padding the
             # last position always holds the final real token.
             embeddings = outputs.last_hidden_state[:, -1]
-            return F.normalize(embeddings, p=2, dim=1).float().detach()
+            return F.normalize(embeddings.float(), p=2, dim=1).detach()
+
+    def encode(self, batch):
+        return self.encode_tokens(self.tokenize(batch))
 
 
 class GuidingModelBody(nn.Module):
@@ -254,6 +273,9 @@ class GuidingModel(nn.Module):
 
     def get_embedding(self, batch):
         return self.embedder.encode(batch)
+
+    def get_embedding_from_tokens(self, input_ids):
+        return self.embedder.encode_tokens(input_ids)
 
     def get_trace_val_embedding(self, trace_val_batch, trace_val_mask):
         trace_val_embedding = self.get_embedding(trace_val_batch)
